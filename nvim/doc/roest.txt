@@ -1,0 +1,42 @@
+*roest.txt*    My personal Neovim help documentation
+
+Roest's Neovim Help
+===================
+
+This file is a template of how to setup documentation with the custom plugins
+in the same fashion as the other help menus:
+
+:helptags ~/.config/nvim/doc
+:help roest
+
+
+==============================================================================
+Navigation~                                                        *roest-navigation*
+
+h, j, k, l     Move left, down, up, right
+0 / ^          Start of line
+$              End of line
+gg / G         Top / Bottom
+w / W / e      Word motions
+%              Jump to matching pair (bracket, etc.)
+
+==============================================================================
+
+Splits~                                                            *roest-splits*
+
+:vsp           Vertical split
+:sp            Horizontal split
+<C-w>h/l/j/k   Move between windows
+<C-w>=         Equalize split sizes
+
+==============================================================================
+
+Keymaps~                                                           *roest-keymaps*
+
+<leader>ff     Telescope find files
+<leader>fg     Telescope live grep
+<leader>e      Toggle file explorer (oil)
+
+==============================================================================
+
+vim:tw=78:ts=8:ft=help:norl:

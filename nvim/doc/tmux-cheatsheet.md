@@ -1,20 +1,14 @@
-# tmux 
+# tmux
 
 tmux is a terminal multiplexer that lets you run multiple terminal sessions in a single (split) window and save sessions.
 
 ## When Should You Use tmux?
 
-* ✅ When you want to run two or more independent terminal processes at once — for example:
+- ✅ When you want to run two or more independent terminal processes at once
 
-    * A development server running alongside a code editor
+- ✅ When you want terminal state persistence — you can detach and reattach later without losing work
 
-    * Running logs, Git commands, or build scripts next to your coding workflow
-
-    * Starting a Python REPL or Docker container beside another process
-
-* ✅ When you want terminal state persistence — you can detach and reattach later without losing work
-
-* 🚫 Use Vim splits (:vsp, :sp) when all the activity is inside Vim, like viewing and editing multiple files
+- 🚫 Use Vim splits (:vsp, :sp) when all the activity is inside Vim, like viewing and editing multiple files
 
 ### 1. Start tmux
 
@@ -22,17 +16,18 @@ tmux is a terminal multiplexer that lets you run multiple terminal sessions in a
 tmux
 ```
 
-
 In tmux, hit the prefix key in order to run any tmux commands. By default, the prefix key is Ctrl-b.
 
 ### 2. Split Windows
 
 Horizontal split:
+
 ```sh
 <prefix-key> "
 ```
 
 Vertical split:
+
 ```sh
 <prefix-key> %
 ```
@@ -89,15 +84,15 @@ tmux attach -t <name>
 
 ### 7. Terminating Sessions
 
-While *inside* a tmux session, you can terminate it by running:
+While _inside_ a tmux session, you can terminate it by running:
 
 ```sh
 exit
 ```
 
-until all windows are closed and the session is terminated. 
+until all windows are closed and the session is terminated.
 
-To kill a specific session while *outside* tmux, you can run:
+To kill a specific session while _outside_ tmux, you can run:
 
 ```sh
 tmux kill-session -t <name>
@@ -110,5 +105,3 @@ tmux kill-server
 ```
 
 **Warning**: You will not be able to gain back access to a session if you terminate using any of these strategies. Use `<prefix-key>d` if you want to save the session for later.
-
-

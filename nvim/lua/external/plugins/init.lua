@@ -15,12 +15,13 @@
 -- In normal mode type `<space>sh` then write `lazy.nvim-plugin`
 -- you can continue same window with `<space>sr` which resumes last telescope search
 
-
 local plugin_modules = {
   'external/plugins/gitsigns',
   'external/plugins/lsp',
   'external/plugins/telescope',
   'external/plugins/formatter',
+  'external/plugins/oil',
+  'external/plugins/glow',
 }
 
 local plugins = {}

@@ -1,0 +1,15 @@
+prime plugins:
+    https://www.youtube.com/watch?v=w7i4amO_zaE&t=264s
+
+Documentation (docs/)
+    * make sure I have the keymaps
+    * to all the plugins in their own respective files
+    
+    
+modular plugins:
+    https://github.com/dam9000/kickstart-modular.nvim/blob/master/lua/kickstart/plugins/gitsigns.lua
+
+Theme:
+    transparent and something-moon theme - from primeagen
+
+Play around with it and see if I need anything else

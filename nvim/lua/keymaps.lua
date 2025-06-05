@@ -42,6 +42,9 @@ vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagn
 vim.keymap.set('n', '9', '$')
 vim.keymap.set('v', '9', '$')
 
+-- Remove carriage return character ^M
+vim.keymap.set('n', '<leader>cr', [[:%s/\r//g<CR>]], { desc = 'Remove ^M (carriage returns)' })
+
 -- Keybinds to make split navigation easier.
 --  Use CTRL+<hjkl> to switch between windows
 --
