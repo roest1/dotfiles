@@ -22,6 +22,8 @@ local plugin_modules = {
   'external/plugins/formatter',
   'external/plugins/oil',
   'external/plugins/glow',
+  'external/plugins/trouble',
+  'external/plugins/undotree',
 }
 
 local plugins = {}
