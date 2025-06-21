@@ -20,6 +20,10 @@ for tool in $tools; do
     # Else, check if apt is available (typical for Ubuntu/WSL)
     elif command -v apt >/dev/null 2>&1; then
       sudo apt install -y "$tool"
+    
+    # Else, check if dnf is available (RHEL)
+    elif command -v dnf >/dev/null 2>&1; then
+        sudo dnf install -y "$tool"
 
     else
       # If no supported package manager is found, warn the user
