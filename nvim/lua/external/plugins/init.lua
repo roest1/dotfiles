@@ -24,6 +24,8 @@ local plugin_modules = {
   'external/plugins/glow',
   'external/plugins/trouble',
   'external/plugins/undotree',
+  'external/plugins/treesitter',
+  'external/plugins/theme',
 }
 
 local plugins = {}
