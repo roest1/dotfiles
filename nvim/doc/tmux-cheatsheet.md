@@ -105,3 +105,12 @@ tmux kill-server
 ```
 
 **Warning**: You will not be able to gain back access to a session if you terminate using any of these strategies. Use `<prefix-key>d` if you want to save the session for later.
+
+To scroll in Tmux, you have to enter copy mode
+
+```sh
+Ctrl + b (default prefix key)
+[
+```
+
+Then use arrow keys

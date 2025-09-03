@@ -18,7 +18,7 @@ vim.o.showmode = true
 --  Remove this option if you want your OS clipboard to remain independent.
 --  See `:help 'clipboard'`
 vim.schedule(function()
-    vim.o.clipboard = 'unnamedplus'
+  vim.o.clipboard = 'unnamedplus'
 end)
 
 -- Enable break indent
@@ -97,31 +97,29 @@ vim.o.confirm = true
 ---
 --]]
 
-
-
 -- override tab spacing globally
-vim.opt.expandtab = true   -- Use spaces instead of tabs
+vim.opt.expandtab = true -- Use spaces instead of tabs
 vim.opt.smartindent = true -- Smart indent new lines
 local tab = 4
-vim.opt.tabstop = tab      -- Number of spaces = <Tab>
-vim.opt.shiftwidth = tab   -- Number of spaces to use for auto-indent
+vim.opt.tabstop = tab -- Number of spaces = <Tab>
+vim.opt.shiftwidth = tab -- Number of spaces to use for auto-indent
 
 -- Auto-formatting
 -- runs on save `:w`
 vim.api.nvim_create_autocmd('BufWritePre', {
-    callback = function(args)
-        -- save cursor position
-        local pos = vim.api.nvim_win_get_cursor(0)
+  callback = function(args)
+    -- save cursor position
+    local pos = vim.api.nvim_win_get_cursor(0)
 
-        -- format using conform plugin
-        require('conform').format({
-            bufnr = args.buf,
-            lsp_fallback = true,
-            async = false,
-            timeout_ms = 500,
-        })
+    -- format using conform plugin
+    require('conform').format {
+      bufnr = args.buf,
+      lsp_fallback = true,
+      async = false,
+      timeout_ms = 500,
+    }
 
-        -- restore cursor position
-        pcall(vim.api.nvim_win_set_cursor, 0, pos)
-    end
+    -- restore cursor position
+    pcall(vim.api.nvim_win_set_cursor, 0, pos)
+  end,
 })

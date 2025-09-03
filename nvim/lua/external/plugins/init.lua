@@ -16,16 +16,17 @@
 -- you can continue same window with `<space>sr` which resumes last telescope search
 
 local plugin_modules = {
-  'external/plugins/gitsigns',
-  'external/plugins/lsp',
-  'external/plugins/telescope',
   'external/plugins/formatter',
-  'external/plugins/oil',
+  'external/plugins/gitsigns',
   'external/plugins/glow',
+  'external/plugins/lsp',
+  'external/plugins/markdownpreview',
+  'external/plugins/oil',
+  'external/plugins/telescope',
+  'external/plugins/theme',
+  'external/plugins/treesitter',
   'external/plugins/trouble',
   'external/plugins/undotree',
-  'external/plugins/treesitter',
-  'external/plugins/theme',
 }
 
 local plugins = {}

@@ -10,7 +10,7 @@
 --
 -- NOTE: Here is where you install your plugins.
 require('lazy').setup(
-  require('external/plugins'), -- see external/plugins/init.lua
+  require 'external/plugins', -- see external/plugins/init.lua
   {
     ui = {
       -- If you are using a Nerd Font: set icons to an empty table which will use the
@@ -31,4 +31,5 @@ require('lazy').setup(
         lazy = '💤 ',
       },
     },
-  })
+  }
+)

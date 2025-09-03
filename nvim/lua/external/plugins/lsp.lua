@@ -24,7 +24,7 @@ return {
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
       -- Useful status updates for LSP.
-      { 'j-hui/fidget.nvim',    opts = {} },
+      { 'j-hui/fidget.nvim', opts = {} },
 
       -- Allows extra capabilities provided by blink.cmp
       'saghen/blink.cmp',
@@ -218,8 +218,8 @@ return {
 
         -- C#
         omnisharp = {
-            -- You might need to configure the path to your .NET SDK
-            cmd = { "omnisharp", "--languageserver", "--hostPID", tostring(vim.fn.getpid()) },
+          -- You might need to configure the path to your .NET SDK
+          cmd = { 'omnisharp', '--languageserver', '--hostPID', tostring(vim.fn.getpid()) },
         },
 
         -- TypeScript/JavaScript
@@ -230,29 +230,29 @@ return {
 
         -- HTML
         html = {
-            filetypes = { "html" },
+          filetypes = { 'html' },
         },
 
         -- XML
         lemminx = {
-            filetypes = { "xml", "xsd", "xsl", "xslt", "svg" },
-            settings = {
-                xml = {
-                    server = {
-                      workDir = "~/.cache/lemminx",
-                    },
-                    format = {
-                      enabled = true,
-                      splitAttributes = false,
-                    },
-                    validation = {
-                      enabled = true,
-                    },
-                    completion = {
-                      autoCloseTags = true,
-                    },
-                },
+          filetypes = { 'xml', 'xsd', 'xsl', 'xslt', 'svg' },
+          settings = {
+            xml = {
+              server = {
+                workDir = '~/.cache/lemminx',
+              },
+              format = {
+                enabled = true,
+                splitAttributes = false,
+              },
+              validation = {
+                enabled = true,
+              },
+              completion = {
+                autoCloseTags = true,
+              },
             },
+          },
         },
 
         -- Bash
@@ -260,24 +260,24 @@ return {
 
         -- JSON
         jsonls = {
-        settings = {
-          json = {
-            validate = { enable = true },
+          settings = {
+            json = {
+              validate = { enable = true },
+            },
           },
-        },
         },
 
         -- YAML
         yamlls = {
-        settings = {
-          yaml = {
+          settings = {
+            yaml = {
               validate = true,
+            },
           },
-        },
         },
 
         -- Markdown (optional but useful)
-        marksman = {},
+        -- marksman = {},
 
         lua_ls = {
           -- cmd = { ... },
