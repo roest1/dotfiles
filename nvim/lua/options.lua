@@ -17,9 +17,37 @@ vim.o.showmode = true
 --  Schedule the setting after `UiEnter` because it can increase startup-time.
 --  Remove this option if you want your OS clipboard to remain independent.
 --  See `:help 'clipboard'`
-vim.schedule(function()
-  vim.o.clipboard = 'unnamedplus'
-end)
+-- vim.schedule(function()
+-- vim.o.clipboard = 'unnamedplus'
+-- end)
+
+-- built in OSC52
+local function copy(lines, _)
+  -- copy
+  vim.fn.chansend(vim.v.stderr, '\x1b]52;c;' .. vim.fn.system('base64', table.concat(lines, '\n')) .. '\x07')
+
+  -- print
+  local count = #lines
+  local msg = (count == 1) and '1 line copied to system clipboard' or (count .. ' lines copied to system clipboard')
+
+  vim.notify(msg, vim.log.levels.INFO, { title = 'clipboard' })
+end
+
+local function paste()
+  return { vim.fn.split(vim.fn.getreg '', '\n'), vim.fn.getregtype '' }
+end
+
+vim.g.clipboard = {
+  name = 'osc52',
+  copy = {
+    ['+'] = copy,
+    ['*'] = copy,
+  },
+  paste = {
+    ['+'] = paste,
+    ['*'] = paste,
+  },
+}
 
 -- Enable break indent
 vim.o.breakindent = true

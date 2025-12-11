@@ -71,3 +71,29 @@ vim.api.nvim_create_autocmd('TextYankPost', {
     vim.hl.on_yank()
   end,
 })
+
+-- copy to system clipboard
+vim.keymap.set('n', 'yy', function()
+  vim.cmd 'normal! "+yy'
+  vim.notify('Yanked 1 line to system clipboard', vim.log.levels.INFO, { title = 'clipboard' })
+end)
+
+vim.keymap.set('v', 'y', function()
+  vim.cmd 'normal! "+y'
+  local start = vim.fn.getpos("'<")[2]
+  local finish = vim.fn.getpos("'>")[2]
+  local count = math.abs(finish - start) + 1
+
+  vim.notify(count .. ' lines yanked to system clipboard', vim.log.levels.INFO, { title = 'clipboard' })
+end)
+
+-- Yank entire buffer to system clipboard via OSC52
+vim.api.nvim_create_user_command('YankBuffer', function()
+  vim.cmd 'normal! gg"+yG'
+  vim.notify('Copied ' .. vim.api.nvim_buf_line_count(0) .. ' lines to system clipboard', vim.log.levels.INFO, { title = 'clipboard' })
+end, { desc = 'Copy entire buffer to system clipboard (OSC52)' })
+
+-- When user types :%y<CR>, rewrite it to :YankBuffer
+vim.cmd [[
+cnoreabbrev <expr> %y ((getcmdtype() == ':' && getcmdline() ==# '%y') ? 'YankBuffer' : '%y')
+]]
