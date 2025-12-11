@@ -35,44 +35,5 @@ for tool in $tools; do
     echo "✅ $tool is already installed."
   fi
 done
-
-###############################################
-# 🟦 WSL-SPECIFIC CLIPBOARD SUPPORT (win32yank)
-###############################################
-echo ""
-echo "🔍 Checking for WSL clipboard support..."
-
-# Detect WSL by checking /proc/version
-if grep -qi "microsoft" /proc/version; then
-  echo "💠 WSL detected — ensuring win32yank clipboard provider is installed"
-
-  WIN32YANK="$HOME/.local/bin/win32yank.exe"
-
-  # Create bin directory if not present
-  mkdir -p "$HOME/.local/bin"
-
-  # Install win32yank only if missing
-  if [ ! -f "$WIN32YANK" ]; then
-    echo "➡️ Downloading win32yank.exe..."
-    curl -sLo "$WIN32YANK" \
-      https://github.com/equalsraf/win32yank/releases/download/v0.1.1/win32yank-x64.exe
-
-    chmod +x "$WIN32YANK"
-    echo "✅ win32yank.exe installed at $WIN32YANK"
-  else
-    echo "✅ win32yank.exe already present at $WIN32YANK"
-  fi
-
-  # Ensure ~/.local/bin is on PATH
-  if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
-    echo "🔧 Adding ~/.local/bin to PATH (you may need to re-source your shell)"
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-  fi
-
-else
-  echo "ℹ️ Not running inside WSL — skipping win32yank installation."
-fi
-
-echo ""
 echo "🎉 All done!"
 
