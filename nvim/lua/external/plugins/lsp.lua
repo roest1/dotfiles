@@ -217,10 +217,11 @@ return {
         pyright = {},
 
         -- C#
-        omnisharp = {
-          -- You might need to configure the path to your .NET SDK
-          cmd = { 'omnisharp', '--languageserver', '--hostPID', tostring(vim.fn.getpid()) },
-        },
+        csharp_ls = {},
+        -- omnisharp = {
+        -- You might need to configure the path to your .NET SDK
+        -- cmd = { 'omnisharp', '--languageserver', '--hostPID', tostring(vim.fn.getpid()) },
+        -- },
 
         -- TypeScript/JavaScript
         ts_ls = {},
