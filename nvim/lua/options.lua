@@ -17,19 +17,53 @@ vim.o.showmode = true
 --  Schedule the setting after `UiEnter` because it can increase startup-time.
 --  Remove this option if you want your OS clipboard to remain independent.
 --  See `:help 'clipboard'`
--- vim.schedule(function()
--- vim.o.clipboard = 'unnamedplus'
--- end)
+vim.schedule(function()
+  vim.o.clipboard = 'unnamedplus'
+end)
 
 -- built in OSC52
-local function copy(lines, _)
-  -- copy
+local function copy(lines, regtype)
+  -- Copy via OSC52
   vim.fn.chansend(vim.v.stderr, '\x1b]52;c;' .. vim.fn.system('base64', table.concat(lines, '\n')) .. '\x07')
 
-  -- print
-  local count = #lines
-  local msg = (count == 1) and '1 line copied to system clipboard' or (count .. ' lines copied to system clipboard')
+  -------------------------------------------------------
+  -- FIX: Remove extra trailing empty line (linewise yank)
+  -------------------------------------------------------
+  if lines[#lines] == '' and regtype:match 'V' then
+    table.remove(lines)
+  end
 
+  -------------------------------------------------------
+  -- Determine what to print
+  -------------------------------------------------------
+  local msg = ''
+
+  if regtype == 'V' then
+    -- Linewise yank
+    local count = #lines
+    msg = (count == 1) and '1 line copied to system clipboard' or (count .. ' lines copied to system clipboard')
+  elseif regtype == 'v' then
+    -- Characterwise yank → count characters
+    local chars = 0
+    for _, l in ipairs(lines) do
+      chars = chars + #l
+    end
+    msg = chars .. ' characters copied to system clipboard'
+  elseif regtype == '\022' then
+    -- Blockwise yank
+    local chars = 0
+    for _, l in ipairs(lines) do
+      chars = chars + #l
+    end
+    msg = chars .. ' characters (blockwise) copied to clipboard'
+  else
+    -- Fallback (rare)
+    msg = 'Copied text to system clipboard'
+  end
+
+  -------------------------------------------------------
+  -- Print notification
+  -------------------------------------------------------
   vim.notify(msg, vim.log.levels.INFO, { title = 'clipboard' })
 end
 
@@ -40,8 +74,12 @@ end
 vim.g.clipboard = {
   name = 'osc52',
   copy = {
-    ['+'] = copy,
-    ['*'] = copy,
+    ['+'] = function(lines, regtype)
+      copy(lines, regtype)
+    end,
+    ['*'] = function(lines, regtype)
+      copy(lines, regtype)
+    end,
   },
   paste = {
     ['+'] = paste,
