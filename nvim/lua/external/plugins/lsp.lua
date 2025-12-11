@@ -217,7 +217,7 @@ return {
         pyright = {},
 
         -- C#
-        csharp_ls = {},
+        -- csharp_ls = {},
         -- omnisharp = {
         -- You might need to configure the path to your .NET SDK
         -- cmd = { 'omnisharp', '--languageserver', '--hostPID', tostring(vim.fn.getpid()) },
