@@ -1,0 +1,71 @@
+*roest-harpoon.txt*    Personal Harpoon Notes for Riley (Roest)
+                      Last Updated: 2025-01-01
+
+This is an overview of how I (Roest) use Harpoon in Neovim with Lazy.nvim.
+This extends the default docs without overriding :help harpoon.
+
+To open this file:
+
+    :help roest-harpoon
+
+==============================================================================
+Overview~                                                       *roest-harpoon*
+
+Harpoon makes a "working list" of files and lets you jump between them quickly.
+
+Think of it like:
+- File bookmarks for active tasks
+- Browser tabs for code
+- A tiny project “focus list”
+
+==============================================================================
+Keymaps I Use~                                          *roest-harpoon-keymaps*
+
+<leader>a      Add file to Harpoon list
+<C-e>          Open quick list
+<C-n>          Next file in list
+<C-p>          Previous file
+<leader>hr     Reset list (clear all)
+
+Telescope integration (if installed):
+
+<leader>fl     Show Harpoon list inside Telescope
+
+==============================================================================
+Workflow (How I Actually Use It)~               *roest-harpoon-workflow*
+
+1. Open 3–6 files I'm working with
+2. Hit <leader>a on each one
+3. Jump between them like tabs with <C-n> and <C-p>
+4. Reset when the task/project is complete: <leader>hr
+
+This keeps my brain focused instead of project-wide searching every time.
+
+==============================================================================
+Lazy.nvim Config Reference~                      *roest-harpoon-lazy-config*
+
+~/.config/nvim/lua/plugins/harpoon.lua
+
+    return {
+      "ThePrimeagen/harpoon",
+      branch = "harpoon2",
+      dependencies = { "nvim-lua/plenary.nvim" },
+
+      config = function()
+        local harpoon = require("harpoon")
+        vim.keymap.set("n", "<leader>a", function() harpoon:list():add() end)
+        vim.keymap.set("n", "<C-e>", function() harpoon.ui:toggle_quick_menu(harpoon:list()) end)
+        vim.keymap.set("n", "<C-n>", function() harpoon:list():next() end)
+        vim.keymap.set("n", "<C-p>", function() harpoon:list():prev() end)
+        vim.keymap.set("n", "<leader>hr", function() harpoon:list():clear() end)
+      end,
+    }
+
+==============================================================================
+Open This Help Page~                              *roest-harpoon-open*
+
+    :help roest-harpoon
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
+

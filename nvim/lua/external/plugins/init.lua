@@ -27,6 +27,7 @@ local plugin_modules = {
   'external/plugins/treesitter',
   'external/plugins/trouble',
   'external/plugins/undotree',
+  'external/plugins/harpoon',
 }
 
 local plugins = {}
