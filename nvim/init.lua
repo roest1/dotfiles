@@ -43,3 +43,4 @@ require 'lazy-plugins'
 
 require('external.findreplace').setup()
 require('external.copy').setup()
+require('external.reset').setup()

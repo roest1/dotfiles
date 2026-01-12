@@ -20,7 +20,6 @@ local plugin_modules = {
   'external/plugins/gitsigns',
   'external/plugins/glow',
   'external/plugins/lsp',
-  'external/plugins/markdownpreview',
   'external/plugins/oil',
   'external/plugins/telescope',
   'external/plugins/theme',

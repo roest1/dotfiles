@@ -1,5 +1,9 @@
 return {
   'nvim-treesitter/nvim-treesitter',
+
+  tag = 'v0.9.2',
+  event = { 'BufReadPost', 'BufNewFile' }, -- run on writes
+
   config = function()
     require('nvim-treesitter.configs').setup {
       -- A list of parser names, or "all" (the listed parsers MUST always be installed)
@@ -33,6 +37,9 @@ return {
         -- Using this option may slow down your editor, and you may see some duplicate highlights.
         -- Instead of true it can also be a list of languages
         additional_vim_regex_highlighting = false,
+      },
+      indent = {
+        enable = true,
       },
     }
   end,
