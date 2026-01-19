@@ -1,7 +1,9 @@
 return {
   'nvim-treesitter/nvim-treesitter',
 
-  tag = 'v0.9.2',
+  tag = 'v0.10.0',
+  lazy = false,
+  build = ':TSUpdate',
   event = { 'BufReadPost', 'BufNewFile' }, -- run on writes
 
   config = function()
