@@ -19,14 +19,15 @@ local plugin_modules = {
   'external/plugins/formatter',
   'external/plugins/gitsigns',
   'external/plugins/glow',
+  'external/plugins/harpoon',
   'external/plugins/lsp',
   'external/plugins/oil',
+  'external/plugins/roslyn',
   'external/plugins/telescope',
   'external/plugins/theme',
   'external/plugins/treesitter',
   'external/plugins/trouble',
   'external/plugins/undotree',
-  'external/plugins/harpoon',
 }
 
 local plugins = {}

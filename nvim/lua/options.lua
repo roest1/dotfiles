@@ -182,10 +182,25 @@ vim.api.nvim_create_autocmd('BufWritePre', {
       bufnr = args.buf,
       lsp_fallback = true,
       async = false,
-      timeout_ms = 500,
+      timeout_ms = 1000,
     }
 
     -- restore cursor position
     pcall(vim.api.nvim_win_set_cursor, 0, pos)
   end,
 })
+
+-- Tree-sitter highlighting
+vim.api.nvim_create_autocmd('FileType', {
+  callback = function()
+    pcall(vim.treesitter.start)
+  end,
+})
+
+-- Tree-sitter folding (experiment)
+-- vim.api.nvim_create_autocmd("FileType", {
+--  callback = function()
+--    vim.wo.foldmethod = "expr"
+--    vim.wo.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+--  end,
+-- })
