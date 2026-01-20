@@ -1,0 +1,254 @@
+*roest-workflows.txt*    Common Tasks and Workflows
+
+==============================================================================
+WORKFLOWS                                                    *roest-workflows*
+
+"How do I..." recipes for common tasks.
+
+==============================================================================
+FINDING FILES                                        *roest-workflows-finding*
+
+Find a file by name:~
+    <leader>sf → type filename → <CR>
+
+Find a file containing specific text:~
+    <leader>sg → type search term → <CR>
+
+Find where a function is defined:~
+    Put cursor on function name → grd
+
+Find everywhere a function is used:~
+    Put cursor on function name → grr
+
+Find a file I had open recently:~
+    <leader>s. → select from list
+
+Switch between open buffers:~
+    <leader><leader> → select buffer
+
+Search in just the current file:~
+    <leader>/ → type search term
+
+==============================================================================
+NAVIGATING CODE                                    *roest-workflows-navigating*
+
+Jump to where something is defined:~
+    Cursor on symbol → grd
+    To jump back: <C-t>
+
+Jump to the type of a variable:~
+    Cursor on variable → grt
+
+See all references to something:~
+    Cursor on symbol → grr
+
+See all functions/classes in file:~
+    gO → select from list
+
+See all symbols in project:~
+    gW → type to filter
+
+==============================================================================
+EDITING CODE                                          *roest-workflows-editing*
+
+Rename a variable everywhere:~
+    Cursor on variable → grn → type new name → <CR>
+
+Fix an error (quick fix):~
+    Cursor on error → gra → select fix
+
+Format the file:~
+    <leader>l (or just save - auto-formats)
+
+Comment out lines:~
+    Select lines in visual mode → gc (if you add comment plugin)
+    Or manually: I// <Esc> on each line
+
+Indent multiple lines:~
+    Select in visual mode → > (repeat with .)
+    Or: << and >> in normal mode
+
+==============================================================================
+WORKING WITH FILES                                      *roest-workflows-files*
+
+Create a new file:~
+    - (open Oil) → type filename on blank line → :w
+
+Rename a file:~
+    - (open Oil) → edit the filename → :w
+
+Delete a file:~
+    - (open Oil) → dd on the line → :w
+
+Copy directory contents to clipboard (for AI/docs):~
+    - (open Oil in directory) → :Copy
+    Recursive: :Copy -r
+    Exclude: :Copy --exclude=node_modules
+
+==============================================================================
+WORKING SET (HARPOON)                                  *roest-workflows-harpoon*
+
+Start a new task with specific files:~
+    1. Open each file you need
+    2. <leader>a on each one
+    3. Now <C-n>/<C-p> cycles through just those
+
+Clear your working set:~
+    <leader>hr
+
+Reorder files in working set:~
+    <C-e> → move lines around → :w or close
+
+Remove one file from set:~
+    <C-e> → delete the line → close
+
+==============================================================================
+GIT WORKFLOWS                                            *roest-workflows-git*
+
+See what I changed:~
+    <leader>hp on a changed line (green + in gutter)
+
+Stage specific lines (not whole file):~
+    ]c to jump to change → <leader>hs
+
+Stage entire file:~
+    <leader>hS
+
+Undo staging a hunk:~
+    <leader>hu
+
+Discard changes in a hunk:~
+    <leader>hr
+
+Discard all changes in file:~
+    <leader>hR
+
+See who wrote a line:~
+    <leader>hb
+
+Compare to last commit:~
+    <leader>hD
+
+Navigate between changes:~
+    ]c (next) and [c (previous)
+
+==============================================================================
+DEBUGGING CODE                                        *roest-workflows-debug*
+
+See the error on current line:~
+    <leader>e
+
+See all errors in file:~
+    <leader>xX
+
+See all errors in project:~
+    <leader>xx
+
+Jump to next error:~
+    ]d
+
+Jump to previous error:~
+    [d
+
+==============================================================================
+SPLITS AND WINDOWS                                    *roest-workflows-splits*
+
+Open file in vertical split:~
+    In Telescope: <C-v>
+    Or: :vsp filename
+
+Open file in horizontal split:~
+    In Telescope: <C-x>
+    Or: :sp filename
+
+Move between splits:~
+    <C-h/j/k/l>
+
+Make splits equal size:~
+    <C-w>=
+
+Close other splits:~
+    <C-w>o
+
+Close current split:~
+    :q
+
+==============================================================================
+SEARCH AND REPLACE                                    *roest-workflows-replace*
+
+Replace in current file:~
+    :%s/old/new/gc
+    (g = all occurrences, c = confirm each)
+
+Replace in project:~
+    :FindReplace old new
+    (Confirms each replacement)
+
+Find files containing text:~
+    :Find keyword
+    Then :args to see the list
+
+==============================================================================
+TERMINAL                                              *roest-workflows-terminal*
+
+Open terminal in Neovim:~
+    :term
+
+Run current Python file:~
+    :term python %
+
+Run current file with args:~
+    :term python % arg1 arg2
+
+Exit terminal mode:~
+    <C-\><C-n>
+
+For persistent terminals, use tmux instead.
+See: doc/roest-tmux.md
+
+==============================================================================
+CLIPBOARD                                            *roest-workflows-clipboard*
+
+Copy entire file:~
+    :%y (automatically uses system clipboard)
+
+Copy to system clipboard:~
+    Select text → "+y
+    Or just y (clipboard is synced)
+
+Paste from system clipboard:~
+    "+p or just p
+
+==============================================================================
+SESSIONS (COMING BACK LATER)                        *roest-workflows-sessions*
+
+Currently no session plugin installed.
+Your Harpoon list persists across sessions.
+
+To save session state, consider adding:
+    - persistence.nvim (auto-save/restore)
+    - Or use tmux (see doc/roest-tmux.md)
+
+==============================================================================
+MAINTENANCE                                        *roest-workflows-maintenance*
+
+Update plugins:~
+    :Lazy update
+
+Check plugin status:~
+    :Lazy
+
+Install/update LSP servers:~
+    :Mason
+
+Check health:~
+    :checkhealth
+
+Nuclear reset (reinstall everything):~
+    :ResetNvim (then restart Neovim)
+
+Regenerate help tags after editing docs:~
+    :helptags ~/.config/nvim/doc
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

@@ -21,6 +21,7 @@ return {
         toml = { 'prettierd', 'prettier' },
         css = { 'prettierd', 'prettier' },
         py = { 'black' },
+        python = { 'black' },
         -- csharp = { 'csharpier', 'dotnet-format' },
       },
     }

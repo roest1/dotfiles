@@ -11,6 +11,12 @@ cmod +x bootstrap.sh
 ./bootstrap.sh
 ```
 
+### Build help docs:
+
+```sh
+:helptags ~/.config/nvim/doc
+```
+
 ---
 
 # kickstart-modular.nvim

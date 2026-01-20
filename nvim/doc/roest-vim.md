@@ -28,7 +28,7 @@
 
 - `^`: First non-whitespace character
 - `0`: Beginning of line
-- `9`: End of line
+- `L`: End of line
 - `w`: Next word (start)
 - `e`: Next word (end)
 - `b`: Previous word

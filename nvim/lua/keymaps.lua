@@ -38,9 +38,13 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
+-- The following breaks vim grammar: (can't do 9 motions - 9j, d9l, y9l )
 -- Use 9 to move cursor to the end of a line since 0 is to move to beginning
-vim.keymap.set('n', '9', '$')
-vim.keymap.set('v', '9', '$')
+-- vim.keymap.set('n', '9', '$')
+-- vim.keymap.set('v', '9', '$')
+-- Use L to move cursor to the end of a line; 0 is to move to the beginning
+vim.keymap.set('n', 'L', '$')
+vim.keymap.set('v', 'L', '$')
 
 -- Remove carriage return character ^M
 vim.keymap.set('n', '<leader>cr', [[:%s/\r//g<CR>]], { desc = 'Remove ^M (carriage returns)' })

@@ -1,0 +1,170 @@
+*roest-options.txt*    Editor Options Reference
+
+==============================================================================
+OPTIONS                                                        *roest-options*
+
+Editor settings configured in lua/options.lua.
+
+==============================================================================
+LINE NUMBERS                                          *roest-options-numbers*
+
+    vim.o.number = true
+    vim.o.relativenumber = true
+
+Shows both absolute line number (current line) and relative numbers
+(distance from cursor). Makes jumping easier: type 5j to go down 5 lines.
+
+Display:
+     3 │ some code
+     2 │ more code
+     1 │ line above cursor
+    42 │ ← cursor here (shows absolute line 42)
+     1 │ line below cursor
+     2 │ more code
+
+==============================================================================
+CLIPBOARD                                            *roest-options-clipboard*
+
+    vim.o.clipboard = 'unnamedplus'
+
+Syncs Neovim clipboard with system clipboard.
+When you yank (y), it goes to system clipboard.
+When you paste (p), it comes from system clipboard.
+
+Uses OSC52 for WSL/SSH compatibility (see copy() function in options.lua).
+
+==============================================================================
+MOUSE                                                    *roest-options-mouse*
+
+    vim.o.mouse = 'a'
+
+Enables mouse in all modes:
+    - Click to position cursor
+    - Drag to select
+    - Scroll wheel works
+    - Resize splits by dragging borders
+
+==============================================================================
+SEARCH                                                  *roest-options-search*
+
+    vim.o.ignorecase = true
+    vim.o.smartcase = true
+
+Search is case-insensitive UNLESS you include uppercase letters.
+
+    /hello      Matches: hello, Hello, HELLO
+    /Hello      Matches: Hello only
+
+==============================================================================
+SPLITS                                                  *roest-options-splits*
+
+    vim.o.splitright = true
+    vim.o.splitbelow = true
+
+New splits open to the right/below instead of left/above.
+More intuitive for most workflows.
+
+==============================================================================
+INDENTATION                                        *roest-options-indentation*
+
+    vim.opt.expandtab = true      " Use spaces, not tabs
+    vim.opt.smartindent = true    " Auto-indent new lines
+    vim.opt.tabstop = 4           " Tab = 4 spaces
+    vim.opt.shiftwidth = 4        " Indent = 4 spaces
+
+All indentation uses 4 spaces. Tabs are converted to spaces.
+
+==============================================================================
+UNDO                                                        *roest-options-undo*
+
+    vim.o.undofile = true
+
+Saves undo history to disk. You can undo changes even after closing
+and reopening a file.
+
+Undo files stored in: ~/.local/state/nvim/undo/
+
+==============================================================================
+APPEARANCE                                            *roest-options-appearance*
+
+    vim.o.cursorline = true       " Highlight current line
+    vim.o.signcolumn = 'yes'      " Always show sign column
+    vim.o.scrolloff = 10          " Keep 10 lines above/below cursor
+    vim.o.showmode = true         " Show mode (INSERT, VISUAL, etc.)
+
+==============================================================================
+TIMING                                                  *roest-options-timing*
+
+    vim.o.updatetime = 250        " CursorHold triggers after 250ms
+    vim.o.timeoutlen = 300        " Keymap sequence timeout 300ms
+
+updatetime: How long before CursorHold events fire (affects LSP highlighting)
+timeoutlen: How long to wait for next key in a mapping sequence
+
+==============================================================================
+SUBSTITUTION PREVIEW                              *roest-options-substitution*
+
+    vim.o.inccommand = 'split'
+
+Live preview of substitutions. When you type :%s/old/new/, shows
+a preview split with all matches highlighted.
+
+==============================================================================
+CONFIRM                                                *roest-options-confirm*
+
+    vim.o.confirm = true
+
+Instead of failing on :q with unsaved changes, asks if you want to save.
+
+==============================================================================
+NERD FONT                                            *roest-options-nerdfont*
+
+    vim.g.have_nerd_font = true
+
+Tells plugins to use Nerd Font icons. Make sure your terminal is using
+a Nerd Font (0xProto Nerd Font per your terminal setup).
+
+==============================================================================
+LEADER KEY                                              *roest-options-leader*
+
+    vim.g.mapleader = ' '
+    vim.g.maplocalleader = ' '
+
+Both leader keys are Space. Press Space to start leader sequences.
+
+==============================================================================
+AUTO-FORMATTING                                      *roest-options-autoformat*
+
+Configured at the end of options.lua:
+
+    vim.api.nvim_create_autocmd('BufWritePre', { ... })
+
+Runs conform.nvim formatter on every save (:w).
+
+==============================================================================
+TREESITTER HIGHLIGHTING                          *roest-options-highlighting*
+
+    vim.api.nvim_create_autocmd('FileType', {
+      callback = function()
+        pcall(vim.treesitter.start)
+      end,
+    })
+
+Enables Treesitter syntax highlighting for all filetypes that have
+a parser installed.
+
+==============================================================================
+STYLUA CONFIG                                          *roest-options-stylua*
+
+Your .stylua.toml configures the Lua formatter:
+
+    column_width = 160    " Max line length
+    indent_type = Spaces  " Use spaces
+    indent_width = 2      " 2-space indent (Lua convention)
+    quote_style = AutoPreferSingle
+
+Note: Lua uses 2-space indent per community convention.
+Other filetypes use 4-space indent from options.lua.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
