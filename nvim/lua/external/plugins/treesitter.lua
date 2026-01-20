@@ -10,6 +10,7 @@ return {
       'yaml',
       'bash',
       'markdown',
+      'sql',
     }
   end,
 }

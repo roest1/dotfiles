@@ -1,10 +1,8 @@
-# kickstart-modular.nvim
+# roest1-nvim (fork of kickstart-modular.nvim)
 
-## Introduction
+---
 
-_This is a fork of [nvim-lua/kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim) that moves from a single file to a multi file configuration._
-
-## Get started:
+# Get started:
 
 After you clone the repo make sure to install the necessary CLI tools with your package manager. I made an install script for brew:
 
@@ -12,6 +10,14 @@ After you clone the repo make sure to install the necessary CLI tools with your 
 cmod +x bootstrap.sh
 ./bootstrap.sh
 ```
+
+---
+
+# kickstart-modular.nvim
+
+## Introduction
+
+_This is a fork of [nvim-lua/kickstart.nvim](https://github.com/nvim-lua/kickstart.nvim) that moves from a single file to a multi file configuration._
 
 A starting point for Neovim that is:
 
