@@ -1,226 +1,294 @@
-*roest-commands.txt*    Custom Commands Reference
+*roest-commands.txt*    Riley Oest - Custom Commands Reference
 
 ==============================================================================
-COMMANDS                                                      *roest-commands*
+OVERVIEW                                                     *roest-commands*
 
-Custom commands you've created for this config.
+This file documents custom commands and key tooling in this Neovim setup.
+
+These commands are designed to work together as a lightweight workflow system
+for navigation, refactoring, and exporting code context.
+
+------------------------------------------------------------------------------
+WORKFLOW                                                     *roest-commands-flow*
+
+Typical workflow:
+
+    :Find service
+    :args
+    :next
+    :FindReplace old new
+    :Copy -r --dir_match=services --ext=cs
+
+Command roles:
+
+    :Find           -> locate relevant files quickly
+    :args/:next     -> navigate result set
+    :FindReplace    -> perform controlled refactors
+    :Copy           -> export context for AI/docs
 
 ==============================================================================
-:FIND                                                    *roest-commands-find*
+CUSTOM COMMANDS                                              *roest-commands-custom*
+
+==============================================================================
+:FIND                                                        *roest-commands-find*
 
 Find files containing a keyword using ripgrep.
 
 Usage:~
     :Find <keyword>
 
-What it does:~
-    1. Runs `rg -l <keyword>` to find files containing the keyword
-    2. Loads those files into the args list
-    3. You can then navigate with :next, :prev, or :args
+Behavior:~
+    - Executes: rg -l <keyword>
+    - Populates the args list with matching files
+    - Enables navigation via :args, :next, :prev
+
+Notes:~
+    - Uses ripgrep (fast, respects .gitignore by default)
+    - Returns file paths only (not match locations)
 
 Example:~
     :Find TODO
-    :args           " See list of files
-    :next           " Go to next file
-    :prev           " Go to previous file
+    :args
+    :next
+    :prev
 
 Location: lua/external/findreplace.lua
 
 ==============================================================================
-:FINDREPLACE                                      *roest-commands-findreplace*
+:FINDREPLACE                                          *roest-commands-findreplace*
 
-Find and replace text across your entire project.
+Find and replace text across all matching files.
 
 Usage:~
     :FindReplace <find> <replace>
 
-What it does:~
-    1. Finds all files containing <find>
-    2. Opens them in args list
-    3. Runs substitution with confirmation on each
+Behavior:~
+    1. Uses ripgrep to locate files containing <find>
+    2. Loads files into args list
+    3. Executes:
+        :argdo %s/<find>/<replace>/gc | update
+
+Prompt options:~
+    y  -> replace
+    n  -> skip
+    a  -> replace all remaining in file
+    q  -> quit
+    l  -> replace current and quit
+
+Limitations:~
+    - Arguments are space-delimited (no quoting support)
+    - Does not support spaces in <find> or <replace>
+    - Uses Vim regex (not literal unless escaped)
 
 Example:~
     :FindReplace oldFunction newFunction
 
-Each match will prompt:
-    y - yes, replace
-    n - no, skip
-    a - all remaining in this file
-    q - quit
-    l - last (replace this and quit)
-
 Location: lua/external/findreplace.lua
 
 ==============================================================================
-:COPY                                                    *roest-commands-copy*
+:COPY                                                        *roest-commands-copy*
 
-Copy directory contents to clipboard (great for pasting into AI chats).
+Copy file contents to clipboard for external use (AI, docs, sharing).
 
 Usage:~
     :Copy [options]
 
-Options:~
-    -r, --recursive         Include subdirectories
-    --exclude=<pattern>     Exclude files matching pattern
-    --prefix=<pattern>      Only include dirs matching prefix
-
-Examples:~
-    :Copy                           " Copy files in current dir
-    :Copy -r                        " Copy recursively
-    :Copy --exclude=node_modules    " Exclude node_modules
-    :Copy --exclude={.git,dist}     " Exclude multiple patterns
-    :Copy --prefix=src              " Only dirs starting with "src"
-
-Best used from Oil:
-    1. - to open directory browser
-    2. Navigate to desired directory
-    3. :Copy -r
+Core Behavior:~
+    - Detects file set using:
+        1. git ls-files (preferred, respects .gitignore)
+        2. fd (fallback)
+        3. find (final fallback)
+    - Skips binary files automatically
+    - Outputs structured file blocks to clipboard
 
 Output format:~
-    --- Start of /path/to/file.lua ---
+    --- Start of /path/to/file ---
     <file contents>
-    --- End of /path/to/file.lua ---
+    --- End of /path/to/file ---
+
+Options:~
+    -r, --recursive
+        Include subdirectories
+
+    --match=<pattern>
+        File path must contain pattern (AND logic)
+        Example: --match={api,controller}
+
+    --dir_match=<pattern>
+        File must be inside matching directory (OR logic)
+        Example: --dir_match={src,lib}
+
+    --exclude=<pattern>
+        Exclude files containing pattern
+
+    --ext=<ext>
+        Filter by file extension (no dot)
+        Example: --ext={cs,ts}
+
+    --max=<n>
+        Limit number of files (default: 100)
+
+    --no-gitignore
+        Disable .gitignore filtering
+
+Filtering semantics:~
+    - --match -> ALL patterns must match (AND)
+    - --dir_match -> ANY directory match is valid (OR)
+
+Examples:~
+    :Copy
+    :Copy -r
+    :Copy --ext=cs
+    :Copy -r --dir_match=services --ext=cs
+    :Copy -r --match={api,controller} --exclude=test
+
+Recommended usage (Oil):~
+    1. Press `-` to open directory view
+    2. Navigate to target directory
+    3. Run :Copy with desired filters
 
 Location: lua/external/copy.lua
 
 ==============================================================================
-:RESETNVIM                                            *roest-commands-reset*
+:RESETNVIM                                                *roest-commands-reset*
 
-Nuclear option: wipe all Neovim cache and plugin data.
+Reset Neovim environment (destructive).
 
 Usage:~
-    :ResetNvim          " Prompts for confirmation
-    :ResetNvim!         " Force without confirmation
+    :ResetNvim      (confirmation prompt)
+    :ResetNvim!     (force)
 
-What it deletes:~
-    ~/.local/share/nvim     " Plugin data, Mason installs
-    ~/.cache/nvim           " Cache files
+Deletes:~
+    ~/.local/share/nvim     (plugins, Mason installs)
+    ~/.cache/nvim           (cache)
 
-After running:~
+After execution:~
     1. Restart Neovim
-    2. Lazy will reinstall all plugins
-    3. Mason will need to reinstall LSPs
+    2. Plugins reinstall via Lazy
+    3. LSPs/tools must be reinstalled via Mason
 
 When to use:~
-    - Plugins are corrupted
-    - Weird errors that won't go away
-    - Fresh start needed
+    - Plugin corruption
+    - Persistent unexplained errors
+    - Full environment reset
 
 Location: lua/external/reset.lua
 
 ==============================================================================
-:YANKBUFFER                                        *roest-commands-yankbuffer*
+:YANKBUFFER                                            *roest-commands-yankbuffer*
 
 Copy entire buffer to system clipboard.
 
 Usage:~
     :YankBuffer
-    :%y              " Aliased to YankBuffer
+    :%y     (alias)
 
-What it does:~
-    Yanks the entire file to the + register (system clipboard)
-    using OSC52 for WSL/SSH compatibility.
+Behavior:~
+    - Yanks full buffer to + register
+    - Uses OSC52 for compatibility with:
+        - WSL
+        - SSH sessions
 
 Location: lua/keymaps.lua
 
 ==============================================================================
-:GLOW                                                    *roest-commands-glow*
+:GLOW                                                        *roest-commands-glow*
 
-Render markdown file in terminal.
+Render Markdown preview in terminal.
 
 Usage:~
     :Glow
 
-Opens a preview of the current markdown file.
-Press q to close.
+Behavior:~
+    - Opens interactive preview of current markdown file
+    - Press q to exit
 
-Requires: glow CLI tool
+Requirements:~
+    glow CLI tool
+
+Install:~
     brew install glow
-    # or
     sudo apt install glow
 
 Location: lua/external/plugins/glow.lua
 
 ==============================================================================
-LAZY COMMANDS                                        *roest-commands-lazy*
+CORE TOOLING                                                *roest-commands-core*
 
-Plugin manager commands:
+==============================================================================
+LAZY (Plugin Manager)                                  *roest-commands-lazy*
 
-    :Lazy               Open Lazy dashboard
-    :Lazy update        Update all plugins
-    :Lazy sync          Sync (install missing, update, clean)
+    :Lazy               Open dashboard
+    :Lazy update        Update plugins
+    :Lazy sync          Install/update/clean
     :Lazy clean         Remove unused plugins
-    :Lazy health        Check for issues
-    :Lazy profile       Show startup time
+    :Lazy health        Diagnostics
+    :Lazy profile       Startup profiling
 
-Inside Lazy dashboard, press ? for help.
+Inside dashboard: press ? for help
 
 ==============================================================================
-MASON COMMANDS                                        *roest-commands-mason*
+MASON (Tool Installer)                                *roest-commands-mason*
 
-LSP/tool installer commands:
-
-    :Mason              Open Mason dashboard
-    :MasonInstall X     Install tool X
-    :MasonUninstall X   Uninstall tool X
+    :Mason              Open UI
+    :MasonInstall X     Install tool
+    :MasonUninstall X   Remove tool
     :MasonUpdate        Update all tools
-    :MasonLog           View install logs
+    :MasonLog           View logs
 
-Common tools to install:
-    - lua-language-server (Lua)
-    - pyright (Python)
-    - typescript-language-server (JS/TS)
-    - stylua (Lua formatter)
-    - prettierd (JS/TS formatter)
-    - black (Python formatter)
-
-==============================================================================
-LSP COMMANDS                                            *roest-commands-lsp*
-
-    :LspInfo            Show attached LSP servers
-    :LspRestart         Restart LSP for current buffer
-    :LspStop            Stop LSP for current buffer
-    :LspStart           Start LSP for current buffer
+Common tools:~
+    lua-language-server
+    pyright
+    typescript-language-server
+    stylua
+    prettierd
+    black
 
 ==============================================================================
-TELESCOPE COMMANDS                                *roest-commands-telescope*
+LSP                                                         *roest-commands-lsp*
 
-    :Telescope                  Open picker selection
-    :Telescope find_files       Find files
-    :Telescope live_grep        Search in files
-    :Telescope buffers          Open buffers
-    :Telescope help_tags        Search help
-    :Telescope keymaps          Search keymaps
-    :Telescope commands         Search commands
-    :Telescope git_status       Git status
-    :Telescope git_commits      Git commits
+    :LspInfo        Show active servers
+    :LspRestart     Restart LSP
+    :LspStop        Stop LSP
+    :LspStart       Start LSP
 
 ==============================================================================
-TROUBLE COMMANDS                                    *roest-commands-trouble*
+TELESCOPE                                             *roest-commands-telescope*
 
-    :Trouble                    Open default view
-    :Trouble diagnostics        All diagnostics
-    :Trouble symbols            Document symbols
-    :Trouble lsp                LSP references/definitions
-    :Trouble qflist             Quickfix list
-    :Trouble loclist            Location list
-    :Trouble close              Close panel
-
-==============================================================================
-TREESITTER COMMANDS                              *roest-commands-treesitter*
-
-    :TSInstall <lang>           Install parser
-    :TSUpdate                   Update all parsers
-    :TSInstallInfo              Show installed parsers
-    :TSModuleInfo               Show module info
+    :Telescope find_files
+    :Telescope live_grep
+    :Telescope buffers
+    :Telescope help_tags
+    :Telescope keymaps
+    :Telescope commands
+    :Telescope git_status
+    :Telescope git_commits
 
 ==============================================================================
-ROSLYN COMMANDS                                      *roest-commands-roslyn*
+TROUBLE                                                *roest-commands-trouble*
 
-For C# development:
+    :Trouble diagnostics
+    :Trouble symbols
+    :Trouble lsp
+    :Trouble qflist
+    :Trouble loclist
+    :Trouble close
 
-    :Roslyn target              Change solution target
-    :Roslyn restart             Restart Roslyn server
+==============================================================================
+TREESITTER                                          *roest-commands-treesitter*
+
+    :TSInstall <lang>
+    :TSUpdate
+    :TSInstallInfo
+    :TSModuleInfo
+
+==============================================================================
+ROSLYN                                                  *roest-commands-roslyn*
+
+C# development support:
+
+    :Roslyn target
+    :Roslyn restart
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

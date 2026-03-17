@@ -23,8 +23,11 @@ roest-bash-z	roest-bash.txt	/*roest-bash-z*
 roest-bash.txt	roest-bash.txt	/*roest-bash.txt*
 roest-commands	roest-commands.txt	/*roest-commands*
 roest-commands-copy	roest-commands.txt	/*roest-commands-copy*
+roest-commands-core	roest-commands.txt	/*roest-commands-core*
+roest-commands-custom	roest-commands.txt	/*roest-commands-custom*
 roest-commands-find	roest-commands.txt	/*roest-commands-find*
 roest-commands-findreplace	roest-commands.txt	/*roest-commands-findreplace*
+roest-commands-flow	roest-commands.txt	/*roest-commands-flow*
 roest-commands-glow	roest-commands.txt	/*roest-commands-glow*
 roest-commands-lazy	roest-commands.txt	/*roest-commands-lazy*
 roest-commands-lsp	roest-commands.txt	/*roest-commands-lsp*
