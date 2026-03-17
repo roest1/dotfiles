@@ -28,6 +28,9 @@ local plugin_modules = {
   'external/plugins/treesitter',
   'external/plugins/trouble',
   'external/plugins/undotree',
+  'external/plugins/which-key',
+  'external/plugins/mini',
+  'external/plugins/todo-comments',
 }
 
 local plugins = {}

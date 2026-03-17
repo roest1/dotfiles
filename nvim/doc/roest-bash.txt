@@ -1,0 +1,169 @@
+*roest-bash.txt*    Bash Productivity Reference
+
+==============================================================================
+BASH COMMANDS                                                    *roest-bash*
+
+Custom bash commands from ~/.bash_productivity.
+Run `h` in terminal for quick reference, or `h <cmd>` for details.
+
+Source: `source ~/.bash_productivity` in ~/.bashrc
+
+==============================================================================
+TOOLS & DEPENDENCIES                                       *roest-bash-deps*
+
+Install once, benefit forever:
+
+    Core (you likely have these):~
+        rg          ripgrep — fast grep
+        fd          fast file finder
+
+    Recommended:~
+        zoxide      Smart cd (learns your dirs)
+        fzf         Fuzzy finder (transforms Ctrl+R, Ctrl+T, Alt+C)
+        bat         cat with syntax highlighting
+        eza         ls with icons, git status, tree view
+
+    Install all: `brew install zoxide fzf bat eza`
+
+==============================================================================
+NAVIGATION                                            *roest-bash-navigation*
+
+z {partial}                                                  *roest-bash-z*
+    Smart directory jumper. Learns from your cd habits via frecency
+    (frequency × recency). After a week, `z proj` jumps to ~/projects.
+    `zi` opens interactive fuzzy pick.
+    Depends on: zoxide
+
+mkcd {dir}                                                *roest-bash-mkcd*
+    Create directory (including intermediates) and cd into it.
+    Equivalent to: mkdir -p dir && cd dir
+
+up [N]                                                      *roest-bash-up*
+    Go up N directories (default: 1).
+    `up 3` = cd ../../..
+
+==============================================================================
+FILE SEARCH                                          *roest-bash-file-search*
+
+f                                                            *roest-bash-f*
+f {pattern}
+    No args: fuzzy-pick a file with fzf, opens in nvim.
+    With args: runs fd search (respects .gitignore).
+    Depends on: fzf, fd
+
+findword {word} [-I 'dir1|dir2']                    *roest-bash-findword*
+    Whole-word grep across project using ripgrep.
+    Searches hidden files, skips .git/node_modules/bin/obj.
+    The -I flag excludes pipe-separated directories.
+    Depends on: rg
+
+extract {file}                                         *roest-bash-extract*
+    Universal archive extractor. Auto-detects format.
+    Supports: tar.gz, tar.bz2, zip, rar, gz, bz2, 7z, tgz, tbz2, Z
+
+==============================================================================
+PROJECT INFO                                        *roest-bash-project-info*
+
+lines                                                    *roest-bash-lines*
+lines {ext} [ext2 ...]
+    Count lines of code. No args = total across all tracked files.
+    With extensions = per-extension counts.
+    Inside git repos, uses `git ls-files` (skips build artifacts).
+
+==============================================================================
+GIT ALIASES                                                *roest-bash-git*
+
+Short forms for daily git operations:
+
+    Status & diff:~
+        gs          git status -sb (short + branch)
+        gd          git diff (unstaged changes)
+        gds         git diff --staged
+
+    Staging & committing:~
+        ga {file}   git add
+        gaa         git add -A (stage everything)
+        gc "msg"    git commit -m "msg"
+        gca         git commit --amend --no-edit
+
+    Pushing:~
+        gp          git push
+        gpf         git push --force-with-lease (safe force push)
+
+    History:~
+        gl          git log --oneline -20
+        gll         git log --oneline --graph --all -30
+
+    Branching:~
+        gco {br}    git checkout
+        gcb {br}    git checkout -b (create + switch)
+        gb          git branch sorted by most recent commit
+
+    Stashing:~
+        gst         git stash
+        gstp        git stash pop
+
+Note: `gpf` uses --force-with-lease, which refuses to push if the
+remote has commits you haven't pulled. Always use this over --force.
+
+==============================================================================
+UTILITIES                                            *roest-bash-utilities*
+
+port {number}                                            *roest-bash-port*
+    Show what process is using a port.
+    Tries lsof first, falls back to ss on Linux.
+
+ddiff {file1} {file2}                                   *roest-bash-ddiff*
+    Side-by-side colored diff filling terminal width.
+    Output piped through less for scrolling.
+
+serve [port]                                            *roest-bash-serve*
+    Quick HTTP server in current directory (default: 8000).
+    Uses python3 -m http.server.
+
+loop {cmd}                                               *roest-bash-loop*
+    Repeat a command every 2s with clear screen + timestamp.
+    Set LOOP_INTERVAL=N for custom interval. Ctrl+C to stop.
+
+==============================================================================
+BETTER DEFAULTS                                      *roest-bash-defaults*
+
+These are aliased over standard commands:
+
+    ls      → eza with icons, directories first            [eza]
+    ll      → eza -la with git status column               [eza]
+    lt      → eza tree view (2 levels, git-aware)          [eza]
+    cat     → bat with syntax highlighting (no chrome)     [bat]
+    catn    → bat with line numbers + full chrome           [bat]
+
+==============================================================================
+KEYBOARD SHORTCUTS (FZF)                            *roest-bash-shortcuts*
+
+These keybindings are set up by fzf's shell integration:
+
+    Ctrl+R      Fuzzy search command history
+                (replaces default reverse-i-search)
+
+    Ctrl+T      Fuzzy file picker — inserts selected path
+                at cursor position
+
+    Alt+C       Fuzzy cd — pick a subdirectory and cd into it
+
+All three use fd under the hood when available, which means
+they respect .gitignore and skip .git/ directories.
+
+==============================================================================
+HELP SYSTEM                                            *roest-bash-help*
+
+    h                   Show quick reference of all commands
+    h {command}         Show detailed help for a specific command
+    h deps              Show required tools and how to install
+
+The help system reads from comments in ~/.bash_productivity itself,
+so it's always in sync with the actual commands.
+
+In Neovim:
+    :help roest-bash    This file
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

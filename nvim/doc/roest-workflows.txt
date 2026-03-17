@@ -5,6 +5,17 @@ WORKFLOWS                                                    *roest-workflows*
 
 "How do I..." recipes for common tasks.
 
+
+TODO:
+
+Where should I put find-replace in file 
+
+/<find-key>
+cgn<replace-key> → <Esc>
+
+    Press . to repeat replace
+    Press n/N to go to next/Prev
+
 ==============================================================================
 FINDING FILES                                        *roest-workflows-finding*
 

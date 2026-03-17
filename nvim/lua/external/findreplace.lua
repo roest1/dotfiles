@@ -52,7 +52,7 @@ function M.setup()
       return
     end
 
-    local find, replace = args[1], args[2]
+    local find, replace = unpack(args)
     local files = get_files_matching(find)
     if not files then
       return

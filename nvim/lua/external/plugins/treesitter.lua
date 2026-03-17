@@ -11,6 +11,11 @@ return {
       'bash',
       'markdown',
       'sql',
+      'typescript',
+      'javascript',
+      'tsx',
+      'terraform',
+      'python',
     }
   end,
 }
