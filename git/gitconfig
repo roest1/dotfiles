@@ -1,0 +1,10 @@
+[user]
+	name = roest1
+	email = 95721769+roest1@users.noreply.github.com
+[credential]
+	helper = store
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true

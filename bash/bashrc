@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#~/.bashrc
+
+#####################################################################
+# Riley Oest .bashrc
+#####################################################################
+
+# ~/.bashrc: executed by bash(1) for non-login shells.
+# see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
+# for examples
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# ─── History ───────────────────────────────────────────────────────
+# don't put duplicate lines or lines starting with space in the history.
+# See bash(1) for more options
+HISTCONTROL=ignoreboth
+
+shopt -s histappend # append to the history file, don't overwrite it
+
+# for setting history length see HISTSIZE and HISTFILESIZE in bash(1)
+HISTSIZE=100000 # in memory (RAM) cache
+HISTFILESIZE=100000 # on disk (hard drive) .bash_history
+
+
+# ─── Shell options ─────────────────────────────────────────────────
+# check the window size after each command and, if necessary,
+# update the values of LINES and COLUMNS.
+shopt -s checkwinsize
+shopt -s cdspell        # Auto-correct minor cd typos (e.g. `cd projetcs` → `cd projects`)
+shopt -s dirspell       # Auto-correct directory names during tab completion
+shopt -s globstar       # ** matches files + directories recursively (e.g. `ls **/*.py`)
+
+# ─── Completion ────────────────────────────────────────────────────
+# enable programmable completion features (you don't need to enable
+# this, if it's already enabled in /etc/bash.bashrc and /etc/profile
+# sources /etc/bash.bashrc).
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+
+# ─── lesspipe (makes `less` handle binary files) ──────────────────
+# make less more friendly for non-text input files, see lesspipe(1)
+[ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
+
+# ─── Alert alias (for long-running commands: `sleep 10; alert`) ───
+# Add an "alert" alias for long running commands.  Use like so:
+#   sleep 10; alert
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+
+#####################################################################
+# PATH
+#####################################################################
+
+export PATH="$HOME/bin:$PATH"
+
+# distro
+export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+
+# ─── .NET ──────────────────────────────────────────────────────────
+export DOTNET_ROOT="$HOME/.dotnet"
+export DOTNET_MULTILEVEL_LOOKUP=1
+export PATH="$DOTNET_ROOT:$PATH"
+
+# ─── Java ──────────────────────────────────────────────────────────
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH=$JAVA_HOME/bin:$PATH
+
+#####################################################################
+# Package managers (auto-generated blocks — don't manually edit)
+#####################################################################
+
+# Prevent Conda from messing with the prompt colors we built
+export CONDA_CHANGEPS1=false
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/riley/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/riley/miniconda3/etc/profile.d/conda.sh" ]; then
+        . "/home/riley/miniconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/riley/miniconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
+
+# nvm
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+#####################################################################
+# Custom config
+#####################################################################
+
+source ~/.bash_roest_theme
+source ~/.bash_roest_password_commands
+source ~/.bash_roest_productivity

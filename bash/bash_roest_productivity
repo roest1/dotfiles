@@ -1,0 +1,570 @@
+#!/usr/bin/env bash
+# ~/.bash_roest_productivity
+#
+# Source this from .bashrc:
+#   source ~/.bash_roest_productivity
+#
+# Prerequisites (install once):
+#   brew install zoxide fzf bat eza
+#
+# See all custom commands:
+#   h           Show quick reference
+#   h <command> Show detailed help for a command
+
+# ─── zoxide (smarter cd) ──────────────────────────────────────────────────────
+# Learns from your cd habits. After a few days, `z proj` jumps to ~/projects.
+#
+# How it works: every time you `cd` somewhere, zoxide records the path and
+# how often you visit it. `z` uses frecency (frequency + recency) to rank
+# matches. It's a drop-in `cd` replacement — you don't change any habits,
+# you just type less over time.
+#
+# Depends on: zoxide (brew install zoxide)
+if command -v zoxide &>/dev/null; then
+  eval "$(zoxide init bash)"
+fi
+
+# ─── fzf (fuzzy everything) ───────────────────────────────────────────────────
+# Transforms three built-in keybindings:
+#   Ctrl+R  → fuzzy search command history (instead of reverse-i-search)
+#   Ctrl+T  → fuzzy file picker, inserts path at cursor
+#   Alt+C   → fuzzy cd into a subdirectory
+#
+# How it works: fzf reads lines from stdin (or a command), presents a
+# fuzzy-searchable list, and outputs the selection. The keybindings above
+# are shell integrations that pipe history/files/dirs into fzf automatically.
+#
+# FZF_DEFAULT_COMMAND controls what `fzf` lists when run with no input.
+# We point it at `fd` so it respects .gitignore and skips .git/.
+#
+# Depends on: fzf (brew install fzf), optionally fd for faster file listing
+if command -v fzf &>/dev/null; then
+  eval "$(fzf --bash 2>/dev/null)" || source /usr/share/bash-completion/completions/fzf 2>/dev/null
+  export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
+  if command -v fd &>/dev/null; then
+    export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+    export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+    export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+  fi
+fi
+
+# ─── Git aliases ──────────────────────────────────────────────────────────────
+# Muscle-memory shortcuts. `gs` instead of `git status`, etc.
+# --force-with-lease is a safer force push (fails if remote has new commits).
+# `gb` sorts branches by most recently committed — your active branches first.
+alias gs='git status -sb'
+alias ga='git add'
+alias gaa='git add -A'
+alias gc='git commit -m'
+alias gca='git commit --amend --no-edit'
+alias gp='git push'
+alias gpf='git push --force-with-lease'
+alias gl='git log --oneline -20'
+alias gll='git log --oneline --graph --all -30'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gco='git checkout'
+alias gcb='git checkout -b'
+alias gb='git branch --sort=-committerdate'
+alias gst='git stash'
+alias gstp='git stash pop'
+
+# ─── Better defaults ──────────────────────────────────────────────────────────
+# eza: modern ls replacement with git integration and icons.
+# bat: cat with syntax highlighting and line numbers.
+# On Debian/Ubuntu, bat installs as `batcat` due to a name conflict.
+if command -v eza &>/dev/null; then
+  alias ls='eza --icons --group-directories-first'
+  alias ll='eza -la --icons --group-directories-first --git'
+  alias lt='eza -la --icons --tree --level=2 --git-ignore'
+else
+  alias ll='ls -alFh'
+fi
+
+if command -v bat &>/dev/null; then
+  alias cat='bat --plain --paging=never'
+  alias catn='bat'
+elif command -v batcat &>/dev/null; then
+  alias cat='batcat --plain --paging=never'
+  alias catn='batcat'
+fi
+
+# ─── Directory shortcuts ──────────────────────────────────────────────────────
+
+# mkcd: create directory and cd into it in one step
+mkcd() {
+  mkdir -p "$1" && cd "$1"
+}
+
+# up: go up N directories. `up 3` = cd ../../..
+up() {
+  local d=""
+  for ((i = 1; i <= ${1:-1}; i++)); do
+    d="../$d"
+  done
+  cd "$d" || return
+}
+
+# ─── Quick file search ────────────────────────────────────────────────────────
+
+# f: find file by name. No args → fzf picker → open in nvim.
+# With args → fd search (respects .gitignore).
+#
+# Depends on: fzf, fd
+f() {
+  if [[ $# -eq 0 ]]; then
+    local file
+    file=$(fzf --preview 'head -50 {}' 2>/dev/null)
+    [[ -n "$file" ]] && nvim "$file"
+  else
+    fd --type f "$1"
+  fi
+}
+
+# ─── Quick project stats ──────────────────────────────────────────────────────
+
+# lines: count lines of code by extension.
+# Uses git ls-files when inside a repo (skips generated/ignored files).
+#
+# Usage: `lines` (total) or `lines py lua ts` (by extension)
+lines() {
+  if [[ $# -eq 0 ]]; then
+    if git rev-parse --is-inside-work-tree &>/dev/null; then
+      git ls-files | xargs wc -l 2>/dev/null | tail -1
+    else
+      find . -type f | head -500 | xargs wc -l 2>/dev/null | tail -1
+    fi
+  else
+    for ext in "$@"; do
+      local count
+      count=$(find . -name "*.${ext}" -not -path '*/.git/*' -not -path '*/node_modules/*' | xargs wc -l 2>/dev/null | tail -1)
+      echo "${ext}: ${count}"
+    done
+  fi
+}
+
+# ─── Process management ──────────────────────────────────────────────────────
+
+# port: show what's running on a given port.
+# Uses lsof first (macOS/Linux), falls back to ss (Linux).
+port() {
+  lsof -i :"$1" 2>/dev/null || ss -tlnp | grep ":$1"
+}
+
+# ─── Misc power tools ────────────────────────────────────────────────────────
+
+# c: clear alias
+c() {
+    clear
+}
+
+# ddiff: side-by-side colored diff of two files
+ddiff() {
+  diff --color=always -y --width="$(tput cols)" "$1" "$2" | less -R
+}
+
+# serve: quick HTTP server in current directory
+# Depends on: python3
+serve() {
+  local port="${1:-8000}"
+  echo "Serving on http://localhost:${port}"
+  python3 -m http.server "$port"
+}
+
+# loop: repeatedly run a command with a clear screen (like watch)
+# Usage: loop ls -la    (refreshes every 2s)
+#        LOOP_INTERVAL=5 loop df -h
+loop() {
+  while true; do
+    clear
+    echo "─── $(date) ───"
+    eval "$@"
+    sleep "${LOOP_INTERVAL:-2}"
+  done
+}
+
+# findword: rg all occurences
+findword() {
+    local search_term="$1"
+    shift
+    local ignore_dirs=""
+
+    # Professional argument parsing for the -I flag
+    while [[ "$#" -gt 0 ]]; do
+        case $1 in
+            -I) ignore_dirs="$2"; shift ;;
+            *) echo "Unknown parameter: $1"; return 1 ;;
+        esac
+        shift
+    done
+
+    if [ -z "$search_term" ]; then
+        echo "Usage: findword <search_string> [-I 'dir1|dir2']"
+        return 1
+    fi
+
+    # Initialize the command array to avoid shell expansion issues
+    local rg_args=(
+        --column
+        --line-number
+        --no-heading
+        --color=always
+        --smart-case
+        --word-regexp # This is the same as \b...\b but cleaner
+        --hidden
+    )
+
+    # Standard excludes
+    for pattern in ".git" "node_modules" "bin" "obj"; do
+        rg_args+=(--glob "!**/$pattern/*")
+    done
+
+    # Custom excludes from the -I flag
+    if [ -n "$ignore_dirs" ]; then
+        IFS='|' read -ra DIRS <<< "$ignore_dirs"
+        for dir in "${DIRS[@]}"; do
+            # We use !**/$dir/** to prune the directory tree entirely
+            rg_args+=(--glob "!**/$dir/**")
+        done
+    fi
+
+    # Final execution
+    rg "${rg_args[@]}" "$search_term"
+}
+
+
+# extract: Universal archive extractor
+extract() {
+    if [ -f "$1" ]; then
+        case "$1" in
+            *.tar.bz2)   tar xjf "$1"     ;;
+            *.tar.gz)    tar xzf "$1"     ;;
+            *.bz2)       bunzip2 "$1"     ;;
+            *.rar)       unrar x "$1"     ;;
+            *.gz)        gunzip "$1"      ;;
+            *.tar)       tar xf "$1"      ;;
+            *.tbz2)      tar xjf "$1"     ;;
+            *.tgz)       tar xzf "$1"     ;;
+            *.zip)       unzip "$1"       ;;
+            *.Z)         uncompress "$1"  ;;
+            *.7z)        7z x "$1"        ;;
+            *)           echo "'$1' cannot be extracted via extract()" ;;
+        esac
+    else
+        echo "'$1' is not a valid file"
+    fi
+}
+
+# ─── .NET clean/build/test aliases ─────────────────────────────────────────────
+
+# dclean: dotnet clean alias
+dclean() {
+    dotnet clean
+}
+
+# dbuild: dotnet build -v:minimal /m:1 alias
+dbuild() {
+    dotnet build -v:minimal /m:1
+}
+
+# dtest: dotnet test alias (overrides dapl2-utils if installed)
+dtest() {
+    dotnet test
+}
+
+# ─── Help System ──────────────────────────────────────────────────────────────
+#
+# `h` shows a quick reference of all custom commands.
+# `h <command>` shows detailed help for a specific command.
+#
+# This reads from the comments in THIS file, so it's always in sync.
+# No separate docs to maintain.
+
+h() {
+  if [[ $# -eq 0 ]]; then
+    # Quick reference — all commands at a glance
+    cat <<'HELP'
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Custom Bash Commands          (detailed: h <command>)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Navigation
+    z <partial>        Smart cd (learns your habits)       [zoxide]
+    mkcd <dir>         mkdir + cd in one step
+    up [N]             Go up N directories (default: 1)
+
+  File Search
+    f                  Fuzzy find file → open in nvim      [fzf, fd]
+    f <pattern>        Search files by name                [fd]
+    findword <str>     Grep for whole-word matches         [rg]
+    extract <file>     Auto-extract any archive format
+
+  Project Info
+    lines              Total lines of code (git-aware)
+    lines py lua       Lines by extension
+
+  Git (aliases)
+    gs                 status -sb
+    ga / gaa           add / add -A
+    gc "msg"           commit -m
+    gca                commit --amend --no-edit
+    gp / gpf           push / push --force-with-lease
+    gl / gll           log --oneline / log --graph --all
+    gd / gds           diff / diff --staged
+    gco / gcb          checkout / checkout -b
+    gb                 branch (sorted by recent use)
+    gst / gstp         stash / stash pop
+
+  Utilities
+    port <num>         What's running on this port?
+    ddiff <a> <b>      Side-by-side colored diff
+    serve [port]       HTTP server in current dir (default: 8000)
+    loop <cmd>         Repeat command every 2s (like watch)
+    c                  clear
+
+  Better Defaults (aliased)
+    ls                 eza with icons + dirs first          [eza]
+    ll                 eza -la with git status              [eza]
+    lt                 eza tree (2 levels, git-aware)       [eza]
+    cat                bat with syntax highlighting         [bat]
+    catn               bat with line numbers + chrome       [bat]
+
+  Keyboard Shortcuts                                       [fzf]
+    Ctrl+R             Fuzzy search command history
+    Ctrl+T             Fuzzy file picker (inserts path)
+    Alt+C              Fuzzy cd into subdirectory
+
+  Neovim (see :help roest-bash)
+    :Copy              Copy directory files to clipboard
+    :Find / :FindReplace   Project-wide search/replace
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  [tool] = requires that tool installed. See: h deps
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HELP
+    return
+  fi
+
+  # Detailed help per command
+  case "$1" in
+    z|zoxide)
+      cat <<'HELP'
+z — smart directory jumper (zoxide)
+
+  z <partial>     Jump to best-matching directory
+  z proj          → ~/projects (if you cd there often)
+  z nvim          → ~/.config/nvim
+  zi              Interactive fuzzy pick from history
+
+  How it works:
+    zoxide hooks into `cd` and records every directory you visit.
+    It ranks them by "frecency" (frequency × recency). When you
+    type `z foo`, it picks the highest-ranked dir containing "foo".
+    After a week of normal use, it knows your entire workflow.
+
+  Install: brew install zoxide
+HELP
+      ;;
+    f)
+      cat <<'HELP'
+f — quick file finder
+
+  f               Fuzzy-pick a file, open in nvim
+  f <pattern>     List files matching pattern (fd search)
+
+  No args: launches fzf with a file preview. Select a file and it
+  opens in nvim. Great for "I know the file exists but forget where."
+
+  With args: runs `fd --type f <pattern>` which respects .gitignore
+  and searches recursively from the current directory.
+
+  Depends on: fzf, fd
+HELP
+      ;;
+    findword)
+      cat <<'HELP'
+findword — whole-word grep across project
+
+  findword <word>                     Search all files
+  findword <word> -I 'dir1|dir2'     Exclude directories
+
+  Uses ripgrep with --word-regexp (matches whole words only,
+  like \b...\b). Searches hidden files, skips .git/node_modules/
+  bin/obj by default.
+
+  The -I flag takes pipe-separated directory names to exclude.
+
+  Example:
+    findword "useState" -I 'dist|coverage'
+
+  Depends on: rg (ripgrep)
+HELP
+      ;;
+    extract)
+      cat <<'HELP'
+extract — universal archive extractor
+
+  extract <file>
+
+  Detects format and extracts: .tar.gz, .tar.bz2, .zip, .rar,
+  .gz, .bz2, .7z, .tgz, .tbz2, .Z
+
+  No flags to remember — just `extract whatever.tar.gz`.
+HELP
+      ;;
+    lines)
+      cat <<'HELP'
+lines — count lines of code
+
+  lines              Total lines across all tracked files
+  lines py           Lines in .py files
+  lines lua py ts    Lines per extension
+
+  Inside a git repo, uses `git ls-files` so it only counts
+  tracked files (skips build artifacts, node_modules, etc).
+  Outside git, scans up to 500 files from current directory.
+HELP
+      ;;
+    port)
+      cat <<'HELP'
+port — check what's using a port
+
+  port 3000         Show process on port 3000
+  port 8080         Show process on port 8080
+
+  Tries lsof first (works on macOS + Linux), falls back to
+  ss -tlnp on Linux. Shows PID, process name, and state.
+HELP
+      ;;
+    serve)
+      cat <<'HELP'
+serve — quick HTTP server
+
+  serve              Start on port 8000
+  serve 3000         Start on port 3000
+
+  Serves the current directory via python3 -m http.server.
+  Useful for quickly sharing files or testing static sites.
+HELP
+      ;;
+    loop)
+      cat <<'HELP'
+loop — repeat a command (like watch)
+
+  loop ls -la                     Refresh every 2s
+  LOOP_INTERVAL=5 loop df -h     Refresh every 5s
+
+  Clears the screen each iteration and shows a timestamp.
+  Ctrl+C to stop.
+HELP
+      ;;
+    ddiff)
+      cat <<'HELP'
+ddiff — side-by-side diff
+
+  ddiff file1.txt file2.txt
+
+  Colored side-by-side diff that fills terminal width.
+  Output goes through less for scrolling.
+HELP
+      ;;
+    mkcd)
+      cat <<'HELP'
+mkcd — create and enter directory
+
+  mkcd my/new/dir
+
+  Equivalent to: mkdir -p my/new/dir && cd my/new/dir
+  Creates intermediate directories as needed.
+HELP
+      ;;
+    up)
+      cat <<'HELP'
+up — go up N directories
+
+  up        Go up 1 directory  (cd ..)
+  up 3      Go up 3 directories (cd ../../..)
+
+  Faster than typing ../../../ especially deep in a tree.
+HELP
+      ;;
+    git|gs|ga|gc|gp|gd|gl|gco|gcb|gb|gst|gstp|gaa|gca|gpf|gll|gds)
+      cat <<'HELP'
+Git aliases — short forms for daily git commands
+
+  gs          git status -sb            (short status + branch)
+  ga <file>   git add <file>
+  gaa         git add -A                (stage everything)
+  gc "msg"    git commit -m "msg"
+  gca         git commit --amend --no-edit  (amend last commit)
+  gp          git push
+  gpf         git push --force-with-lease   (safe force push)
+  gl          git log --oneline -20
+  gll         git log --oneline --graph --all -30  (visual history)
+  gd          git diff                  (unstaged changes)
+  gds         git diff --staged         (staged changes)
+  gco <br>    git checkout <branch>
+  gcb <br>    git checkout -b <branch>  (create + switch)
+  gb          git branch --sort=-committerdate  (recent first)
+  gst         git stash
+  gstp        git stash pop
+
+  Note: --force-with-lease (gpf) is safer than --force because
+  it refuses to push if the remote has commits you haven't pulled.
+  Use it instead of --force when rewriting history.
+HELP
+      ;;
+    deps|dependencies)
+        echo -e "\033[1mChecking status of required tools...\033[0m"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      local tools=(zoxide fzf bat eza rg fd nvim dotnet gh)
+      local missing=()
+      
+      for cmd in "${tools[@]}"; do
+        local display_name=$cmd
+        local found=false
+        
+        # Special check logic for variations
+        if [[ "$cmd" == "bat" ]] && command -v batcat &>/dev/null; then
+          found=true
+        elif [[ "$cmd" == "rg" ]] && command -v rg &>/dev/null; then
+          found=true
+        elif command -v "$cmd" &>/dev/null; then
+          found=true
+        fi
+
+        if [ "$found" = true ]; then
+          printf "  \033[32m%-10s ✅ Installed\033[0m\n" "$display_name"
+        else
+          printf "  \033[31m%-10s ❌ Missing\033[0m\n" "$display_name"
+          # Map 'rg' back to 'ripgrep' for the install hint
+          [[ "$cmd" == "rg" ]] && missing+=("ripgrep") || missing+=("$cmd")
+        fi
+      done
+
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      
+      if [ ${#missing[@]} -eq 0 ]; then
+        echo -e "\033[32mAll dependencies met! Your productivity is at 100%.\033[0m"
+      else
+        echo -e "\033[1;33mTo install missing tools:\033[0m"
+        echo "  brew install ${missing[*]}"
+      fi
+
+      cat <<'HELP'
+
+Tool Descriptions:
+  zoxide    Smart cd replacement (learns your habits)
+  fzf       Fuzzy finder (Ctrl+R history, Ctrl+T files)
+  bat       cat with syntax highlighting
+  eza       Modern ls with icons and git integration
+  rg/fd     High-speed search replacements for grep/find
+  gh        GitHub CLI (must run: gh auth login)
+HELP
+      ;;
+    *)
+      echo "No help found for '$1'. Run 'h' to see all commands."
+      ;;
+  esac
+}

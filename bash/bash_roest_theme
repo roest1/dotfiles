@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# ~/.bash_roest_theme
+#####################################################################
+# Bash Theme — Riley Oest (Ayu-inspired, modern dev UX)
+#####################################################################
+
+# ─── Colors (Ayu-inspired palette) ─────────────────────────────────
+# Blue: 75 (electric but not harsh)
+# Teal: 110 (directory)
+# Orange: 215 (git)
+# Gray: 250 (secondary text)
+
+# ─── Prompt (PS1) ──────────────────────────────────────────────────
+
+# Requires running:
+# conda config --set changeps1 false (or export CONDA_CHANGEPS1=false in .bashrc)
+# so that env doesn't show up twice
+__conda_env() {
+  if [ -n "$CONDA_DEFAULT_ENV" ]; then
+    printf "\033[38;5;141m(%s)\033[0m " "$CONDA_DEFAULT_ENV"
+  fi
+}
+
+# Git branch (fast + safe)
+#__git_branch() { # v1
+#  git branch 2>/dev/null | grep "*" | sed "s/* //"
+#}
+__git_branch() { # v2
+  # Only run if we are actually in a git repo to save a fork
+  [[ -d .git ]] || git rev-parse --is-inside-work-tree &>/dev/null || return
+  git rev-parse --abbrev-ref HEAD 2>/dev/null
+}
+
+# GitHub workflow automation(s) status
+__gh_automations_status() {
+  [[ "$GH_PROMPT" != "1" ]] && return  # Quick exit if not opted-in
+
+  local cache_dir="/tmp/gh_status_cache"
+  mkdir -p "$cache_dir"
+  local hash=$(pwd | md5sum | cut -d' ' -f1)
+  local cache_file="${cache_dir}/${hash}"
+  local pending_file="${cache_dir}/${hash}.pending"
+  
+  local now=$(date +%s)
+  local mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+
+  # 1. Trigger background refresh if stale AND not already running
+  if (( now - mtime > 30 )) && [[ ! -f "$pending_file" ]]; then
+    touch "$pending_file"
+    (
+      # Fetch data
+      local result=$(gh run list --limit 5 --json conclusion,status 2>/dev/null)
+      
+      if [[ -n "$result" && "$result" != "[]" ]]; then
+        local total=$(echo "$result" | jq 'length')
+        local failed=$(echo "$result" | jq '[.[] | select(.conclusion=="failure")] | length')
+        local running=$(echo "$result" | jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length')
+
+        local symbol="✅"
+        local color="150" 
+        [[ "$running" -gt 0 ]] && { symbol="⏳"; color="220"; }
+        [[ "$failed" -gt 0 ]] && { symbol="❌"; color="203"; }
+
+        printf "\033[38;5;250m[%s \033[38;5;%sm%s\033[38;5;250m]\033[0m" "$total" "$color" "$symbol" > "$cache_file"
+      fi
+      
+      # Remove pending flag when done
+      rm -f "$pending_file"
+    ) & disown
+  fi
+
+  # 2. Display logic
+  if [[ -f "$pending_file" ]]; then
+    # Show a "spinning" dots or refresh icon while background job works
+    printf "\033[38;5;244m[fetching...]\033[0m "
+  fi
+
+  [[ -f "$cache_file" ]] && cat "$cache_file"
+}
+
+# Prompt:
+# (conda-env) (purple)
+# user@host (blue)
+# path (teal)
+# git branch (orange)
+# git workflows [completed/total (check if succesful X if any failed, loading if not completed)]
+# newline + arrow
+
+PS1='$(__conda_env)\[\033[38;5;75m\]\u@\h\[\033[0m\] \[\033[38;5;110m\]\w\[\033[0m\] \[\033[38;5;215m\]$(__git_branch)\[\033[0m\] \[\033[38;5;180m\]$(__gh_automations_status)\[\033[0m\]\n$ '
+
+# ─── Grep colors ──────────────────────────────────────────────────
+
+alias grep='grep --color=auto'
+alias egrep='egrep --color=auto'
+alias fgrep='fgrep --color=auto'
+
+# ─── Optional: better pager experience ─────────────────────────────
+
+# export LESS='-R'
+
+# ─── Optional: nicer diff colors ───────────────────────────────────
+
+export GIT_PAGER='less -FRX'
+export GIT_CONFIG_GLOBAL="$HOME/.gitconfig"
+
+#####################################################################
+# End Theme
+#####################################################################
+
