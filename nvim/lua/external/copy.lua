@@ -2,6 +2,11 @@
 --
 -- :Copy — copy file contents to clipboard for pasting into AI chats, docs, etc.
 --
+-- Modes:
+--   :Copy [options]           Copy files from current directory
+--   :'<,'>Copy [options]      Copy selected files from Oil buffer
+--                              (or selected lines from a normal buffer)
+--
 -- Smart defaults:
 --   • In a git repo? Uses `git ls-files` (respects .gitignore automatically)
 --   • Not in git? Uses `fd` (respects .gitignore by default too)
@@ -21,17 +26,19 @@
 --   :Copy --max=50                 Limit number of files (default: 100)
 --   :Copy --no-gitignore           Don't respect .gitignore
 --
+-- Visual selection in Oil:
+--   1. Open Oil with `-`
+--   2. Select files with V (visual line mode)
+--   3. :'<,'>Copy
+--   → Only the selected files are copied to clipboard
+--
+-- Visual selection in normal buffer:
+--   1. Select lines with V
+--   2. :'<,'>Copy
+--   → Selected lines are copied in the --- Start/End --- format
+--
 -- All flags combine:
 --   :Copy -r --dir_match=services --ext=py --exclude=test
---
--- --match vs --dir_match:
---   --match=foo       → file path must contain "foo" anywhere (AND across multiple)
---   --dir_match=foo   → file must be inside a directory whose name contains "foo" (OR across multiple)
---
--- Best used from Oil:
---   1. `-` to open directory browser
---   2. Navigate to desired directory
---   3. :Copy -r --match=controller
 
 local M = {}
 
@@ -45,6 +52,31 @@ local function get_current_dir()
     return vim.fn.fnamemodify(real, ':p')
   end
   return vim.fn.expand '%:p:h'
+end
+
+--- Check if we're in an Oil buffer
+local function is_oil_buffer()
+  return vim.api.nvim_buf_get_name(0):match '^oil://' ~= nil
+end
+
+--- Get selected filenames from Oil buffer (visual range)
+local function get_oil_selected_files(line1, line2)
+  local oil_ok, oil = pcall(require, 'oil')
+  if not oil_ok then
+    return nil
+  end
+
+  local dir = get_current_dir()
+  local files = {}
+
+  for lnum = line1, line2 do
+    local entry = oil.get_entry_on_line(0, lnum)
+    if entry and entry.type == 'file' then
+      table.insert(files, dir .. entry.name)
+    end
+  end
+
+  return #files > 0 and files or nil
 end
 
 --- Find the git root for a given directory, or nil
@@ -106,10 +138,10 @@ end
 local function parse_args(fargs)
   local opts = {
     recursive = false,
-    matches = {}, -- substring patterns on full path (AND logic)
-    dir_matches = {}, -- substring patterns on directory names (OR logic)
-    excludes = {}, -- substring patterns to exclude
-    extensions = {}, -- file extensions to include
+    matches = {},
+    dir_matches = {},
+    excludes = {},
+    extensions = {},
     max_files = 100,
     respect_gitignore = true,
   }
@@ -158,7 +190,6 @@ local function parse_args(fargs)
     end
   end
 
-  -- dir_match implies recursive
   if #opts.dir_matches > 0 then
     opts.recursive = true
   end
@@ -168,7 +199,6 @@ end
 
 -- ─── File Discovery ───────────────────────────────────────────────────────────
 
---- Strategy 1: git ls-files
 local function discover_git(dir, recursive)
   local git_root = get_git_root(dir)
   if not git_root then
@@ -200,7 +230,6 @@ local function discover_git(dir, recursive)
   return files
 end
 
---- Strategy 2: fd
 local function discover_fd(dir, recursive, respect_gitignore)
   if vim.fn.executable 'fd' ~= 1 then
     return nil
@@ -227,7 +256,6 @@ local function discover_fd(dir, recursive, respect_gitignore)
   end, output)
 end
 
---- Strategy 3: find + manual .gitignore
 local function discover_find(dir, recursive, respect_gitignore)
   local cmd = { 'find', dir }
   if not recursive then
@@ -266,7 +294,6 @@ local function discover_find(dir, recursive, respect_gitignore)
   return files
 end
 
---- Main discovery
 local function discover_files(dir, opts)
   local files
 
@@ -287,7 +314,6 @@ end
 
 -- ─── Filtering ────────────────────────────────────────────────────────────────
 
---- Extract directory components from a path
 local function get_path_dirs(filepath)
   local dir_part = filepath:match '^(.+)/[^/]+$'
   if not dir_part then
@@ -300,21 +326,18 @@ local function apply_filters(files, opts)
   return vim.tbl_filter(function(filepath)
     local lower_path = filepath:lower()
 
-    -- Exclude patterns
     for _, pattern in ipairs(opts.excludes) do
       if lower_path:find(pattern:lower(), 1, true) then
         return false
       end
     end
 
-    -- Match patterns (AND: ALL must match, substring on full path)
     for _, pattern in ipairs(opts.matches) do
       if not lower_path:find(pattern:lower(), 1, true) then
         return false
       end
     end
 
-    -- Dir match (OR: file must be inside a directory matching ANY pattern)
     if #opts.dir_matches > 0 then
       local dirs = get_path_dirs(lower_path)
       local any_dir_matched = false
@@ -335,7 +358,6 @@ local function apply_filters(files, opts)
       end
     end
 
-    -- Extension filter
     if #opts.extensions > 0 then
       local ext = filepath:match '%.([^%.]+)$'
       if not ext then
@@ -358,7 +380,50 @@ local function apply_filters(files, opts)
   end, files)
 end
 
--- ─── Core ─────────────────────────────────────────────────────────────────────
+-- ─── Output Builder ───────────────────────────────────────────────────────────
+
+local function build_output(files)
+  local parts = {}
+  local total_size = 0
+
+  for _, file in ipairs(files) do
+    local ok, lines = pcall(vim.fn.readfile, file)
+    if ok and lines then
+      local content = table.concat(lines, '\n')
+      total_size = total_size + #content
+      table.insert(parts, ('--- Start of %s ---'):format(file))
+      table.insert(parts, content)
+      table.insert(parts, ('--- End of %s ---\n'):format(file))
+    end
+  end
+
+  return table.concat(parts, '\n'), total_size
+end
+
+local function format_size(bytes)
+  if bytes < 1024 then
+    return bytes .. 'B'
+  elseif bytes < 1024 * 1024 then
+    return string.format('%.1fKB', bytes / 1024)
+  else
+    return string.format('%.1fMB', bytes / (1024 * 1024))
+  end
+end
+
+-- ─── Core: Normal Buffer Range ────────────────────────────────────────────────
+
+local function copy_buffer_range(line1, line2)
+  local filepath = vim.fn.expand '%:p'
+  local lines = vim.api.nvim_buf_get_lines(0, line1 - 1, line2, false)
+  local content = table.concat(lines, '\n')
+
+  local output = string.format('--- Start of %s (lines %d-%d) ---\n%s\n--- End of %s ---\n', filepath, line1, line2, content, filepath)
+
+  vim.fn.setreg('+', output)
+  vim.notify(string.format('Copied %d lines from %s', line2 - line1 + 1, vim.fn.fnamemodify(filepath, ':t')), vim.log.levels.INFO)
+end
+
+-- ─── Core: Directory Copy ─────────────────────────────────────────────────────
 
 local function copy_directory_contents(opts)
   local dir = get_current_dir()
@@ -390,33 +455,30 @@ local function copy_directory_contents(opts)
     return
   end
 
-  local parts = {}
-  local total_size = 0
-
-  for _, file in ipairs(files) do
-    local ok, lines = pcall(vim.fn.readfile, file)
-    if ok and lines then
-      local content = table.concat(lines, '\n')
-      total_size = total_size + #content
-      table.insert(parts, ('--- Start of %s ---'):format(file))
-      table.insert(parts, content)
-      table.insert(parts, ('--- End of %s ---\n'):format(file))
-    end
-  end
-
-  local output = table.concat(parts, '\n')
+  local output, total_size = build_output(files)
   vim.fn.setreg('+', output)
+  vim.notify(string.format('Copied %d files (%s) %s', #files, format_size(total_size), opts.recursive and '(recursive)' or ''), vim.log.levels.INFO)
+end
 
-  local size_str
-  if total_size < 1024 then
-    size_str = total_size .. 'B'
-  elseif total_size < 1024 * 1024 then
-    size_str = string.format('%.1fKB', total_size / 1024)
-  else
-    size_str = string.format('%.1fMB', total_size / (1024 * 1024))
+-- ─── Core: Oil Selection Copy ─────────────────────────────────────────────────
+
+local function copy_oil_selection(files, opts)
+  files = apply_filters(files, opts)
+
+  files = vim.tbl_filter(function(filepath)
+    return not is_binary(filepath)
+  end, files)
+
+  if #files == 0 then
+    vim.notify('No matching files in selection', vim.log.levels.INFO)
+    return
   end
 
-  vim.notify(string.format('Copied %d files (%s) %s', #files, size_str, opts.recursive and '(recursive)' or ''), vim.log.levels.INFO)
+  table.sort(files)
+
+  local output, total_size = build_output(files)
+  vim.fn.setreg('+', output)
+  vim.notify(string.format('Copied %d selected files (%s)', #files, format_size(total_size)), vim.log.levels.INFO)
 end
 
 -- ─── Command Registration ─────────────────────────────────────────────────────
@@ -424,9 +486,28 @@ end
 function M.setup()
   vim.api.nvim_create_user_command('Copy', function(cmd_opts)
     local opts = parse_args(cmd_opts.fargs)
-    copy_directory_contents(opts)
+    local has_range = cmd_opts.range == 2
+
+    if has_range then
+      if is_oil_buffer() then
+        -- Visual selection in Oil → copy selected files' contents
+        local selected = get_oil_selected_files(cmd_opts.line1, cmd_opts.line2)
+        if selected then
+          copy_oil_selection(selected, opts)
+        else
+          vim.notify('No files selected in Oil buffer', vim.log.levels.WARN)
+        end
+      else
+        -- Visual selection in normal buffer → copy selected lines
+        copy_buffer_range(cmd_opts.line1, cmd_opts.line2)
+      end
+    else
+      -- No range → directory copy (original behavior)
+      copy_directory_contents(opts)
+    end
   end, {
     nargs = '*',
+    range = true,
     complete = function(_, line)
       local suggestions = {
         '-r',
@@ -443,7 +524,7 @@ function M.setup()
         return s:find(lead, 1, true) == 1
       end, suggestions)
     end,
-    desc = 'Copy file contents to clipboard (respects .gitignore)',
+    desc = 'Copy file contents to clipboard (supports visual selection in Oil)',
   })
 end
 
