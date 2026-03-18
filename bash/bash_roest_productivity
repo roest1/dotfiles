@@ -255,6 +255,15 @@ extract() {
     fi
 }
 
+# edit/save bashrc (symlinked by install.sh so edits reflect in ~/.bashrc)
+editbashrc() {
+    nvim ~/dotfiles/bash/bashrc
+}
+
+savebashrc() {
+    source ~/.bashrc
+}
+
 # ─── .NET clean/build/test aliases ─────────────────────────────────────────────
 
 # dclean: dotnet clean alias
