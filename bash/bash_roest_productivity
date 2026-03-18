@@ -281,6 +281,18 @@ dtest() {
     dotnet test
 }
 
+# nvim spelling errors
+
+nvi() { # nvim spelling errors
+    nvim
+}
+nv() { # nvim spelling errors
+    nvim
+}
+n() { # nvim spelling errors
+    nvim
+}
+
 # ─── Help System ──────────────────────────────────────────────────────────────
 #
 # `h` shows a quick reference of all custom commands.
