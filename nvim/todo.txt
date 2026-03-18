@@ -1,7 +1,0 @@
-prime plugins:
-    https://www.youtube.com/watch?v=w7i4amO_zaE&t=264s
-    - good video
-
-Documentation (docs/)
-    * make sure I have the keymaps
-    * to all the plugins in their own respective files
