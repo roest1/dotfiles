@@ -21,6 +21,7 @@ Your most important keymaps (leader is <Space>):
     <leader>sg      Search text (grep) across project
     <leader>/       Fuzzy search in current file
     <leader><leader> Switch between open buffers
+    <leader>st      Search all TODOs in project
 
     Navigation~
     -             Open file browser (Oil)
@@ -39,6 +40,17 @@ Your most important keymaps (leader is <Space>):
     <leader>e     Show error popup
     <leader>l     Format code
 
+    Editing~
+    sa"           Surround with quotes (visual or motion)
+    sd"           Delete surrounding quotes
+    sr"'          Replace surrounding " with '
+
+    Completion (insert mode)~
+    <Tab>         Next completion item
+    <S-Tab>       Previous item
+    <CR>          Confirm selection
+    <C-Space>     Trigger manually
+
 ==============================================================================
 DOCUMENTATION INDEX                                              *roest-index*
 
@@ -48,6 +60,7 @@ DOCUMENTATION INDEX                                              *roest-index*
 |roest-motions|     Vim motions reference (w/W/b/B/e/E and more)
 |roest-commands|    Custom commands you've created
 |roest-options|     Editor settings and what they do
+|roest-bash|        Bash productivity commands (h, findword, etc.)
 
 External guides (markdown in doc/):
     doc/roest-vim.md            Vim grammar and commands
@@ -66,21 +79,32 @@ FILE STRUCTURE                                               *roest-structure*
 
 ~/.config/nvim/
 ├── init.lua                 Entry point (loads everything)
+├── bootstrap.sh             One-command dependency installer
 ├── lua/
 │   ├── options.lua          Editor settings
 │   ├── keymaps.lua          Core keybindings
 │   ├── lazy-bootstrap.lua   Plugin manager setup
 │   ├── lazy-plugins.lua     Plugin loader
 │   └── external/
+│       ├── reqs.lua         Tool dependency list
 │       ├── plugins/         Individual plugin configs
-│       │   ├── telescope.lua
-│       │   ├── harpoon.lua
-│       │   ├── oil.lua
-│       │   ├── lsp.lua
-│       │   ├── gitsigns.lua
-│       │   ├── trouble.lua
-│       │   ├── formatter.lua
-│       │   └── ...
+│       │   ├── blink-cmp.lua    Autocompletion
+│       │   ├── formatter.lua    Auto-format on save
+│       │   ├── gitsigns.lua     Git gutter + staging
+│       │   ├── glow.lua         Markdown preview
+│       │   ├── harpoon.lua      Working file set
+│       │   ├── lint.lua         Async linting
+│       │   ├── lsp.lua          Language servers
+│       │   ├── mini.lua         Surround + autopairs
+│       │   ├── oil.lua          File browser
+│       │   ├── roslyn.lua       C# language server
+│       │   ├── telescope.lua    Fuzzy finder
+│       │   ├── theme.lua        Colorscheme
+│       │   ├── todo-comments.lua  TODO highlighting
+│       │   ├── treesitter.lua   Syntax highlighting
+│       │   ├── trouble.lua      Diagnostics panel
+│       │   ├── undotree.lua     Undo history
+│       │   └── which-key.lua    Keymap discovery
 │       ├── copy.lua         :Copy command
 │       ├── findreplace.lua  :Find/:FindReplace commands
 │       ├── reset.lua        :ResetNvim command
@@ -94,6 +118,8 @@ GETTING HELP                                                    *roest-help*
     :help roest-keymaps     All keybindings
     :help roest-plugins     Plugin reference
     :help roest-workflows   Common tasks
+    :help roest-commands    Custom commands
+    :help roest-bash        Bash productivity tools
 
     :Telescope help_tags    Search all help (or <leader>sh)
     :Telescope keymaps      Search keymaps (or <leader>sk)

@@ -3,15 +3,18 @@
 ==============================================================================
 BASH COMMANDS                                                    *roest-bash*
 
-Custom bash commands from ~/.bash_productivity.
+Custom bash commands from ~/.bash_roest_productivity.
 Run `h` in terminal for quick reference, or `h <cmd>` for details.
 
-Source: `source ~/.bash_productivity` in ~/.bashrc
+Source: `source ~/.bash_roest_productivity` in ~/.bashrc
+Theme: `source ~/.bash_roest_theme` in ~/.bashrc (load before productivity)
+Dotfiles: https://github.com/roest1/dotfiles
 
 ==============================================================================
 TOOLS & DEPENDENCIES                                       *roest-bash-deps*
 
-Install once, benefit forever:
+Install once, benefit forever. Run `./bootstrap.sh` from nvim config
+to install everything, or manually:
 
     Core (you likely have these):~
         rg          ripgrep — fast grep
@@ -24,6 +27,7 @@ Install once, benefit forever:
         eza         ls with icons, git status, tree view
 
     Install all: `brew install zoxide fzf bat eza`
+    Check status: `h deps`
 
 ==============================================================================
 NAVIGATION                                            *roest-bash-navigation*
@@ -157,10 +161,7 @@ HELP SYSTEM                                            *roest-bash-help*
 
     h                   Show quick reference of all commands
     h {command}         Show detailed help for a specific command
-    h deps              Show required tools and how to install
-
-The help system reads from comments in ~/.bash_productivity itself,
-so it's always in sync with the actual commands.
+    h deps              Show required tools and install status
 
 In Neovim:
     :help roest-bash    This file

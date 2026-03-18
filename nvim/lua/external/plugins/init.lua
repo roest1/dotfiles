@@ -15,22 +15,27 @@
 -- In normal mode type `<space>sh` then write `lazy.nvim-plugin`
 -- you can continue same window with `<space>sr` which resumes last telescope search
 
+-- Plugin loader — called from lazy-plugins.lua
+-- Add new plugins: create a file in this directory, then add its path here.
+
 local plugin_modules = {
+  'external/plugins/blink-cmp',
   'external/plugins/formatter',
   'external/plugins/gitsigns',
   'external/plugins/glow',
   'external/plugins/harpoon',
+  'external/plugins/lint',
   'external/plugins/lsp',
+  'external/plugins/mini',
   'external/plugins/oil',
   'external/plugins/roslyn',
   'external/plugins/telescope',
   'external/plugins/theme',
+  'external/plugins/todo-comments',
   'external/plugins/treesitter',
   'external/plugins/trouble',
   'external/plugins/undotree',
   'external/plugins/which-key',
-  'external/plugins/mini',
-  'external/plugins/todo-comments',
 }
 
 local plugins = {}

@@ -8,52 +8,62 @@ Every plugin in your config, what it does, and how to use it.
 Run `:Lazy` to see plugin status. Press `?` for help in that menu.
 
 ==============================================================================
+BLINK.CMP (COMPLETION)                                  *roest-plugins-blink*
+
+Autocompletion engine. Shows suggestions as you type.
+
+Location: lua/external/plugins/blink-cmp.lua
+
+Keymaps (insert mode, when menu is visible):
+    <Tab>           Next completion item
+    <S-Tab>         Previous item
+    <CR>            Confirm selection
+    <C-Space>       Manually trigger completion
+    <C-e>           Dismiss menu
+    <C-b>/<C-f>     Scroll documentation
+
+Features:
+    - Ghost text (inline preview of what would be inserted)
+    - Signature help (shows function parameters as you type)
+    - Sources: LSP → path → snippets → buffer (priority order)
+
+==============================================================================
 TELESCOPE                                              *roest-plugins-telescope*
 
-Fuzzy finder for everything - files, text, help, keymaps, and more.
+Fuzzy finder for files, text, help, keymaps, and more.
 
 Location: lua/external/plugins/telescope.lua
-
-What it does:
-    - Find files by name
-    - Search text across your entire project
-    - Browse help documentation
-    - Search keymaps
-    - And much more...
 
 Keymaps:
     <leader>sf      Find files
     <leader>sg      Grep text in project
     <leader>sh      Search help
     <leader>sk      Search keymaps
+    <leader>sw      Search word under cursor
+    <leader>sd      Search diagnostics
+    <leader>sr      Resume last search
+    <leader>s.      Recent files
+    <leader>s/      Search in open files only
+    <leader>sn      Search Neovim config files
+    <leader>ss      Select Telescope picker
     <leader>/       Search in current file
     <leader><leader> Find open buffers
 
-Inside Telescope window:
+Inside Telescope:
     <CR>            Open selected
     <C-x>           Open in horizontal split
     <C-v>           Open in vertical split
-    <C-/>           Show all keymaps (insert mode)
-    ?               Show all keymaps (normal mode)
-
-Commands:
-    :Telescope                      Open picker selection
-    :Telescope find_files           Find files
-    :Telescope live_grep            Search text
-    :Telescope help_tags            Search help
+    <C-/>           Show keymaps (insert mode)
+    ?               Show keymaps (normal mode)
 
 Dependencies: plenary.nvim, telescope-fzf-native.nvim
 
 ==============================================================================
 HARPOON                                                  *roest-plugins-harpoon*
 
-Quick-access file list. Like bookmarks for your current task.
+Working file set. Like browser tabs for code.
 
 Location: lua/external/plugins/harpoon.lua
-
-What it does:
-    Think of it as "browser tabs for code". Add 3-6 files you're actively
-    working on, then jump between them instantly.
 
 Keymaps:
     <leader>a       Add current file to list
@@ -63,16 +73,11 @@ Keymaps:
     <leader>fl      View list in Telescope
     <leader>hr      Clear the list
 
-Typical workflow:
-    1. Working on a feature? Open the relevant files
+Workflow:
+    1. Open files for a task
     2. <leader>a on each one
-    3. Now <C-n>/<C-p> jumps between just those files
-    4. Done with task? <leader>hr to reset
-
-In quick menu (<C-e>):
-    - Edit the list (delete lines to remove files)
-    - Reorder by moving lines
-    - Save with :w or just close
+    3. <C-n>/<C-p> to jump between them
+    4. <leader>hr when done
 
 See also: |roest-harpoon|
 
@@ -82,10 +87,6 @@ OIL                                                          *roest-plugins-oil*
 File browser that works like a buffer. Edit filenames to rename!
 
 Location: lua/external/plugins/oil.lua
-
-What it does:
-    Opens directories as editable buffers. You can rename, delete, or
-    create files just by editing text and saving.
 
 Keymaps:
     -               Open parent directory (replaces netrw)
@@ -97,36 +98,17 @@ Inside Oil:
     g?              Show help
     <C-c>           Close
 
-Renaming files:
-    1. Open directory with -
-    2. Edit the filename text
-    3. :w to apply changes
-
-Creating files:
-    1. Type a new filename on a blank line
-    2. :w to create it
-
-Deleting files:
-    1. Delete the line with dd
-    2. :w to apply (moves to trash)
+Edit the buffer to rename/delete/create files, then :w to apply.
 
 ==============================================================================
 LSP                                                          *roest-plugins-lsp*
 
-Language Server Protocol - code intelligence for many languages.
+Language Server Protocol — code intelligence.
 
 Location: lua/external/plugins/lsp.lua
 
-What it does:
-    - Go to definition
-    - Find references
-    - Rename symbols across files
-    - Show errors and warnings
-    - Autocompletion (via blink.cmp)
-
 Configured servers:
     lua_ls          Lua
-    pyright         Python
     ts_ls           TypeScript/JavaScript
     clangd          C/C++
     cssls           CSS
@@ -137,8 +119,9 @@ Configured servers:
     lemminx         XML
     roslyn          C# (separate plugin)
 
-Keymaps (only work when LSP is attached):
+Keymaps (when LSP is attached):
     grd             Go to definition
+    grD             Go to declaration
     grr             Find references
     gri             Go to implementation
     grt             Go to type definition
@@ -148,32 +131,55 @@ Keymaps (only work when LSP is attached):
     gW              Workspace symbols
     <leader>th      Toggle inlay hints
 
-Commands:
-    :Mason              Manage installed servers
-    :LspInfo            Show attached servers
-    :LspRestart         Restart LSP
+Related: mason.nvim (installs servers), blink.cmp (completion),
+    fidget.nvim (LSP progress), lazydev.nvim (Lua-specific)
 
-Related plugins:
-    mason.nvim              Installs LSP servers
-    mason-lspconfig.nvim    Bridges mason and lspconfig
-    fidget.nvim             Shows LSP progress
-    blink.cmp               Autocompletion
-    lazydev.nvim            Lua-specific enhancements
+==============================================================================
+CONFORM (FORMATTER)                                  *roest-plugins-formatter*
+
+Auto-formatting on save.
+
+Location: lua/external/plugins/formatter.lua
+
+Keymaps:
+    <leader>l       Format file (or selection in visual mode)
+
+Formatters by filetype:
+    lua                 stylua
+    javascript          prettierd → prettier
+    typescript          prettierd → prettier
+    typescriptreact     prettierd → prettier
+    javascriptreact     prettierd → prettier
+    json                prettierd → prettier
+    markdown            prettierd → prettier
+    html                prettierd → prettier
+    css                 prettierd → prettier
+    yaml                prettierd → prettier
+    python              ruff
+
+==============================================================================
+NVIM-LINT (LINTER)                                      *roest-plugins-lint*
+
+Async linting alongside LSP diagnostics.
+
+Location: lua/external/plugins/lint.lua
+
+Linters by filetype:
+    python              ruff
+    javascript          eslint_d
+    typescript          eslint_d
+
+Runs on: save, insert-leave, buffer read.
+Diagnostics appear alongside LSP errors in the gutter.
 
 ==============================================================================
 GITSIGNS                                                *roest-plugins-gitsigns*
 
-Git integration in the gutter. Stage, reset, and blame without leaving Neovim.
+Git gutter signs + staging/blame without leaving Neovim.
 
 Location: lua/external/plugins/gitsigns.lua
 
-What it does:
-    - Shows +/~/- signs in gutter for changes
-    - Stage individual hunks (chunks of changes)
-    - View diffs inline
-    - Blame annotations
-
-Signs in gutter:
+Signs:
     +       Added line
     ~       Changed line
     _       Deleted line (below)
@@ -197,13 +203,9 @@ Keymaps:
 ==============================================================================
 TROUBLE                                                  *roest-plugins-trouble*
 
-Better diagnostics panel. Shows errors, warnings, references in a nice list.
+Better diagnostics panel.
 
 Location: lua/external/plugins/trouble.lua
-
-What it does:
-    Replaces the quickfix/location list with a better UI for viewing
-    diagnostics, references, and symbols.
 
 Keymaps:
     <leader>xx      All diagnostics
@@ -213,78 +215,78 @@ Keymaps:
     <leader>xL      Location list
     <leader>xQ      Quickfix list
 
-Inside Trouble:
-    q               Close
-    <CR>            Jump to item
-    o               Jump and close
-    j/k             Navigate
+Inside Trouble: q to close, <CR> to jump, j/k to navigate.
 
 ==============================================================================
-CONFORM (FORMATTER)                                  *roest-plugins-formatter*
+WHICH-KEY                                              *roest-plugins-which-key*
 
-Auto-formatting on save.
+Shows available keymaps in a popup after pressing leader.
 
-Location: lua/external/plugins/formatter.lua
+Location: lua/external/plugins/which-key.lua
 
-What it does:
-    Runs formatters when you save. Uses prettierd for speed (daemon mode).
+How it works:
+    Press <Space> and wait 300ms → popup shows all leader keymaps.
+    Groups: [S]earch, Git [H]unk, [T]oggle, Trouble, [C]ode.
+
+No keymaps to learn — it teaches you keymaps you already have.
+
+==============================================================================
+MINI (SURROUND + PAIRS)                                  *roest-plugins-mini*
+
+Surround: manipulate surrounding characters.
+Pairs: auto-close brackets and quotes.
+
+Location: lua/external/plugins/mini.lua
+
+Surround keymaps:
+    sa{motion}{char}  Add surrounding (e.g. saiw" → surround word with ")
+    sd{char}          Delete surrounding (e.g. sd" → remove quotes)
+    sr{old}{new}      Replace surrounding (e.g. sr"' → " to ')
+
+Pairs:
+    Automatic — type ( and ) appears. Works for (, [, {, ", ', `.
+
+==============================================================================
+TODO-COMMENTS                                      *roest-plugins-todo-comments*
+
+Highlights TODO, FIXME, HACK, NOTE, WARN, PERF in comments.
+
+Location: lua/external/plugins/todo-comments.lua
 
 Keymaps:
-    <leader>l       Format file (or selection)
-
-Auto-formats on :w (configured in options.lua)
-
-Formatters by filetype:
-    lua                 stylua
-    javascript          prettierd → prettier
-    typescript          prettierd → prettier
-    typescriptreact     prettierd → prettier
-    javascriptreact     prettierd → prettier
-    json                prettierd → prettier
-    markdown            prettierd → prettier
-    html                prettierd → prettier
-    css                 prettierd → prettier
-    yaml                prettierd → prettier
-    python              black
+    <leader>st      Search all TODOs in project (Telescope)
+    ]t              Jump to next TODO
+    [t              Jump to previous TODO
 
 ==============================================================================
 TREESITTER                                            *roest-plugins-treesitter*
 
-Better syntax highlighting using actual parsing (not regex).
+Syntax highlighting using actual parsing (not regex).
 
 Location: lua/external/plugins/treesitter.lua
 
-What it does:
-    - Accurate syntax highlighting
-    - Better indentation
-    - Code folding (if enabled)
-
 Installed parsers:
-    c_sharp, lua, json, yaml, bash, markdown, sql
+    c_sharp, lua, json, yaml, bash, markdown, sql,
+    typescript, javascript, tsx, terraform, python
 
 Commands:
     :TSInstall <lang>       Install parser
     :TSUpdate               Update all parsers
-    :TSInstallInfo          Show installed parsers
 
 ==============================================================================
 UNDOTREE                                                *roest-plugins-undotree*
 
-Visual undo history. See branches of changes over time.
+Visual undo history tree.
 
 Location: lua/external/plugins/undotree.lua
 
-What it does:
-    Shows your undo history as a tree. Useful when you undo, make changes,
-    and want to get back to a previous branch.
-
 Commands:
-    :UndotreeToggle         Open/close the undo tree panel
+    :UndotreeToggle         Open/close undo tree panel
 
 ==============================================================================
 GLOW                                                        *roest-plugins-glow*
 
-Render markdown files in terminal.
+Markdown preview in terminal. Requires `glow` CLI.
 
 Location: lua/external/plugins/glow.lua
 
@@ -294,13 +296,9 @@ Commands:
 ==============================================================================
 ROSE-PINE (THEME)                                        *roest-plugins-theme*
 
-Your colorscheme. Using "rose-pine-moon" variant with transparent background.
+Colorscheme: rose-pine-moon with transparent background.
 
 Location: lua/external/plugins/theme.lua
-
-The `ColorMyPencils()` function:
-    - Sets the colorscheme
-    - Makes background transparent
 
 ==============================================================================
 ROSLYN                                                    *roest-plugins-roslyn*
@@ -308,9 +306,6 @@ ROSLYN                                                    *roest-plugins-roslyn*
 C# language server (Microsoft's Roslyn).
 
 Location: lua/external/plugins/roslyn.lua
-
-What it does:
-    Provides LSP features for C# files. Automatically finds .sln files.
 
 Commands:
     :Roslyn target          Change solution target
