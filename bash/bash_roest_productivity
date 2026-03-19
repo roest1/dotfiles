@@ -337,6 +337,20 @@ h() {
     gb                 branch (sorted by recent use)
     gst / gstp         stash / stash pop
 
+  GitHub Actions                                           [gh]
+    gha                Show workflow status for HEAD
+    gha-fail           Show only failed workflows
+    gha-ui             Interactive workflow picker (fzf)    [fzf]
+    gha-open           Open Actions tab in browser
+
+  GitHub Interactive (fzf-powered screens)                 [gh, fzf, jq]
+    gpr                PR management (pick → act)
+    gpr create         Create PR from current branch
+    gpr mine           Show only your PRs
+    ghsecrets          Manage repo & environment secrets
+    ghbranch           Branch management & protections
+    ghenv              Environment management
+
   Utilities
     port <num>         What's running on this port?
     ddiff <a> <b>      Side-by-side colored diff
@@ -536,11 +550,137 @@ Git aliases — short forms for daily git commands
   Use it instead of --force when rewriting history.
 HELP
       ;;
+    gha|gha-fail|gha-ui|gha-open)
+      cat <<'HELP'
+GitHub Actions — CI/CD observability
+
+  gha             Show workflow status for current HEAD commit
+                  Displays: name, pass/fail/running, link
+
+  gha-fail        Same as gha but filtered to failures only
+                  Quick way to see what broke
+
+  gha-ui          Interactive workflow picker (fzf)
+                  ENTER opens the selected workflow in browser
+
+  gha-open        Opens the Actions tab in your browser
+                  Fallback when you need the full GitHub UI
+
+  Your prompt also shows CI status on the right side:
+    [5/5 ✅ 1d]  = 5 of 5 passed, last run 1 day ago
+    [3/5 ❌ 2h]  = 3 of 5 passed (failures), 2 hours ago
+    [5/5 ⏳ now]  = workflows still running
+
+  Depends on: gh, jq
+HELP
+      ;;
+    gpr)
+      cat <<'HELP'
+gpr — interactive PR management
+
+  gpr              List open PRs → pick one → action menu
+  gpr create       Create a new PR from current branch
+  gpr mine         Show only PRs you authored
+
+  The PR list shows: number, review status, title, author,
+  branch, changes (+/-), and date. The preview pane (right side)
+  shows full PR details as you navigate.
+
+  After selecting a PR, you get an action menu:
+
+    👁  View details        Full PR info in terminal
+    📥 Checkout locally     Switch to the PR's branch
+    📝 View diff            Colored diff in pager
+    📊 View file changes    Browse individual changed files
+    💬 Add comment          Inline or open your editor
+    ✅ Approve              With optional message
+    🔄 Request changes      Opens editor for feedback
+    🏷  Manage labels        Add/remove from available labels
+    👤 Request reviewers    Pick from collaborators
+    ✏️  Edit title/body      Rename or rewrite description
+    🔀 Merge                Pick strategy (squash/merge/rebase)
+    ❌ Close PR             Close without merging
+    🌐 Open in browser      Fallback to GitHub UI
+    🔍 View CI checks       See pass/fail status
+
+  Most actions loop back to the menu so you can do multiple
+  things without re-running the command.
+
+  Depends on: gh, fzf, jq
+HELP
+      ;;
+    ghsecrets)
+      cat <<'HELP'
+ghsecrets — manage repository & environment secrets
+
+  ghsecrets        Opens interactive secrets screen
+
+  Menu options:
+    🔑 List repo secrets            Names + last updated (values hidden)
+    ➕ Set repo secret              Prompts for name, then secure value input
+    🗑  Delete repo secret           Pick from list, confirm delete
+    🌍 List environment secrets     Pick env first, then see its secrets
+    ➕ Set environment secret       Pick env, then name + value
+    🗑  Delete environment secret    Pick env, pick secret, confirm
+
+  Important: GitHub NEVER reveals secret values — not even via API.
+  You can set, list (names only), and delete. If you need to see
+  a value, you must re-set it.
+
+  Secret names are auto-uppercased (GitHub convention).
+
+  Depends on: gh, fzf
+HELP
+      ;;
+    ghbranch)
+      cat <<'HELP'
+ghbranch — branch management & protection rules
+
+  ghbranch         Opens interactive branch screen
+
+  Menu options:
+    📋 List branches                Shows all with 🛡 for protected
+    🛡  View protection rules       See what's enforced on a branch
+    🛡  Set protection rules        Interactive setup wizard:
+                                      • Required approving reviews (0-6)
+                                      • Dismiss stale reviews on push
+                                      • Require status checks to pass
+                                      • Enforce for admins
+                                      • Require linear history
+    🗑  Remove protection            Strip all rules from a branch
+    🗑  Delete remote branch         With safety check (won't delete default)
+    ⭐ Set default branch            Change repo's default branch
+
+  Protection rules require admin access to the repository.
+
+  Depends on: gh, fzf, jq
+HELP
+      ;;
+    ghenv)
+      cat <<'HELP'
+ghenv — environment management
+
+  ghenv            Opens interactive environment screen
+
+  Menu options:
+    📋 List environments            Names + creation dates
+    🔍 View environment details     Protection rules + secrets
+    ➕ Create environment           Just name it
+    ⏱  Set wait timer               Delay before deployment (minutes)
+    👤 Set required reviewers       Pick from collaborators or type username
+    🗑  Delete environment           Removes env AND all its secrets
+
+  Environments are used for deployment targets (staging, production).
+  Each can have its own secrets, wait timers, and required reviewers.
+
+  Depends on: gh, fzf, jq
+HELP
+      ;;
     deps|dependencies)
         echo -e "\033[1mChecking status of required tools...\033[0m"
       echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       
-      local tools=(zoxide fzf bat eza rg fd nvim dotnet gh)
+      local tools=(zoxide fzf bat eza rg fd nvim dotnet gh jq)
       local missing=()
       
       for cmd in "${tools[@]}"; do
@@ -583,6 +723,7 @@ Tool Descriptions:
   eza       Modern ls with icons and git integration
   rg/fd     High-speed search replacements for grep/find
   gh        GitHub CLI (must run: gh auth login)
+  jq        JSON processor (used by GitHub interactive commands)
 HELP
       ;;
     *)

@@ -14,6 +14,7 @@ Personal configuration files. One clone, one script, full setup.
 │   ├── bash_roest_theme        → ~/.bash_roest_theme
 │   ├── bash_roest_productivity → ~/.bash_roest_productivity (core commands)
 │   ├── bash_roest_git          → ~/.bash_roest_git (git tools and commands)
+│   ├── bash_roest_github       → ~/.bash_roest_github (interactive GitHub screens)
 │   └── bash_roest_password_commands → ~/.bash_roest_password_commands (not tracked)
 └── git/
 │   ├── README.md              GitHub tips and tricks
@@ -64,6 +65,8 @@ exec bash
 | `bash/bashrc`                       | Shell options, PATH, package managers, sources theme + productivity |
 | `bash/bash_roest_theme`             | Prompt, colors, LS_COLORS, man page colors                          |
 | `bash/bash_roest_productivity`      | Custom commands, aliases, help system                               |
+| `bash/bash_roest_git`               | GitHub Actions commands (gha, gha-ui, gha-fail, gha-open)           |
+| `bash/bash_roest_github`            | Interactive GitHub screens (gpr, ghsecrets, ghbranch, ghenv)        |
 | `bash/bash_roest_password_commands` | Sensitive commands (not tracked in git)                             |
 
 ## Password commands

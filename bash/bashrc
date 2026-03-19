@@ -106,3 +106,4 @@ source ~/.bash_roest_theme
 source ~/.bash_roest_password_commands
 source ~/.bash_roest_productivity
 source ~/.bash_roest_git
+source ~/.bash_roest_github
