@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# ~/.bash_roest_git
+# Github actions #
+
+gha() {
+  local repo sha
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  sha=$(git rev-parse HEAD)
+
+  gh api "repos/$repo/commits/$sha/check-runs" \
+    | jq -r '
+      .check_runs[]
+      | [
+          .name,
+          (if .status == "completed" then
+              (if .conclusion == "success" then "✅"
+               elif .conclusion == "failure" then "❌"
+               elif .conclusion == "skipped" then "⏭"
+               else "❓" end)
+           else "⏳" end),
+          .html_url
+        ]
+      | @tsv
+    ' | while IFS=$'\t' read -r name status url; do
+        printf "%-40s %s  %s\n" "$name" "$status" "$url"
+      done
+}
+
+gha-open() {
+  local url
+  url=$(gh repo view --json url -q .url)
+  xdg-open "$url/actions" >/dev/null 2>&1
+}

@@ -284,14 +284,15 @@ dtest() {
 # nvim spelling errors
 
 nvi() { # nvim spelling errors
-    nvim
+    nvim .
 }
 nv() { # nvim spelling errors
-    nvim
+    nvim .
 }
 n() { # nvim spelling errors
-    nvim
+    nvim .
 }
+
 
 # ─── Help System ──────────────────────────────────────────────────────────────
 #
