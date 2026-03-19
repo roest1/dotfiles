@@ -18,6 +18,7 @@
 #   ✨  Untracked files
 
 # ─── Conda ──────────────────────────────────────────────────────────
+# Prevent Conda from messing with the prompt colors we built
 export CONDA_CHANGEPS1=false
 
 __conda_env() {
@@ -82,6 +83,7 @@ __git_right() {
 # Only displays for repos that HAVE workflows.
 # Background refresh every 60s — never blocks prompt.
 # Timestamp = when the workflow actually ran (not cache age).
+export GH_PROMPT=1
 
 __gh_actions() {
   [[ "$GH_PROMPT" != "1" ]] && return

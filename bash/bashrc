@@ -78,9 +78,6 @@ export PATH=$JAVA_HOME/bin:$PATH
 # Package managers (auto-generated blocks — don't manually edit)
 #####################################################################
 
-# Prevent Conda from messing with the prompt colors we built
-export CONDA_CHANGEPS1=false
-
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
 __conda_setup="$('/home/riley/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
