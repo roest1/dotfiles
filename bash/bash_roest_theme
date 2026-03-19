@@ -89,6 +89,9 @@ __gh_actions() {
   [[ "$GH_PROMPT" != "1" ]] && return
   git rev-parse --is-inside-work-tree &>/dev/null || return
 
+  command -v gh &>/dev/null || return
+  command -v jq &>/dev/null || return
+
   local cache_dir="/tmp/gh_status_cache"
   mkdir -p "$cache_dir" 2>/dev/null
 
@@ -102,48 +105,58 @@ __gh_actions() {
   local mtime
   mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
 
-  # Background refresh if cache >60s old
+  # ─── Background refresh ─────────────────────────────────────────
   if (( now - mtime > 60 )) && [[ ! -f "$pending_file" ]]; then
     touch "$pending_file"
-    (
-      local result
-      result=$(gh run list --limit 5 --json conclusion,status,updatedAt 2>/dev/null)
 
-      if [[ -n "$result" && "$result" != "[]" ]]; then
-        local total
-        total=$(echo "$result" | jq 'length')
+    (
+      local repo sha result
+      repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+      sha=$(git rev-parse HEAD 2>/dev/null)
+
+      result=$(gh api "repos/${repo}/commits/${sha}/check-runs" 2>/dev/null)
+
+      if [[ -n "$result" ]]; then
+        local total succeeded failed running skipped last_run_iso last_run_epoch
+
+        total=$(echo "$result" | jq '.check_runs | length')
 
         if (( total > 0 )); then
-          local succeeded failed running last_run_iso
-          succeeded=$(echo "$result" | jq '[.[] | select(.conclusion=="success")] | length')
-          failed=$(echo "$result" | jq '[.[] | select(.conclusion=="failure")] | length')
-          running=$(echo "$result" | jq '[.[] | select(.status=="in_progress" or .status=="queued")] | length')
+          succeeded=$(echo "$result" | jq '[.check_runs[] | select(.conclusion=="success")] | length')
+          failed=$(echo "$result" | jq '[.check_runs[] | select(.conclusion=="failure")] | length')
+          running=$(echo "$result" | jq '[.check_runs[] | select(.status=="queued" or .status=="in_progress")] | length')
+          skipped=$(echo "$result" | jq '[.check_runs[] | select(.conclusion=="skipped")] | length')
 
-          last_run_iso=$(echo "$result" | jq -r '.[0].updatedAt // empty')
-          local last_run_epoch=0
+          last_run_iso=$(echo "$result" | jq -r '.check_runs[0].completed_at // .check_runs[0].started_at // empty')
+
+          last_run_epoch=0
           if [[ -n "$last_run_iso" ]]; then
             last_run_epoch=$(date -d "$last_run_iso" +%s 2>/dev/null || echo 0)
           fi
 
+          # Determine symbol
           local sym_key="ok"
           (( running > 0 )) && sym_key="run"
-          (( failed > 0 ))  && sym_key="fail"
+          (( failed > 0 )) && sym_key="fail"
 
-          printf "%s|%s|%s|%s" "$succeeded" "$total" "$sym_key" "$last_run_epoch" > "$cache_file"
+          printf "%s|%s|%s|%s|%s" \
+            "$succeeded" "$total" "$sym_key" "$last_run_epoch" "$skipped" \
+            > "$cache_file"
         else
           rm -f "$cache_file"
         fi
       else
         rm -f "$cache_file"
       fi
+
       rm -f "$pending_file"
     ) & disown
   fi
 
-  # Display (only if cache exists = repo has workflows)
+  # ─── Display ────────────────────────────────────────────────────
   if [[ -f "$cache_file" ]]; then
-    local s t sym_key run_epoch
-    IFS='|' read -r s t sym_key run_epoch < "$cache_file"
+    local s t sym_key run_epoch skipped
+    IFS='|' read -r s t sym_key run_epoch skipped < "$cache_file"
 
     [[ -z "$s" || -z "$t" ]] && return
 
@@ -169,8 +182,11 @@ __gh_actions() {
       fi
     fi
 
-    # White brackets and text, only the emoji pops
-    printf "\033[38;5;250m[%s/%s %s %s]\033[0m" "$s" "$t" "$emoji" "$age_str"
+    local skipped_str=""
+    (( skipped > 0 )) && skipped_str=" (${skipped} skipped)"
+
+    printf "\033[38;5;250m[%s/%s %s%s %s]\033[0m" \
+      "$s" "$t" "$emoji" "$skipped_str" "$age_str"
   fi
 }
 
