@@ -340,7 +340,7 @@ h() {
   GitHub Actions                                           [gh]
     gha                Show workflow status for HEAD
     gha-fail           Show only failed workflows
-    gha-ui             Interactive workflow picker (fzf)    [fzf]
+    gha-ui             Workflow picker → logs/rerun/browse  [fzf]
     gha-open           Open Actions tab in browser
 
   GitHub Interactive (fzf-powered screens)                 [gh, fzf, jq]
@@ -552,7 +552,7 @@ HELP
       ;;
     gha|gha-fail|gha-ui|gha-open)
       cat <<'HELP'
-GitHub Actions — CI/CD observability
+GitHub Actions — CI/CD observability + log viewer
 
   gha             Show workflow status for current HEAD commit
                   Displays: name, pass/fail/running, link
@@ -560,18 +560,39 @@ GitHub Actions — CI/CD observability
   gha-fail        Same as gha but filtered to failures only
                   Quick way to see what broke
 
-  gha-ui          Interactive workflow picker (fzf)
-                  ENTER opens the selected workflow in browser
-
   gha-open        Opens the Actions tab in your browser
                   Fallback when you need the full GitHub UI
+
+  gha-ui          Interactive workflow picker with action menu
+                  Pick a workflow, then choose:
+
+    📋 Smart log view
+       Shows all steps with status, duration, and dot-fill alignment.
+       Passing steps are COLLAPSED (header only).
+       Failed steps are AUTO-EXPANDED with their full log output
+       shown inline beneath the step header, bordered with │.
+       Summary line shows pass/fail/skip counts.
+       Output goes through less for scrolling.
+
+    🔍 Browse steps interactively
+       fzf list of all steps with ✅/❌/⏭ status.
+       Preview pane shows that step's log output as you arrow
+       through — no need to select first. ENTER opens the full
+       log in less. CTRL-C returns to the step list.
+       Logs are fetched once and cached in /tmp for fast browsing.
+
+    🌐 Open in browser
+       Falls back to the GitHub Actions UI
+
+    🔁 Rerun this workflow
+       Triggers a rerun of the selected workflow
 
   Your prompt also shows CI status on the right side:
     [5/5 ✅ 1d]  = 5 of 5 passed, last run 1 day ago
     [3/5 ❌ 2h]  = 3 of 5 passed (failures), 2 hours ago
     [5/5 ⏳ now]  = workflows still running
 
-  Depends on: gh, jq
+  Depends on: gh, jq, fzf
 HELP
       ;;
     gpr)
