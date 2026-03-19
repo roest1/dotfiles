@@ -13,6 +13,11 @@
 #   ghbranch      Branch management & protection rules
 #   ghenv         Environment management
 #
+# Navigation:
+#   Menus:  ↑↓ navigate  enter select  -/q back
+#   Lists:  type to search  enter select  esc back
+#   Pagers: r refresh  -/q back
+#
 # Dependencies: gh, fzf, jq
 
 # ─── Helpers ──────────────────────────────────────────────────────
@@ -40,14 +45,14 @@ __gh_default_branch() {
   gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null
 }
 
-# Picks a remote branch via fzf
+# Picks a remote branch via fzf (searchable — branch names contain -)
 __gh_pick_branch() {
   local header="${1:-Select branch}"
   git branch -r 2>/dev/null \
     | sed 's|origin/||; s|^[[:space:]]*||' \
     | grep -v '^HEAD' \
     | sort -u \
-    | fzf --header="$header" --height=15
+    | fzf --header="$header  │  type to filter  enter select  esc back" --height=15
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -80,7 +85,6 @@ _gpr_create() {
   echo ""
   echo "  📌 Source: $current_branch → $default_branch"
 
-  # Show what's going to be pushed
   local unpushed
   unpushed=$(git log --oneline "@{u}..HEAD" 2>/dev/null)
   if [[ -n "$unpushed" ]]; then
@@ -91,16 +95,15 @@ _gpr_create() {
     echo ""
   fi
 
-  # Draft or ready?
   local draft_flag=""
   local choice
   choice=$(printf '%s\n' "Ready for review" "Draft" \
-    | fzf --header="PR type:" --height=5 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="PR type:  │  ↑↓ nav  enter select  -/q back" --height=5 --no-info)
   [[ -z "$choice" ]] && return
   [[ "$choice" == "Draft" ]] && draft_flag="--draft"
 
   echo ""
-  # gh pr create is already interactive — prompts for title, body, base
   gh pr create $draft_flag
 }
 
@@ -143,7 +146,8 @@ _gpr_list() {
       }' \
     | fzf --ansi --no-sort \
         --header="  PR     Status       Title                                              Author      Branch                  Changes  Created
-$(printf '─%.0s' {1..130})" \
+$(printf '─%.0s' {1..130})
+  type to filter  │  enter=actions  esc=back" \
         --preview 'gh pr view $(echo {} | awk "{print \$1}" | tr -d "#")' \
         --preview-window=right:50%:wrap)
 
@@ -178,7 +182,9 @@ _gpr_actions() {
     "❌ Close PR" \
     "🌐 Open in browser" \
     "🔍 View CI checks" \
-    | fzf --no-info --header="PR #${number}: ${pr_title}")
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --no-info \
+        --header="PR #${number}: ${pr_title}  │  ↑↓ nav  enter select  -/q back")
 
   [[ -z "$action" ]] && return
 
@@ -186,7 +192,8 @@ _gpr_actions() {
     *"View details"*)
       gh pr view "$number"
       echo ""
-      read -rp "Press enter to return to actions..."
+      local key; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+      [[ "$key" == "r" || "$key" == "R" ]] && { _gpr_actions "$number"; return; }
       _gpr_actions "$number"
       ;;
 
@@ -278,7 +285,8 @@ _gpr_actions() {
       echo "━━━ CI Checks for PR #${number} ━━━"
       gh pr checks "$number" 2>/dev/null || echo "  No checks found"
       echo ""
-      read -rp "Press enter to return to actions..."
+      local key; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+      [[ "$key" == "r" || "$key" == "R" ]] && { _gpr_actions "$number"; return; }
       _gpr_actions "$number"
       ;;
   esac
@@ -291,11 +299,10 @@ _gpr_files() {
 
   local file
   file=$(gh pr diff "$number" --name-only 2>/dev/null \
-    | fzf --header="Changed files in PR #${number} (ENTER=view diff)" \
+    | fzf --header="Changed files in PR #${number}  │  enter=view diff  esc=back" \
         --preview "gh pr diff $number -- {} --color=always" \
         --preview-window=right:60%:wrap)
 
-  # If a file was selected, show its full diff
   if [[ -n "$file" ]]; then
     gh pr diff "$number" -- "$file" --color=always | less -R
   fi
@@ -308,7 +315,9 @@ _gpr_comment() {
 
   local method
   method=$(printf '%s\n' "Type inline" "Open in editor" \
-    | fzf --header="How to write your comment?" --height=5 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="How to write your comment?  │  ↑↓ nav  enter select  -/q back" \
+        --height=5 --no-info)
 
   [[ -z "$method" ]] && return
 
@@ -338,7 +347,6 @@ _gpr_comment() {
 _gpr_merge() {
   local number="$1"
 
-  # Check merge eligibility
   local mergeable
   mergeable=$(gh pr view "$number" --json mergeable -q .mergeable 2>/dev/null)
   if [[ "$mergeable" == "CONFLICTING" ]]; then
@@ -351,7 +359,9 @@ _gpr_merge() {
     "Squash and merge  (recommended: clean history)" \
     "Merge commit      (preserves all commits)" \
     "Rebase and merge  (linear history, no merge commit)" \
-    | fzf --header="Merge strategy for PR #${number}" --height=6 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Merge strategy for PR #${number}  │  ↑↓ nav  enter select  -/q back" \
+        --height=6 --no-info)
 
   [[ -z "$strategy" ]] && return
 
@@ -362,7 +372,6 @@ _gpr_merge() {
     *Rebase*)  flag="--rebase" ;;
   esac
 
-  # Delete branch after?
   local delete_flag=""
   read -rp "Delete branch after merge? (Y/n): " del
   [[ ! "$del" =~ ^[nN]$ ]] && delete_flag="--delete-branch"
@@ -377,7 +386,6 @@ _gpr_merge() {
 _gpr_labels() {
   local number="$1"
 
-  # Current labels
   local current
   current=$(gh pr view "$number" --json labels --jq '.labels[].name' 2>/dev/null)
   echo "Current labels: ${current:-none}"
@@ -385,7 +393,9 @@ _gpr_labels() {
 
   local action
   action=$(printf '%s\n' "Add label" "Remove label" \
-    | fzf --header="Labels for PR #${number}" --height=5 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Labels for PR #${number}  │  ↑↓ nav  enter select  -/q back" \
+        --height=5 --no-info)
 
   [[ -z "$action" ]] && return
 
@@ -398,7 +408,8 @@ _gpr_labels() {
         return
       fi
       local label
-      label=$(echo "$available" | fzf --header="Select label to add")
+      label=$(echo "$available" \
+        | fzf --header="Select label to add  │  type to filter  esc=back")
       [[ -n "$label" ]] && gh pr edit "$number" --add-label "$label" && echo "✅ Added: $label"
       ;;
     "Remove label")
@@ -407,7 +418,8 @@ _gpr_labels() {
         return
       fi
       local label
-      label=$(echo "$current" | fzf --header="Select label to remove")
+      label=$(echo "$current" \
+        | fzf --header="Select label to remove  │  esc=back")
       [[ -n "$label" ]] && gh pr edit "$number" --remove-label "$label" && echo "✅ Removed: $label"
       ;;
   esac
@@ -420,18 +432,16 @@ _gpr_reviewers() {
   local repo
   repo=$(__gh_repo)
 
-  # Try to list collaborators for a picker
   local collabs
   collabs=$(gh api "repos/$repo/collaborators" --jq '.[].login' 2>/dev/null)
 
   if [[ -n "$collabs" ]]; then
     local reviewer
     reviewer=$(echo "$collabs" \
-      | fzf --header="Select reviewer for PR #${number}")
+      | fzf --header="Select reviewer for PR #${number}  │  type to filter  esc=back")
     [[ -n "$reviewer" ]] && gh pr edit "$number" --add-reviewer "$reviewer" \
       && echo "✅ Reviewer requested: $reviewer"
   else
-    # Fallback: type manually
     read -rp "Reviewer username: " reviewer
     [[ -n "$reviewer" ]] && gh pr edit "$number" --add-reviewer "$reviewer" \
       && echo "✅ Reviewer requested: $reviewer"
@@ -445,7 +455,9 @@ _gpr_edit() {
 
   local field
   field=$(printf '%s\n' "Title" "Body (description)" \
-    | fzf --header="Edit PR #${number}" --height=5 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Edit PR #${number}  │  ↑↓ nav  enter select  -/q back" \
+        --height=5 --no-info)
 
   [[ -z "$field" ]] && return
 
@@ -487,27 +499,30 @@ ghsecrets() {
     "🌍 List environment secrets" \
     "➕ Set environment secret" \
     "🗑  Delete environment secret" \
-    | fzf --header="Secrets Management (values are write-only — GitHub never reveals them)" \
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Secrets Management (values are write-only)  │  ↑↓ nav  enter select  -/q back" \
         --height=10 --no-info)
 
   [[ -z "$action" || "$action" == *"───"* ]] && return
 
   case "$action" in
     *"List repo secrets"*)
-      echo "━━━ Repository Secrets ━━━"
-      echo ""
-      gh secret list 2>/dev/null || echo "  (none)"
-      echo ""
-      echo "  ℹ  Values are hidden by design — only names and last updated shown"
-      echo ""
-      read -rp "Press enter to continue..."
+      while true; do
+        echo ""
+        echo "━━━ Repository Secrets ━━━"
+        echo ""
+        gh secret list 2>/dev/null || echo "  (none)"
+        echo ""
+        echo "  ℹ  Values are hidden by design — only names and last updated shown"
+        local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+        [[ "$key" == "r" || "$key" == "R" ]] || break
+      done
       ghsecrets
       ;;
 
     *"Set repo secret"*)
       read -rp "Secret name (e.g. API_KEY): " name
       if [[ -n "$name" ]]; then
-        # Uppercase convention
         name=$(echo "$name" | tr '[:lower:]' '[:upper:]')
         echo "Paste the value (input is hidden):"
         gh secret set "$name"
@@ -521,12 +536,13 @@ ghsecrets() {
       secrets=$(gh secret list --json name --jq '.[].name' 2>/dev/null)
       if [[ -z "$secrets" ]]; then
         echo "No repo secrets found."
-        read -rp "Press enter to continue..."
+        sleep 1
         ghsecrets
         return
       fi
       local secret
-      secret=$(echo "$secrets" | fzf --header="Select secret to delete")
+      secret=$(echo "$secrets" \
+        | fzf --header="Select secret to delete  │  type to filter  esc=back")
       if [[ -n "$secret" ]]; then
         read -rp "Delete '$secret'? This cannot be undone. (y/N): " confirm
         [[ "$confirm" =~ ^[yY]$ ]] && gh secret delete "$secret" && echo "✅ Deleted: $secret"
@@ -537,19 +553,22 @@ ghsecrets() {
     *"List environment secrets"*)
       local env
       env=$(__ghenv_pick "Select environment to view secrets")
-      [[ -z "$env" ]] && return
-      echo "━━━ Secrets for environment: $env ━━━"
-      echo ""
-      gh secret list --env "$env" 2>/dev/null || echo "  (none)"
-      echo ""
-      read -rp "Press enter to continue..."
+      [[ -z "$env" ]] && { ghsecrets; return; }
+      while true; do
+        echo ""
+        echo "━━━ Secrets for environment: $env ━━━"
+        echo ""
+        gh secret list --env "$env" 2>/dev/null || echo "  (none)"
+        local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+        [[ "$key" == "r" || "$key" == "R" ]] || break
+      done
       ghsecrets
       ;;
 
     *"Set environment secret"*)
       local env
       env=$(__ghenv_pick "Select environment")
-      [[ -z "$env" ]] && return
+      [[ -z "$env" ]] && { ghsecrets; return; }
       read -rp "Secret name: " name
       if [[ -n "$name" ]]; then
         name=$(echo "$name" | tr '[:lower:]' '[:upper:]')
@@ -563,17 +582,18 @@ ghsecrets() {
     *"Delete environment secret"*)
       local env
       env=$(__ghenv_pick "Select environment")
-      [[ -z "$env" ]] && return
+      [[ -z "$env" ]] && { ghsecrets; return; }
       local secrets
       secrets=$(gh secret list --env "$env" --json name --jq '.[].name' 2>/dev/null)
       if [[ -z "$secrets" ]]; then
         echo "No secrets in environment '$env'."
-        read -rp "Press enter to continue..."
+        sleep 1
         ghsecrets
         return
       fi
       local secret
-      secret=$(echo "$secrets" | fzf --header="Select secret to delete from '$env'")
+      secret=$(echo "$secrets" \
+        | fzf --header="Select secret to delete from '$env'  │  esc=back")
       if [[ -n "$secret" ]]; then
         read -rp "Delete '$secret' from '$env'? (y/N): " confirm
         [[ "$confirm" =~ ^[yY]$ ]] && gh secret delete "$secret" --env "$env" \
@@ -600,7 +620,7 @@ __ghenv_pick() {
     echo "No environments found. Use ghenv to create one." >&2
     return 1
   fi
-  echo "$envs" | fzf --header="$header" --height=10
+  echo "$envs" | fzf --header="$header  │  type to filter  esc=back" --height=10
 }
 
 ghenv() {
@@ -617,48 +637,51 @@ ghenv() {
     "⏱  Set wait timer" \
     "👤 Set required reviewers" \
     "🗑  Delete environment" \
-    | fzf --header="Environment Management — $repo" --height=9 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Environment Management — $repo  │  ↑↓ nav  enter select  -/q back" \
+        --height=9 --no-info)
 
   [[ -z "$action" ]] && return
 
   case "$action" in
     *"List environments"*)
-      echo "━━━ Environments ━━━"
-      echo ""
-      gh api "repos/$repo/environments" \
-        --jq '.environments[] | "  \(.name)   created: \(.created_at[:10])"' 2>/dev/null \
-        || echo "  No environments configured"
-      echo ""
-      read -rp "Press enter to continue..."
+      while true; do
+        echo ""
+        echo "━━━ Environments ━━━"
+        echo ""
+        gh api "repos/$repo/environments" \
+          --jq '.environments[] | "  \(.name)   created: \(.created_at[:10])"' 2>/dev/null \
+          || echo "  No environments configured"
+        local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+        [[ "$key" == "r" || "$key" == "R" ]] || break
+      done
       ghenv
       ;;
 
     *"View environment details"*)
       local env
       env=$(__ghenv_pick "View details for which environment?")
-      [[ -z "$env" ]] && return
-      echo ""
-      echo "━━━ Environment: $env ━━━"
-      echo ""
-
-      # Protection rules
-      echo "Protection rules:"
-      gh api "repos/$repo/environments/$env" \
-        --jq '
-          if (.protection_rules | length) == 0 then "  (none)"
-          else .protection_rules[] |
-            if .type == "wait_timer" then "  ⏱  Wait timer: \(.wait_timer) minutes"
-            elif .type == "required_reviewers" then "  👤 Required reviewers: \([.reviewers[].reviewer.login] | join(", "))"
-            else "  \(.type)"
-            end
-          end' 2>/dev/null || echo "  (none)"
-
-      echo ""
-      echo "Secrets:"
-      gh secret list --env "$env" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
-
-      echo ""
-      read -rp "Press enter to continue..."
+      [[ -z "$env" ]] && { ghenv; return; }
+      while true; do
+        echo ""
+        echo "━━━ Environment: $env ━━━"
+        echo ""
+        echo "Protection rules:"
+        gh api "repos/$repo/environments/$env" \
+          --jq '
+            if (.protection_rules | length) == 0 then "  (none)"
+            else .protection_rules[] |
+              if .type == "wait_timer" then "  ⏱  Wait timer: \(.wait_timer) minutes"
+              elif .type == "required_reviewers" then "  👤 Required reviewers: \([.reviewers[].reviewer.login] | join(", "))"
+              else "  \(.type)"
+              end
+            end' 2>/dev/null || echo "  (none)"
+        echo ""
+        echo "Secrets:"
+        gh secret list --env "$env" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
+        local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+        [[ "$key" == "r" || "$key" == "R" ]] || break
+      done
       ghenv
       ;;
 
@@ -675,7 +698,7 @@ ghenv() {
     *"Set wait timer"*)
       local env
       env=$(__ghenv_pick "Set wait timer for which environment?")
-      [[ -z "$env" ]] && return
+      [[ -z "$env" ]] && { ghenv; return; }
       read -rp "Wait time in minutes (0-43200, 0 to disable): " minutes
       if [[ "$minutes" =~ ^[0-9]+$ ]]; then
         gh api -X PUT "repos/$repo/environments/$env" \
@@ -690,16 +713,15 @@ ghenv() {
     *"Set required reviewers"*)
       local env
       env=$(__ghenv_pick "Set reviewers for which environment?")
-      [[ -z "$env" ]] && return
+      [[ -z "$env" ]] && { ghenv; return; }
 
-      # Try to list collaborators
       local collabs
       collabs=$(gh api "repos/$repo/collaborators" --jq '.[].login' 2>/dev/null)
 
       local reviewer
       if [[ -n "$collabs" ]]; then
-        echo "Select reviewer (or Ctrl+C to type manually):"
-        reviewer=$(echo "$collabs" | fzf --header="Select reviewer")
+        reviewer=$(echo "$collabs" \
+          | fzf --header="Select reviewer  │  type to filter  esc=back")
       fi
       if [[ -z "$reviewer" ]]; then
         read -rp "Reviewer username: " reviewer
@@ -724,7 +746,7 @@ ghenv() {
     *"Delete environment"*)
       local env
       env=$(__ghenv_pick "Delete which environment?")
-      [[ -z "$env" ]] && return
+      [[ -z "$env" ]] && { ghenv; return; }
       read -rp "⚠️  Delete environment '$env'? This removes all its secrets too. (y/N): " confirm
       if [[ "$confirm" =~ ^[yY]$ ]]; then
         gh api -X DELETE "repos/$repo/environments/$env" --silent 2>/dev/null \
@@ -755,44 +777,51 @@ ghbranch() {
     "🗑  Remove protection" \
     "🗑  Delete remote branch" \
     "⭐ Set default branch" \
-    | fzf --header="Branch Management — $repo" --height=9 --no-info)
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Branch Management — $repo  │  ↑↓ nav  enter select  -/q back" \
+        --height=9 --no-info)
 
   [[ -z "$action" ]] && return
 
   case "$action" in
     *"List branches"*)
-      echo "━━━ Branches ━━━"
-      echo ""
-      gh api "repos/$repo/branches" --paginate \
-        --jq '.[] | "  \(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
-        2>/dev/null || echo "  Failed to fetch branches"
-      echo ""
-      echo "  🛡  = branch protection rules enabled"
-      echo ""
-      read -rp "Press enter to continue..."
+      while true; do
+        echo ""
+        echo "━━━ Branches ━━━"
+        echo ""
+        gh api "repos/$repo/branches" --paginate \
+          --jq '.[] | "  \(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
+          2>/dev/null || echo "  Failed to fetch branches"
+        echo ""
+        echo "  🛡  = branch protection rules enabled"
+        local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+        [[ "$key" == "r" || "$key" == "R" ]] || break
+      done
       ghbranch
       ;;
 
     *"View protection"*)
       local branch
       branch=$(__gh_pick_branch "View protections for which branch?")
-      [[ -z "$branch" ]] && return
-      echo ""
-      echo "━━━ Protection rules: $branch ━━━"
-      echo ""
-      gh api "repos/$repo/branches/$branch/protection" 2>/dev/null \
-        | jq '{
-          required_approving_reviews: (.required_pull_request_reviews.required_approving_review_count // "not set"),
-          dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
-          require_status_checks: (.required_status_checks.strict // false),
-          required_checks: [(.required_status_checks.contexts // [])[]],
-          enforce_admins: (.enforce_admins.enabled // false),
-          require_linear_history: (.required_linear_history.enabled // false),
-          allow_force_pushes: (.allow_force_pushes.enabled // false),
-          allow_deletions: (.allow_deletions.enabled // false)
-        }' 2>/dev/null || echo "  No protection rules set on '$branch'"
-      echo ""
-      read -rp "Press enter to continue..."
+      [[ -z "$branch" ]] && { ghbranch; return; }
+      while true; do
+        echo ""
+        echo "━━━ Protection rules: $branch ━━━"
+        echo ""
+        gh api "repos/$repo/branches/$branch/protection" 2>/dev/null \
+          | jq '{
+            required_approving_reviews: (.required_pull_request_reviews.required_approving_review_count // "not set"),
+            dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
+            require_status_checks: (.required_status_checks.strict // false),
+            required_checks: [(.required_status_checks.contexts // [])[]],
+            enforce_admins: (.enforce_admins.enabled // false),
+            require_linear_history: (.required_linear_history.enabled // false),
+            allow_force_pushes: (.allow_force_pushes.enabled // false),
+            allow_deletions: (.allow_deletions.enabled // false)
+          }' 2>/dev/null || echo "  No protection rules set on '$branch'"
+        local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
+        [[ "$key" == "r" || "$key" == "R" ]] || break
+      done
       ghbranch
       ;;
 
@@ -804,7 +833,7 @@ ghbranch() {
     *"Remove protection"*)
       local branch
       branch=$(__gh_pick_branch "Remove protection from which branch?")
-      [[ -z "$branch" ]] && return
+      [[ -z "$branch" ]] && { ghbranch; return; }
       read -rp "⚠️  Remove ALL protection rules from '$branch'? (y/N): " confirm
       if [[ "$confirm" =~ ^[yY]$ ]]; then
         gh api -X DELETE "repos/$repo/branches/$branch/protection" --silent 2>/dev/null \
@@ -819,9 +848,11 @@ ghbranch() {
       default_branch=$(__gh_default_branch)
       local branch
       branch=$(__gh_pick_branch "Delete which remote branch?")
-      [[ -z "$branch" ]] && return
+      [[ -z "$branch" ]] && { ghbranch; return; }
       if [[ "$branch" == "$default_branch" ]]; then
         echo "❌ Cannot delete the default branch ('$default_branch')"
+        sleep 1
+        ghbranch
         return
       fi
       read -rp "Delete remote branch '$branch'? (y/N): " confirm
@@ -836,7 +867,7 @@ ghbranch() {
     *"Set default"*)
       local branch
       branch=$(__gh_pick_branch "Set which branch as default?")
-      [[ -z "$branch" ]] && return
+      [[ -z "$branch" ]] && { ghbranch; return; }
       read -rp "Set '$branch' as default branch? (y/N): " confirm
       if [[ "$confirm" =~ ^[yY]$ ]]; then
         gh repo edit --default-branch "$branch" 2>/dev/null \
@@ -861,34 +892,28 @@ _ghbranch_protect() {
   echo "━━━ Configure protection for '$branch' ━━━"
   echo ""
 
-  # Required reviews
   local reviews=0
   read -rp "Required approving reviews (0-6, default 0): " reviews
   reviews=${reviews:-0}
 
-  # Dismiss stale reviews
   local dismiss_stale="false"
   if (( reviews > 0 )); then
     read -rp "Dismiss stale reviews on new push? (Y/n): " ds
     [[ ! "$ds" =~ ^[nN]$ ]] && dismiss_stale="true"
   fi
 
-  # Status checks
   local strict_checks="false"
   read -rp "Require status checks to pass before merging? (y/N): " sc
   [[ "$sc" =~ ^[yY]$ ]] && strict_checks="true"
 
-  # Enforce admins
   local enforce_admins="false"
   read -rp "Enforce rules for admins too? (y/N): " ea
   [[ "$ea" =~ ^[yY]$ ]] && enforce_admins="true"
 
-  # Linear history
   local linear="false"
   read -rp "Require linear history? (y/N): " lh
   [[ "$lh" =~ ^[yY]$ ]] && linear="true"
 
-  # Build payload
   local payload
   payload=$(jq -n \
     --argjson reviews "$reviews" \
@@ -915,4 +940,3 @@ _ghbranch_protect() {
     && echo "✅ Protection rules applied to '$branch'" \
     || echo "❌ Failed — check repo permissions (admin access required)"
 }
-

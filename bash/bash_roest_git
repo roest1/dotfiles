@@ -9,6 +9,11 @@
 #   gha-open      Open Actions tab in browser
 #   gha-ui        Interactive workflow picker → action menu → logs
 #
+# Navigation:
+#   Menus:  ↑↓ navigate  enter select  -/q back
+#   Lists:  type to search  enter select  esc back
+#   Pagers: r refresh  -/q back
+#
 # Dependencies: gh, jq, fzf
 
 # ─── Quick status ─────────────────────────────────────────────────
@@ -78,7 +83,7 @@ gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
 
   local selection
   selection=$(echo "$runs_data" \
-    | fzf --header="GitHub Actions — ENTER for actions, CTRL-C to exit" \
+    | fzf --header="GitHub Actions  │  enter=actions  esc=exit" \
         --preview 'echo {}' \
         --delimiter=$'\t' \
         --with-nth=1,2)
@@ -94,7 +99,6 @@ gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
   run_id=$(echo "$url" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
 
   if [[ -z "$run_id" ]]; then
-    # Can't extract run ID — fall back to browser
     xdg-open "$url" >/dev/null 2>&1
     return
   fi
@@ -113,7 +117,8 @@ _gha_action_menu() {
     "🔍 Browse steps interactively" \
     "🌐 Open in browser" \
     "🔁 Rerun this workflow" \
-    | fzf --header="$job_name  (run $run_id)" \
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="$job_name  (run $run_id)  │  ↑↓ nav  enter select  -/q back" \
         --height=7 --no-info)
 
   [[ -z "$action" ]] && return
@@ -134,316 +139,269 @@ _gha_action_menu() {
 #
 # Shows all steps with status. Passing steps are collapsed (header only).
 # Failed steps are auto-expanded with their full log output below.
-# Piped through less for scrolling.
+# Piped through less for scrolling. r to refresh, -/q to go back.
 
 _gha_smart_log() {
   local run_id="$1" job_name="$2"
 
-  echo "⏳ Fetching logs for: $job_name..."
+  while true; do
+    echo "⏳ Fetching logs for: $job_name..."
 
-  # Get step structure (name, conclusion, timing)
-  local steps_json
-  steps_json=$(gh run view "$run_id" --json jobs --jq "
-    [.jobs[] | select(.name == \"$job_name\") | .steps[] |
-     {name: .name, conclusion: .conclusion, number: .number,
-      started: .startedAt, completed: .completedAt}]
-  " 2>/dev/null)
+    local steps_json
+    steps_json=$(_gha_fetch_steps "$run_id" "$job_name")
 
-  # Fallback: if exact name match fails, try contains (workflow names
-  # sometimes get prefixed like "CI / build")
-  if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-    steps_json=$(gh run view "$run_id" --json jobs --jq "
-      [.jobs[] | select(.name | contains(\"$job_name\")) | .steps[] |
-       {name: .name, conclusion: .conclusion, number: .number,
-        started: .startedAt, completed: .completedAt}]
-    " 2>/dev/null)
-  fi
-
-  # Second fallback: if there's only one job, just use it
-  if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-    local job_count
-    job_count=$(gh run view "$run_id" --json jobs --jq '.jobs | length' 2>/dev/null)
-    if [[ "$job_count" == "1" ]]; then
-      steps_json=$(gh run view "$run_id" --json jobs --jq "
-        [.jobs[0].steps[] |
-         {name: .name, conclusion: .conclusion, number: .number,
-          started: .startedAt, completed: .completedAt}]
-      " 2>/dev/null)
+    if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
+      echo "❌ Could not find steps for '$job_name'"
+      echo "   Run: gh run view $run_id --json jobs --jq '.jobs[].name'"
+      return 1
     fi
-  fi
 
-  if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-    echo "❌ Could not find steps for '$job_name'"
-    echo "   Run: gh run view $run_id --json jobs --jq '.jobs[].name'"
-    return 1
-  fi
+    local full_log
+    full_log=$(gh run view "$run_id" --log 2>/dev/null)
 
-  # Fetch full log output (all jobs)
-  local full_log
-  full_log=$(gh run view "$run_id" --log 2>/dev/null)
+    local total_steps passed_steps failed_steps skipped_steps
+    total_steps=$(echo "$steps_json" | jq 'length')
+    passed_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "success")] | length')
+    failed_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "failure")] | length')
+    skipped_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "skipped")] | length')
 
-  # Count totals for summary
-  local total_steps passed_steps failed_steps skipped_steps
-  total_steps=$(echo "$steps_json" | jq 'length')
-  passed_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "success")] | length')
-  failed_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "failure")] | length')
-  skipped_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "skipped")] | length')
+    # Render into pager
+    {
+      echo ""
+      if (( failed_steps > 0 )); then
+        printf " \033[31m━━━ %s ━━━  %s passed  %s failed  %s skipped\033[0m\n" \
+          "$job_name" "$passed_steps" "$failed_steps" "$skipped_steps"
+      else
+        printf " \033[32m━━━ %s ━━━  %s passed  %s skipped\033[0m\n" \
+          "$job_name" "$passed_steps" "$skipped_steps"
+      fi
+      echo ""
 
-  # Render everything into a pager
-  {
-    echo ""
-    if (( failed_steps > 0 )); then
-      printf " \033[31m━━━ %s ━━━  %s passed  %s failed  %s skipped\033[0m\n" \
-        "$job_name" "$passed_steps" "$failed_steps" "$skipped_steps"
-    else
-      printf " \033[32m━━━ %s ━━━  %s passed  %s skipped\033[0m\n" \
-        "$job_name" "$passed_steps" "$skipped_steps"
-    fi
-    echo ""
+      echo "$steps_json" | jq -c '.[]' | while IFS= read -r step; do
+        local step_name step_conclusion
+        step_name=$(echo "$step" | jq -r '.name')
+        step_conclusion=$(echo "$step" | jq -r '.conclusion')
 
-    echo "$steps_json" | jq -c '.[]' | while IFS= read -r step; do
-      local step_name step_conclusion
-      step_name=$(echo "$step" | jq -r '.name')
-      step_conclusion=$(echo "$step" | jq -r '.conclusion')
-
-      # Calculate duration
-      local started completed duration_str=""
-      started=$(echo "$step" | jq -r '.started // empty')
-      completed=$(echo "$step" | jq -r '.completed // empty')
-      if [[ -n "$started" && -n "$completed" && "$started" != "null" && "$completed" != "null" ]]; then
-        local s_epoch c_epoch dur
-        s_epoch=$(date -d "$started" +%s 2>/dev/null || echo 0)
-        c_epoch=$(date -d "$completed" +%s 2>/dev/null || echo 0)
-        if (( c_epoch > s_epoch )); then
-          dur=$(( c_epoch - s_epoch ))
-          if (( dur >= 60 )); then
-            duration_str="$(( dur / 60 ))m$(( dur % 60 ))s"
-          else
-            duration_str="${dur}s"
+        # Duration
+        local started completed duration_str=""
+        started=$(echo "$step" | jq -r '.started // empty')
+        completed=$(echo "$step" | jq -r '.completed // empty')
+        if [[ -n "$started" && -n "$completed" && "$started" != "null" && "$completed" != "null" ]]; then
+          local s_epoch c_epoch dur
+          s_epoch=$(date -d "$started" +%s 2>/dev/null || echo 0)
+          c_epoch=$(date -d "$completed" +%s 2>/dev/null || echo 0)
+          if (( c_epoch > s_epoch )); then
+            dur=$(( c_epoch - s_epoch ))
+            if (( dur >= 60 )); then
+              duration_str="$(( dur / 60 ))m$(( dur % 60 ))s"
+            else
+              duration_str="${dur}s"
+            fi
           fi
         fi
-      fi
 
-      # Render step header
-      local emoji color
-      case "$step_conclusion" in
-        success)  emoji="✅"; color="32" ;;
-        failure)  emoji="❌"; color="31" ;;
-        skipped)  emoji="⏭ "; color="33" ;;
-        *)        emoji="⏳"; color="90" ;;
-      esac
+        local emoji color
+        case "$step_conclusion" in
+          success)  emoji="✅"; color="32" ;;
+          failure)  emoji="❌"; color="31" ;;
+          skipped)  emoji="⏭ "; color="33" ;;
+          *)        emoji="⏳"; color="90" ;;
+        esac
 
-      # Dot-fill between name and duration for visual alignment
-      local name_len=${#step_name}
-      local dots_count=$(( 52 - name_len ))
-      (( dots_count < 2 )) && dots_count=2
-      local dots
-      dots=$(printf '%*s' "$dots_count" '' | tr ' ' '·')
+        local name_len=${#step_name}
+        local dots_count=$(( 52 - name_len ))
+        (( dots_count < 2 )) && dots_count=2
+        local dots
+        dots=$(printf '%*s' "$dots_count" '' | tr ' ' '·')
 
-      printf " %s  \033[%sm%s\033[0m \033[90m%s\033[0m %s\n" \
-        "$emoji" "$color" "$step_name" "$dots" "$duration_str"
+        printf " %s  \033[%sm%s\033[0m \033[90m%s\033[0m %s\n" \
+          "$emoji" "$color" "$step_name" "$dots" "$duration_str"
 
-      # ─── EXPANDED: show logs for failed steps ──────────────
-      if [[ "$step_conclusion" == "failure" ]]; then
-        local step_logs
-        step_logs=$(_gha_extract_step_log "$full_log" "$job_name" "$step_name")
+        # ─── EXPANDED: show logs for failed steps ──────────────
+        if [[ "$step_conclusion" == "failure" ]]; then
+          local step_logs
+          step_logs=$(_gha_extract_step_log "$full_log" "$job_name" "$step_name")
 
-        if [[ -n "$step_logs" ]]; then
-          echo -e " \033[31m│\033[0m"
-          echo "$step_logs" | while IFS= read -r line; do
-            # Strip ISO timestamp prefix if present
-            local clean
-            clean=$(echo "$line" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9.:]*Z //')
-            echo -e " \033[31m│\033[0m  $clean"
-          done
-          echo -e " \033[31m│\033[0m"
-        else
-          echo -e " \033[31m│\033[0m  \033[90m(no log output captured)\033[0m"
-          echo -e " \033[31m│\033[0m"
+          if [[ -n "$step_logs" ]]; then
+            echo -e " \033[31m│\033[0m"
+            echo "$step_logs" | while IFS= read -r line; do
+              local clean
+              clean=$(echo "$line" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9.:]*Z //')
+              echo -e " \033[31m│\033[0m  $clean"
+            done
+            echo -e " \033[31m│\033[0m"
+          else
+            echo -e " \033[31m│\033[0m  \033[90m(no log output captured)\033[0m"
+            echo -e " \033[31m│\033[0m"
+          fi
         fi
-      fi
+      done
 
-    done
+      echo ""
+      printf " \033[90mRun ID: %s  •  Full logs: gh run view %s --log\033[0m\n" "$run_id" "$run_id"
+      echo ""
 
+    } | less -R
+
+    # ─── Post-pager navigation ────────────────────────────────
+    local key
     echo ""
-    printf " \033[90mRun ID: %s  •  Full logs: gh run view %s --log\033[0m\n" "$run_id" "$run_id"
+    read -rsn1 -p "  r=refresh  -/q=back " key
     echo ""
+    case "$key" in
+      r|R) continue ;;
+      *)   break ;;
+    esac
+  done
 
-  } | less -R
-
-  # Return to action menu
   _gha_action_menu "$run_id" "$job_name" ""
 }
 
 # ─── Interactive step browser ──────────────────────────────────────
 #
 # fzf list of all steps with status. Preview pane shows that step's
-# logs in real time as you navigate. ENTER opens the full log in less.
+# logs as you navigate. ENTER opens full log in less.
+# After exiting fzf: r to refresh (re-fetch), -/q to go back.
 
 _gha_step_browser() {
   local run_id="$1" job_name="$2"
 
-  echo "⏳ Fetching logs..."
+  while true; do
+    echo "⏳ Fetching logs..."
 
-  local tmpdir
-  tmpdir=$(mktemp -d /tmp/gha-steps-XXXXXX)
-  trap "rm -rf '$tmpdir'" RETURN
+    local tmpdir
+    tmpdir=$(mktemp -d /tmp/gha-steps-XXXXXX)
 
-  # Fetch full log
-  gh run view "$run_id" --log 2>/dev/null > "$tmpdir/full.log"
+    # Fetch full log
+    gh run view "$run_id" --log 2>/dev/null > "$tmpdir/full.log"
 
-  # Get step structure
-  local steps_json
-  steps_json=$(gh run view "$run_id" --json jobs --jq "
-    [.jobs[] | select(.name == \"$job_name\") | .steps[] |
-     {name: .name, conclusion: .conclusion, number: .number}]
-  " 2>/dev/null)
+    # Get step structure
+    local steps_json
+    steps_json=$(_gha_fetch_steps "$run_id" "$job_name")
 
-  # Fallback: contains match
-  if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-    steps_json=$(gh run view "$run_id" --json jobs --jq "
-      [.jobs[] | select(.name | contains(\"$job_name\")) | .steps[] |
-       {name: .name, conclusion: .conclusion, number: .number}]
-    " 2>/dev/null)
-  fi
-
-  # Second fallback: single job
-  if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-    local job_count
-    job_count=$(gh run view "$run_id" --json jobs --jq '.jobs | length' 2>/dev/null)
-    if [[ "$job_count" == "1" ]]; then
-      steps_json=$(gh run view "$run_id" --json jobs --jq "
-        [.jobs[0].steps[] |
-         {name: .name, conclusion: .conclusion, number: .number}]
-      " 2>/dev/null)
-      # Also get the actual job name for log filtering
-      job_name=$(gh run view "$run_id" --json jobs --jq '.jobs[0].name' 2>/dev/null)
-    fi
-  fi
-
-  if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-    echo "❌ Could not find steps for '$job_name'"
-    return 1
-  fi
-
-  # Split logs into per-step files and build picker list
-  # Using a numbered file per step for safe fzf preview references
-  echo "$steps_json" | jq -c '.[]' | while IFS= read -r step; do
-    local num name conclusion emoji
-    num=$(echo "$step" | jq -r '.number')
-    name=$(echo "$step" | jq -r '.name')
-    conclusion=$(echo "$step" | jq -r '.conclusion')
-
-    case "$conclusion" in
-      success) emoji="✅" ;;
-      failure) emoji="❌" ;;
-      skipped) emoji="⏭ " ;;
-      *)       emoji="⏳" ;;
-    esac
-
-    # Extract this step's logs into a numbered file
-    _gha_extract_step_log "$(cat "$tmpdir/full.log")" "$job_name" "$name" \
-      | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9.:]*Z //' \
-      > "$tmpdir/step_${num}.log"
-
-    # Write picker line: display_text<TAB>step_number
-    printf "%s  %s\t%s\n" "$emoji" "$name" "$num"
-  done > "$tmpdir/picker.tsv"
-
-  if [[ ! -s "$tmpdir/picker.tsv" ]]; then
-    echo "❌ Failed to process steps"
-    return 1
-  fi
-
-  # fzf picker — preview shows the step's log file, ENTER opens in less
-  local selection
-  selection=$(cat "$tmpdir/picker.tsv" \
-    | fzf --ansi \
-        --delimiter=$'\t' \
-        --with-nth=1 \
-        --header="Steps: $job_name  (ENTER=full log in pager)" \
-        --preview "cat $tmpdir/step_{2}.log 2>/dev/null || echo 'No logs'" \
-        --preview-window=right:65%:wrap)
-
-  if [[ -n "$selection" ]]; then
-    local step_num
-    step_num=$(echo "$selection" | awk -F'\t' '{print $2}')
-
-    if [[ -s "$tmpdir/step_${step_num}.log" ]]; then
-      less -R "$tmpdir/step_${step_num}.log"
-    else
-      echo "(no log output for this step)"
-      sleep 1
+    if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
+      echo "❌ Could not find steps for '$job_name'"
+      rm -rf "$tmpdir"
+      return 1
     fi
 
-    # Loop back for browsing more steps
-    # Re-enter without re-fetching (files still exist)
-    local re_selection
-    re_selection=$(cat "$tmpdir/picker.tsv" \
-      | fzf --ansi \
-          --delimiter=$'\t' \
-          --with-nth=1 \
-          --header="Steps: $job_name  (ENTER=full log, CTRL-C=back)" \
-          --preview "cat $tmpdir/step_{2}.log 2>/dev/null || echo 'No logs'" \
-          --preview-window=right:65%:wrap)
+    # Split logs into per-step files and build picker list
+    echo "$steps_json" | jq -c '.[]' | while IFS= read -r step; do
+      local num name conclusion emoji
+      num=$(echo "$step" | jq -r '.number')
+      name=$(echo "$step" | jq -r '.name')
+      conclusion=$(echo "$step" | jq -r '.conclusion')
 
-    while [[ -n "$re_selection" ]]; do
-      step_num=$(echo "$re_selection" | awk -F'\t' '{print $2}')
-      [[ -s "$tmpdir/step_${step_num}.log" ]] && less -R "$tmpdir/step_${step_num}.log"
-      re_selection=$(cat "$tmpdir/picker.tsv" \
+      case "$conclusion" in
+        success) emoji="✅" ;;
+        failure) emoji="❌" ;;
+        skipped) emoji="⏭ " ;;
+        *)       emoji="⏳" ;;
+      esac
+
+      _gha_extract_step_log "$(cat "$tmpdir/full.log")" "$job_name" "$name" \
+        | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9.:]*Z //' \
+        > "$tmpdir/step_${num}.log"
+
+      printf "%s  %s\t%s\n" "$emoji" "$name" "$num"
+    done > "$tmpdir/picker.tsv"
+
+    if [[ ! -s "$tmpdir/picker.tsv" ]]; then
+      echo "❌ Failed to process steps"
+      rm -rf "$tmpdir"
+      return 1
+    fi
+
+    # ─── fzf browse loop (cached — fast navigation) ────────
+    local selection="initial"
+    while [[ -n "$selection" ]]; do
+      selection=$(cat "$tmpdir/picker.tsv" \
         | fzf --ansi \
             --delimiter=$'\t' \
             --with-nth=1 \
-            --header="Steps: $job_name  (ENTER=full log, CTRL-C=back)" \
+            --header="Steps: $job_name  │  enter=view log  esc=back" \
             --preview "cat $tmpdir/step_{2}.log 2>/dev/null || echo 'No logs'" \
             --preview-window=right:65%:wrap)
-    done
-  fi
 
-  # Return to action menu
+      if [[ -n "$selection" ]]; then
+        local step_num
+        step_num=$(echo "$selection" | awk -F'\t' '{print $2}')
+        if [[ -s "$tmpdir/step_${step_num}.log" ]]; then
+          less -R "$tmpdir/step_${step_num}.log"
+        else
+          echo "(no log output for this step)"
+          sleep 1
+        fi
+      fi
+    done
+
+    rm -rf "$tmpdir"
+
+    # ─── Post-browser navigation ──────────────────────────────
+    local key
+    echo ""
+    read -rsn1 -p "  r=refresh  -/q=back " key
+    echo ""
+    case "$key" in
+      r|R) continue ;;
+      *)   break ;;
+    esac
+  done
+
   _gha_action_menu "$run_id" "$job_name" ""
 }
 
+# ─── Shared: fetch steps with fallback logic ──────────────────────
+
+_gha_fetch_steps() {
+  local run_id="$1" job_name="$2"
+  local steps_json
+
+  steps_json=$(gh run view "$run_id" --json jobs --jq "
+    [.jobs[] | select(.name == \"$job_name\") | .steps[] |
+     {name: .name, conclusion: .conclusion, number: .number,
+      started: .startedAt, completed: .completedAt}]
+  " 2>/dev/null)
+  [[ -n "$steps_json" && "$steps_json" != "[]" ]] && { echo "$steps_json"; return; }
+
+  steps_json=$(gh run view "$run_id" --json jobs --jq "
+    [.jobs[] | select(.name | contains(\"$job_name\")) | .steps[] |
+     {name: .name, conclusion: .conclusion, number: .number,
+      started: .startedAt, completed: .completedAt}]
+  " 2>/dev/null)
+  [[ -n "$steps_json" && "$steps_json" != "[]" ]] && { echo "$steps_json"; return; }
+
+  local job_count
+  job_count=$(gh run view "$run_id" --json jobs --jq '.jobs | length' 2>/dev/null)
+  if [[ "$job_count" == "1" ]]; then
+    steps_json=$(gh run view "$run_id" --json jobs --jq "
+      [.jobs[0].steps[] |
+       {name: .name, conclusion: .conclusion, number: .number,
+        started: .startedAt, completed: .completedAt}]
+    " 2>/dev/null)
+    [[ -n "$steps_json" && "$steps_json" != "[]" ]] && { echo "$steps_json"; return; }
+  fi
+
+  echo "[]"
+}
+
 # ─── Log extraction helper ─────────────────────────────────────────
-#
-# Extracts log lines for a specific job + step from gh run view --log output.
-# The log format is: job_name<TAB>step_name<TAB>timestamped log line
-#
-# Tries exact match first, then falls back to fuzzy matching since
-# step names between the JSON API and log output can occasionally differ.
 
 _gha_extract_step_log() {
   local full_log="$1" job_name="$2" step_name="$3"
-
-  # Try exact match on both job and step
   local result
+
   result=$(echo "$full_log" | awk -F'\t' -v job="$job_name" -v step="$step_name" \
     '$1 == job && $2 == step { print $3 }')
+  [[ -n "$result" ]] && { echo "$result"; return; }
 
-  if [[ -n "$result" ]]; then
-    echo "$result"
-    return
-  fi
-
-  # Fallback 1: match step name only (job name might differ)
   result=$(echo "$full_log" | awk -F'\t' -v step="$step_name" \
     '$2 == step { print $3 }')
+  [[ -n "$result" ]] && { echo "$result"; return; }
 
-  if [[ -n "$result" ]]; then
-    echo "$result"
-    return
-  fi
-
-  # Fallback 2: case-insensitive partial match on step name
   result=$(echo "$full_log" | awk -F'\t' -v step="$step_name" \
     'BEGIN { IGNORECASE=1 } index($2, step) > 0 { print $3 }')
+  [[ -n "$result" ]] && { echo "$result"; return; }
 
-  if [[ -n "$result" ]]; then
-    echo "$result"
-    return
-  fi
-
-  # Nothing found
   return 1
 }
-

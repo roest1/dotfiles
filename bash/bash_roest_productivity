@@ -370,6 +370,11 @@ h() {
     Ctrl+T             Fuzzy file picker (inserts path)
     Alt+C              Fuzzy cd into subdirectory
 
+  Interactive Navigation (gpr, ghsecrets, ghbranch, ghenv, gha-ui)
+    Menus:  ↑↓ navigate  enter select  -/q back   (nvim-like)
+    Lists:  type to filter  enter select  esc back
+    Pagers: r refresh (re-fetches)  -/q back
+
   Neovim (see :help roest-bash)
     :Copy              Copy directory files to clipboard
     :Find / :FindReplace   Project-wide search/replace
@@ -573,19 +578,25 @@ GitHub Actions — CI/CD observability + log viewer
        shown inline beneath the step header, bordered with │.
        Summary line shows pass/fail/skip counts.
        Output goes through less for scrolling.
+       After scrolling: r to refresh (re-fetches), -/q to go back.
 
     🔍 Browse steps interactively
        fzf list of all steps with ✅/❌/⏭ status.
        Preview pane shows that step's log output as you arrow
        through — no need to select first. ENTER opens the full
-       log in less. CTRL-C returns to the step list.
-       Logs are fetched once and cached in /tmp for fast browsing.
+       log in less. esc returns to the step list.
+       After exiting: r to refresh (re-fetches), -/q to go back.
 
     🌐 Open in browser
        Falls back to the GitHub Actions UI
 
     🔁 Rerun this workflow
        Triggers a rerun of the selected workflow
+
+  Navigation (consistent across all interactive commands):
+    Menus:  ↑↓ navigate  enter select  -/q back  (like nvim)
+    Lists:  type to search  enter select  esc back
+    Pagers: r refresh  -/q back
 
   Your prompt also shows CI status on the right side:
     [5/5 ✅ 1d]  = 5 of 5 passed, last run 1 day ago
@@ -650,6 +661,7 @@ ghsecrets — manage repository & environment secrets
 
   Secret names are auto-uppercased (GitHub convention).
 
+  Navigation: -/q back  │  r refresh on list views
   Depends on: gh, fzf
 HELP
       ;;
@@ -674,6 +686,7 @@ ghbranch — branch management & protection rules
 
   Protection rules require admin access to the repository.
 
+  Navigation: -/q back  │  r refresh on list views
   Depends on: gh, fzf, jq
 HELP
       ;;
@@ -694,6 +707,7 @@ ghenv — environment management
   Environments are used for deployment targets (staging, production).
   Each can have its own secrets, wait timers, and required reviewers.
 
+  Navigation: -/q back  │  r refresh on list views
   Depends on: gh, fzf, jq
 HELP
       ;;
