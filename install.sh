@@ -54,6 +54,7 @@ echo "📂 Bash:"
 link_file "$DOTFILES_DIR/bash/bashrc"                  "$HOME/.bashrc"
 link_file "$DOTFILES_DIR/bash/bash_roest_theme"        "$HOME/.bash_roest_theme"
 link_file "$DOTFILES_DIR/bash/bash_roest_productivity" "$HOME/.bash_roest_productivity"
+link_file "$DOTFILES_DIR/bash/bash_roest_git"          "$HOME/.bash_roest_git"
 
 # Password commands (if it exists — not tracked in public repo)
 if [[ -f "$DOTFILES_DIR/bash/bash_roest_password_commands" ]]; then
