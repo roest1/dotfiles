@@ -6,13 +6,14 @@ Personal configuration files. One clone, one script, full setup.
 
 ```
 ~/.dotfiles/
-├── install.sh                 Symlink everything into ~
-├── .gitignore                 Keeps sensitive bash scripts out of git
-├── README.md                  Setup instructions (you are here)
+├── install.sh                  Symlink everything into ~
+├── .gitignore                  Keeps sensitive bash scripts out of git
+├── README.md                   Setup instructions (you are here)
 ├── bash/
-│   ├── bashrc                 → ~/.bashrc
-│   ├── bash_roest_theme       → ~/.bash_roest_theme
-│   ├── bash_roest_productivity → ~/.bash_roest_productivity
+│   ├── bashrc                  → ~/.bashrc (source)
+│   ├── bash_roest_theme        → ~/.bash_roest_theme
+│   ├── bash_roest_productivity → ~/.bash_roest_productivity (core commands)
+│   ├── bash_roest_git          → ~/.bash_roest_git (git tools and commands)
 │   └── bash_roest_password_commands → ~/.bash_roest_password_commands (not tracked)
 └── git/
 │   ├── README.md              GitHub tips and tricks
@@ -35,6 +36,11 @@ The install script:
 - Symlinks files into `$HOME`
 - Backs up any existing files to `~/.dotfiles_backup/`
 - Safe to re-run (skips already-correct symlinks)
+
+> **NOTE:** filenames in `bash/` and `git/` are hard-coded in `install.sh`.
+>
+> You must edit the install script manually if you are changing or adding any files to these directories
+> or else they will not install correctly.
 
 ## New machine setup
 

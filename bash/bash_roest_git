@@ -2,7 +2,7 @@
 # ~/.bash_roest_git
 # Github actions #
 
-gha() {
+gha() { # gha: show most recent workflows ran
   local repo sha
   repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
   sha=$(git rev-parse HEAD)
@@ -26,8 +26,40 @@ gha() {
       done
 }
 
-gha-open() {
+gha-fail() { # gha-fail: Failed runs
+  gha | grep "❌"
+}
+
+gha-open() { # gha-open: Open github actions in browser
   local url
   url=$(gh repo view --json url -q .url)
   xdg-open "$url/actions" >/dev/null 2>&1
+}
+
+#####################################################
+
+gha-ui() { # gha-ui: interactive workflow picker (uses fzf)
+  local repo sha
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+  sha=$(git rev-parse HEAD)
+
+  gh api "repos/$repo/commits/$sha/check-runs" \
+    | jq -r '
+      .check_runs[]
+      | [
+          .name,
+          (if .status == "completed" then
+              (if .conclusion == "success" then "✅"
+               elif .conclusion == "failure" then "❌"
+               elif .conclusion == "skipped" then "⏭"
+               else "❓" end)
+           else "⏳" end),
+          .html_url
+        ]
+      | @tsv
+    ' | fzf \
+        --header="GitHub Actions (ENTER=open, CTRL-C=exit)" \
+        --preview 'echo {}' \
+    | awk -F '\t' '{print $3}' \
+    | xargs -r xdg-open
 }
