@@ -71,7 +71,7 @@ echo ""
 echo "📦 Core tools (required by nvim config):"
 
 if [[ -f "lua/external/reqs.lua" ]]; then
-  tools=$(grep -oP "'\K[^']+" lua/external/reqs.lua)
+  tools=$(sed -n "s/.*'\([^']*\)'.*/\1/p" lua/external/reqs.lua)
   for tool in $tools; do
     install "$tool"
   done
