@@ -1,0 +1,258 @@
+*roest-motions.txt*    Vim Motions Reference
+
+==============================================================================
+MOTIONS                                                        *roest-motions*
+
+Motions move the cursor. They can be used alone or with operators like d, y, c.
+
+==============================================================================
+WORD VS WORD                                           *roest-motions-word*
+
+The most important distinction in Vim motions:
+
+    word    = sequence of letters, digits, underscores
+    WORD    = sequence of non-blank characters
+
+Example line: `foo.bar("hello_world")`
+
+    word count: 5 words  →  foo | . | bar | ( | "hello_world" | ) |
+    WORD count: 1 WORD   →  foo.bar("hello_world")
+
+Lowercase motions stop at punctuation.
+Uppercase motions only stop at whitespace.
+
+    w       Next word start
+    W       Next WORD start (faster!)
+    b       Previous word start
+    B       Previous WORD start (faster!)
+    e       End of word
+    E       End of WORD (faster!)
+    ge      End of previous word
+    gE      End of previous WORD
+
+When to use each:~
+    - Navigating code with dots/parens: use W, B, E
+    - Precise edits within symbols: use w, b, e
+
+Example: `user.profile.settings.value`
+    - w takes 7 presses to cross
+    - W takes 1 press to cross
+
+==============================================================================
+HORIZONTAL MOTION                                  *roest-motions-horizontal*
+
+Character movement:~
+    h           Left
+    l           Right
+    <Space>     Right (same as l)
+    <BS>        Left (same as h)
+
+Word movement:~
+    w           Next word start
+    W           Next WORD start
+    e           End of current/next word
+    E           End of current/next WORD
+    b           Previous word start
+    B           Previous WORD start
+    ge          End of previous word
+    gE          End of previous WORD
+
+Line position:~
+    0           First column (absolute start)
+    ^           First non-whitespace character
+    L           End of line (custom remap, normally $)
+    $           End of line (original)
+    g_          Last non-whitespace character
+
+Find on line:~
+    f{char}     Forward to {char} (inclusive)
+    F{char}     Backward to {char} (inclusive)
+    t{char}     Forward till before {char} (exclusive)
+    T{char}     Backward till after {char} (exclusive)
+    ;           Repeat last f/F/t/T
+    ,           Repeat last f/F/t/T (opposite direction)
+
+Example: delete to the next comma
+    df,         Delete through comma
+    dt,         Delete up to (not including) comma
+
+==============================================================================
+VERTICAL MOTION                                      *roest-motions-vertical*
+
+Line movement:~
+    j           Down one line
+    k           Up one line
+    gj          Down one display line (when lines wrap)
+    gk          Up one display line
+
+Jumps:~
+    gg          First line of file
+    G           Last line of file
+    {count}G    Go to line {count}
+    {count}gg   Go to line {count}
+    :{count}    Go to line {count}
+
+Paragraph/Block:~
+    {           Previous blank line (paragraph up)
+    }           Next blank line (paragraph down)
+    (           Previous sentence
+    )           Next sentence
+
+Screen position:~
+    H           Top of screen (High)
+    M           Middle of screen
+    L           Bottom of screen (Low)
+
+==============================================================================
+SEARCH MOTION                                         *roest-motions-search*
+
+    /{pattern}  Search forward
+    ?{pattern}  Search backward
+    n           Next match
+    N           Previous match
+    *           Search forward for word under cursor
+    #           Search backward for word under cursor
+
+After searching, <Esc> clears the highlight (your keymap).
+
+==============================================================================
+MARKS AND JUMPS                                        *roest-motions-marks*
+
+Set a mark:~
+    m{a-z}      Set local mark (in this buffer)
+    m{A-Z}      Set global mark (across files)
+
+Jump to mark:~
+    '{mark}     Jump to line of mark
+    `{mark}     Jump to exact position of mark
+    ''          Jump back to last jump position
+    ``          Jump back to exact last position
+
+Special marks:~
+    '.          Last change
+    '^          Last insert
+    '[          Start of last yank/change
+    ']          End of last yank/change
+
+Jump list:~
+    <C-o>       Jump back (older position)
+    <C-i>       Jump forward (newer position)
+    :jumps      Show jump history
+
+Change list:~
+    g;          Jump to older change
+    g,          Jump to newer change
+    :changes    Show change history
+
+==============================================================================
+TEXT OBJECTS                                         *roest-motions-objects*
+
+Text objects select logical chunks. Use with operators (d, y, c, v).
+
+Format: {operator}{a|i}{object}
+    a = "around" (includes delimiters)
+    i = "inside" (excludes delimiters)
+
+Word objects:~
+    aw          Around word (includes surrounding space)
+    iw          Inside word
+    aW          Around WORD
+    iW          Inside WORD
+
+Quoted strings:~
+    a"          Around double quotes (includes quotes)
+    i"          Inside double quotes
+    a'          Around single quotes
+    i'          Inside single quotes
+    a`          Around backticks
+    i`          Inside backticks
+
+Brackets:~
+    a)  or  ab  Around parentheses
+    i)  or  ib  Inside parentheses
+    a]          Around square brackets
+    i]          Inside square brackets
+    a}  or  aB  Around curly braces
+    i}  or  iB  Inside curly braces
+    a>          Around angle brackets
+    i>          Inside angle brackets
+
+Tags (HTML/XML):~
+    at          Around tag (includes tags)
+    it          Inside tag (content only)
+
+Block objects:~
+    ap          Around paragraph
+    ip          Inside paragraph
+    as          Around sentence
+    is          Inside sentence
+
+Examples:~
+    ci"         Change inside quotes
+    da)         Delete around parentheses
+    yiw         Yank inside word
+    vi{         Select inside braces
+
+==============================================================================
+OPERATORS + MOTIONS                                  *roest-motions-operators*
+
+Operators do things. Motions say where.
+
+Common operators:~
+    d           Delete
+    c           Change (delete and enter insert mode)
+    y           Yank (copy)
+    v           Visual select
+    >           Indent right
+    <           Indent left
+    =           Auto-indent
+    ~           Toggle case
+    gu          Lowercase
+    gU          Uppercase
+
+Formula: {operator}{count}{motion}
+
+Examples:~
+    dw          Delete word
+    d3w         Delete 3 words
+    d$          Delete to end of line (or dL with your remap)
+    d}          Delete to next paragraph
+    diw         Delete inside word
+    da"         Delete around quotes
+    ci(         Change inside parentheses
+    yy          Yank line (operator doubled = line-wise)
+    dd          Delete line
+    cc          Change line
+    >>          Indent line
+    3>>         Indent 3 lines
+    gUiw        Uppercase inside word
+
+==============================================================================
+COMMON PATTERNS                                       *roest-motions-patterns*
+
+Delete to end of line:~
+    D   or   dL   (with your remap)
+
+Change to end of line:~
+    C
+
+Delete inside quotes and retype:~
+    ci"
+
+Delete function call arguments:~
+    di(
+
+Select a paragraph:~
+    vip
+
+Indent a block:~
+    vi{>
+
+Yank a function (if cursor inside):~
+    va{y
+
+Delete everything inside HTML tag:~
+    dit
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

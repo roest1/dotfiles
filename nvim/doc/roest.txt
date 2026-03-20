@@ -1,42 +1,129 @@
-*roest.txt*    My personal Neovim help documentation
-
-Roest's Neovim Help
-===================
-
-This file is a template of how to setup documentation with the custom plugins
-in the same fashion as the other help menus:
-
-:helptags ~/.config/nvim/doc
-:help roest
-
+*roest.txt*    Riley's Neovim Configuration Documentation
 
 ==============================================================================
-Navigation~                                                        *roest-navigation*
+ROEST'S NEOVIM                                                    *roest* *roest-nvim*
 
-h, j, k, l     Move left, down, up, right
-0 / ^          Start of line
-$              End of line
-gg / G         Top / Bottom
-w / W / e      Word motions
-%              Jump to matching pair (bracket, etc.)
+Welcome back! This is your personal Neovim setup.
 
-==============================================================================
-
-Splits~                                                            *roest-splits*
-
-:vsp           Vertical split
-:sp            Horizontal split
-<C-w>h/l/j/k   Move between windows
-<C-w>=         Equalize split sizes
+If you're reading this after a long break, start here:
+    1. Run `:checkhealth` to verify everything works
+    2. Read |roest-quickstart| for the essentials
+    3. Browse |roest-keymaps| for all your keybindings
+    4. Check |roest-plugins| for what each plugin does
 
 ==============================================================================
+QUICK START                                                   *roest-quickstart*
 
-Keymaps~                                                           *roest-keymaps*
+Your most important keymaps (leader is <Space>):
 
-<leader>ff     Telescope find files
-<leader>fg     Telescope live grep
-<leader>e      Toggle file explorer (oil)
+    Finding things~
+    <leader>sf      Find files in project
+    <leader>sg      Search text (grep) across project
+    <leader>/       Fuzzy search in current file
+    <leader><leader> Switch between open buffers
+    <leader>st      Search all TODOs in project
+
+    Navigation~
+    -             Open file browser (Oil)
+    <leader>-     File browser in floating window
+    <C-h/j/k/l>   Move between splits
+
+    Working with files~
+    <leader>a     Add file to Harpoon (your "tabs")
+    <C-n>/<C-p>   Next/prev Harpoon file
+    <C-e>         Show Harpoon quick menu
+
+    Code intelligence~
+    grd           Go to definition
+    grr           Find references
+    grn           Rename symbol
+    <leader>e     Show error popup
+    <leader>l     Format code
+
+    Editing~
+    sa"           Surround with quotes (visual or motion)
+    sd"           Delete surrounding quotes
+    sr"'          Replace surrounding " with '
+
+    Completion (insert mode)~
+    <Tab>         Next completion item
+    <S-Tab>       Previous item
+    <CR>          Confirm selection
+    <C-Space>     Trigger manually
 
 ==============================================================================
+DOCUMENTATION INDEX                                              *roest-index*
 
+|roest-keymaps|     Every keymap, organized by category
+|roest-plugins|     What each plugin does and how to use it
+|roest-workflows|   "How do I..." recipes for common tasks
+|roest-motions|     Vim motions reference (w/W/b/B/e/E and more)
+|roest-commands|    Custom commands you've created
+|roest-options|     Editor settings and what they do
+|roest-bash|        Bash productivity commands (h, findword, etc.)
+
+External guides (markdown in doc/):
+    doc/roest-vim.md            Vim grammar and commands
+    doc/roest-tmux.md           tmux cheatsheet
+    doc/roest-terminal-setup.md Terminal configuration
+
+==============================================================================
+LEADER KEY                                                      *roest-leader*
+
+Your leader key is <Space>. When you see `<leader>` in docs, press Space.
+
+Example: `<leader>sf` means press Space, then s, then f.
+
+==============================================================================
+FILE STRUCTURE                                               *roest-structure*
+
+~/.config/nvim/
+├── init.lua                 Entry point (loads everything)
+├── bootstrap.sh             One-command dependency installer
+├── lua/
+│   ├── options.lua          Editor settings
+│   ├── keymaps.lua          Core keybindings
+│   ├── lazy-bootstrap.lua   Plugin manager setup
+│   ├── lazy-plugins.lua     Plugin loader
+│   └── external/
+│       ├── reqs.lua         Tool dependency list
+│       ├── plugins/         Individual plugin configs
+│       │   ├── blink-cmp.lua    Autocompletion
+│       │   ├── formatter.lua    Auto-format on save
+│       │   ├── gitsigns.lua     Git gutter + staging
+│       │   ├── glow.lua         Markdown preview
+│       │   ├── harpoon.lua      Working file set
+│       │   ├── lint.lua         Async linting
+│       │   ├── lsp.lua          Language servers
+│       │   ├── mini.lua         Surround + autopairs
+│       │   ├── oil.lua          File browser
+│       │   ├── roslyn.lua       C# language server
+│       │   ├── telescope.lua    Fuzzy finder
+│       │   ├── theme.lua        Colorscheme
+│       │   ├── todo-comments.lua  TODO highlighting
+│       │   ├── treesitter.lua   Syntax highlighting
+│       │   ├── trouble.lua      Diagnostics panel
+│       │   ├── undotree.lua     Undo history
+│       │   └── which-key.lua    Keymap discovery
+│       ├── copy.lua         :Copy command
+│       ├── findreplace.lua  :Find/:FindReplace commands
+│       ├── reset.lua        :ResetNvim command
+│       └── health.lua       :checkhealth integration
+└── doc/                     Help files (you are here)
+
+==============================================================================
+GETTING HELP                                                    *roest-help*
+
+    :help roest             This file
+    :help roest-keymaps     All keybindings
+    :help roest-plugins     Plugin reference
+    :help roest-workflows   Common tasks
+    :help roest-commands    Custom commands
+    :help roest-bash        Bash productivity tools
+
+    :Telescope help_tags    Search all help (or <leader>sh)
+    :Telescope keymaps      Search keymaps (or <leader>sk)
+    :checkhealth            Verify setup is working
+
+==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

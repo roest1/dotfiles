@@ -1,40 +1,11 @@
--- This file gets ran on :checkhealth
-
---[[
-
-Summary:
---------
-health checker for Neovim config dependencies
-
-* Makes sure Neovim version is good and external CLI tools are installed
- If any tools are not installed yet, you need to run ./bootstrap.sh
-
-
-Functionality:
---------------
-- `check_version()`:
-    Checks that Neovim is up-to-date.
-    Displays `vim.health.ok` or `vim.health.error` messages accordingly.
-
-- `check_external_reqs()`:
-    Iterates through the required executables listed in `lua/external/reqs.lua`.
-    For each, shows a success or warning if not found via `vim.fn.executable()`.
-
-- `check()` (main entrypoint):
-    Called when `:checkhealth` is run.
-    Starts health group, displays system info, and runs the above two checks.
-
-Helpful Commands:
------------------
-- `:checkhealth`       → Runs this script and displays plugin + system status.
-- `:lua require('external.health').check()` → Manually run health checks.
-
-References:
------------
-- `:help vim.health`
-- `:help vim.fn.executable`
-- `:help lua-guide`
-]]
+-- :checkhealth integration
+--
+-- Checks:
+--   1. Neovim version (0.10+)
+--   2. Core tools (git, make, rg, fd, stylua, prettierd, prettier)
+--   3. Formatters (ruff, etc.)
+--   4. Linters (eslint_d, etc.)
+--   5. Productivity tools (zoxide, fzf, bat, eza)
 
 local check_version = function()
   local verstr = tostring(vim.version())
@@ -56,29 +27,57 @@ local check_external_reqs = function()
   for _, exe in ipairs(external_reqs) do
     local is_executable = vim.fn.executable(exe) == 1
     if is_executable then
-      vim.health.ok(string.format("Found executable: '%s'", exe))
+      vim.health.ok(string.format("Found: '%s'", exe))
     else
-      vim.health.warn(string.format("Could not find executable: '%s'", exe))
+      vim.health.warn(string.format("Missing: '%s' — run ./bootstrap.sh or install manually", exe))
     end
   end
+end
 
-  return true
+local function check_tools(title, tools)
+  vim.health.start(title)
+  for _, tool in ipairs(tools) do
+    local found = vim.fn.executable(tool.name) == 1
+    if found then
+      vim.health.ok(string.format("Found: '%s' (%s)", tool.name, tool.desc))
+    elseif tool.required then
+      vim.health.warn(string.format("Missing: '%s' (%s)", tool.name, tool.desc))
+    else
+      vim.health.info(string.format("Optional: '%s' not found (%s)", tool.name, tool.desc))
+    end
+  end
 end
 
 return {
   check = function()
-    vim.health.start 'kickstart.nvim'
+    vim.health.start 'roest-nvim'
 
-    vim.health.info [[NOTE: Not every warning is a 'must-fix' in `:checkhealth`
-
-  Fix only warnings for plugins and languages you intend to use.
-    Mason will give warnings for languages that are not installed.
-    You do not need to install, unless you want to use those languages!]]
+    vim.health.info [[Fix only warnings for tools you actually use.
+  Run ./bootstrap.sh to install everything at once.]]
 
     local uv = vim.uv or vim.loop
-    vim.health.info('System Information: ' .. vim.inspect(uv.os_uname()))
+    vim.health.info('System: ' .. vim.inspect(uv.os_uname()))
 
     check_version()
     check_external_reqs()
+
+    check_tools('Formatters (conform.nvim)', {
+      { name = 'stylua', desc = 'Lua formatter', required = true },
+      { name = 'prettierd', desc = 'JS/TS/JSON/HTML/CSS formatter', required = true },
+      { name = 'ruff', desc = 'Python formatter + linter', required = true },
+      { name = 'prettier', desc = 'Prettier fallback', required = false },
+    })
+
+    check_tools('Linters (nvim-lint)', {
+      { name = 'ruff', desc = 'Python linter', required = true },
+      { name = 'eslint_d', desc = 'JS/TS linter', required = false },
+    })
+
+    check_tools('Productivity (bash_roest_productivity)', {
+      { name = 'zoxide', desc = 'Smart cd', required = false },
+      { name = 'fzf', desc = 'Fuzzy finder', required = false },
+      { name = 'bat', desc = 'Better cat', required = false },
+      { name = 'eza', desc = 'Better ls', required = false },
+    })
   end,
 }
