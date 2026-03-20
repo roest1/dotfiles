@@ -96,14 +96,22 @@ __gh_actions() {
   mkdir -p "$cache_dir" 2>/dev/null
 
   local hash
-  hash=$(pwd | md5sum | cut -d' ' -f1)
+  if command -v md5sum &>/dev/null; then
+    hash=$(pwd | md5sum | cut -d' ' -f1)
+  else
+    hash=$(pwd | md5 -q)
+  fi
   local cache_file="${cache_dir}/${hash}"
   local pending_file="${cache_dir}/${hash}.pending"
 
   local now
   now=$(date +%s)
   local mtime
-  mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    mtime=$(stat -f %m "$cache_file" 2>/dev/null || echo 0)
+  else
+    mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+  fi
 
   # ─── Background refresh ─────────────────────────────────────────
   if (( now - mtime > 60 )) && [[ ! -f "$pending_file" ]]; then
@@ -131,7 +139,11 @@ __gh_actions() {
 
           last_run_epoch=0
           if [[ -n "$last_run_iso" ]]; then
-            last_run_epoch=$(date -d "$last_run_iso" +%s 2>/dev/null || echo 0)
+            if date -d "$last_run_iso" +%s &>/dev/null; then
+              last_run_epoch=$(date -d "$last_run_iso" +%s)
+            else
+              last_run_epoch=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$last_run_iso" +%s 2>/dev/null || echo 0)
+            fi
           fi
 
           # Determine symbol
