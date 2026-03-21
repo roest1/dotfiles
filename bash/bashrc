@@ -38,8 +38,10 @@ HISTFILESIZE=100000 # on disk (hard drive) .bash_history
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
 shopt -s cdspell        # Auto-correct minor cd typos (e.g. `cd projetcs` → `cd projects`)
-shopt -s dirspell       # Auto-correct directory names during tab completion
-shopt -s globstar       # ** matches files + directories recursively (e.g. `ls **/*.py`)
+if ((BASH_VERSINFO[0] >= 4)); then
+  shopt -s dirspell     # Auto-correct directory names during tab completion
+  shopt -s globstar     # ** matches files + directories recursively (e.g. `ls **/*.py`)
+fi
 
 # ─── Completion ────────────────────────────────────────────────────
 # enable programmable completion features (you don't need to enable
@@ -125,7 +127,8 @@ export NVM_DIR="$HOME/.nvm"
 #####################################################################
 
 source ~/.bash_roest_theme
-source ~/.bash_roest_password_commands
+[[ -f ~/.bash_roest_password_commands ]] && source ~/.bash_roest_password_commands
 source ~/.bash_roest_productivity
 source ~/.bash_roest_git
 source ~/.bash_roest_github
+export PATH="$HOME/.local/bin:$PATH"

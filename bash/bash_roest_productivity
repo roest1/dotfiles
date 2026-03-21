@@ -255,13 +255,16 @@ extract() {
     fi
 }
 
-# edit/save bashrc (symlinked by install.sh so edits reflect in ~/.bashrc)
-editbashrc() {
-    nvim ~/dotfiles/bash/bashrc
+# edit/reload dotfiles (symlinked by install.sh)
+dotfiles-edit() {
+    local dotdir
+    dotdir="$(cd "$(dirname "$(readlink -f ~/.bashrc 2>/dev/null || readlink ~/.bashrc)")" && pwd)"
+    nvim "$dotdir"
 }
 
-savebashrc() {
+reload() {
     source ~/.bashrc
+    echo "Reloaded ~/.bashrc"
 }
 
 # ─── .NET clean/build/test aliases ─────────────────────────────────────────────
@@ -374,6 +377,10 @@ h() {
     Menus:  ↑↓ navigate  enter select  -/q back   (nvim-like)
     Lists:  type to filter  enter select  esc back
     Pagers: r refresh (re-fetches)  -/q back
+
+  Dotfiles
+    dotfiles-edit      Open dotfiles dir in nvim
+    reload             Re-source ~/.bashrc
 
   Neovim (see :help roest-bash)
     :Copy              Copy directory files to clipboard
