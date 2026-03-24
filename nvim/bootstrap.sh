@@ -225,6 +225,12 @@ pkg_install "unzip"
 pkg_install "rg"
 pkg_install "fd"
 
+# clang/libclang: needed by cargo's bindgen (used by tree-sitter-cli build)
+if [ "$PM" = "dnf" ]; then
+  pkg_install "clang"
+  pkg_install "clang-devel"
+fi
+
 # On apt, fd-find installs as 'fdfind' — symlink to 'fd' so nvim config works
 if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
   ensure_symlink "fdfind" "fd"
