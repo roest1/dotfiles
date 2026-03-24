@@ -3,12 +3,13 @@ set -euo pipefail
 
 # ─── Bootstrap: install all external tools for roest-nvim ─────────────────────
 #
-# Cross-platform: works on macOS (brew) and Linux/WSL (apt, dnf).
+# Cross-platform: works on macOS (brew), Ubuntu/WSL (apt), and RHEL (dnf).
 #
-# Installs:
-#   1. Core tools (from reqs.lua) — git, make, rg, fd, stylua, prettierd, prettier
-#   2. Formatters & linters — ruff, eslint_d
-#   3. Productivity tools — zoxide, fzf, bat, eza
+# Layers:
+#   0. Runtimes    — node, npm, python3, pip, cargo
+#   1. Core tools  — git, make, unzip, rg, fd, stylua, prettierd, prettier
+#   2. Formatters  — ruff, eslint_d, tree-sitter-cli
+#   3. Productivity — zoxide, fzf, bat, eza
 #
 # Run:
 #   chmod +x bootstrap.sh
@@ -30,13 +31,22 @@ fi
 # Maps command name -> package name for apt (where they differ from brew/dnf)
 apt_pkg_name() {
   case "$1" in
-    rg)  echo "ripgrep" ;;
-    fd)  echo "fd-find" ;;
-    *)   echo "$1" ;;
+    rg)          echo "ripgrep" ;;
+    fd)          echo "fd-find" ;;
+    node|nodejs) echo "nodejs" ;;
+    *)           echo "$1" ;;
   esac
 }
 
-# Install a system package. Usage: pkg_install <command_name>
+dnf_pkg_name() {
+  case "$1" in
+    rg)   echo "ripgrep" ;;
+    node) echo "nodejs" ;;
+    *)    echo "$1" ;;
+  esac
+}
+
+# Install a system package. Usage: pkg_install <command_name> [package_override]
 pkg_install() {
   local cmd="$1"
 
@@ -57,7 +67,9 @@ pkg_install() {
       sudo apt install -y "$pkg" 2>/dev/null || { echo "  ⚠️  apt install $pkg failed"; return 1; }
       ;;
     dnf)
-      sudo dnf install -y "$cmd" 2>/dev/null || { echo "  ⚠️  dnf install $cmd failed"; return 1; }
+      local pkg
+      pkg=$(dnf_pkg_name "$cmd")
+      sudo dnf install -y "$pkg" 2>/dev/null || { echo "  ⚠️  dnf install $pkg failed"; return 1; }
       ;;
     *)
       echo "  ❌ No supported package manager. Install $cmd manually."
@@ -106,12 +118,15 @@ pip_install() {
     return 0
   fi
 
-  echo "  ➡️  Installing $tool via pip..."
-  pip install "$tool" --break-system-packages 2>/dev/null \
-    || pip3 install "$tool" --break-system-packages 2>/dev/null \
-    || pip install "$tool" 2>/dev/null \
-    || pip3 install "$tool" 2>/dev/null \
-    || echo "  ⚠️  pip install $tool failed (install pip or use brew)"
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "  ⚠️  python3 not found — skipping $tool"
+    return 1
+  fi
+
+  echo "  ➡️  Installing $tool via pip (user)..."
+  python3 -m pip install --user "$tool" 2>/dev/null \
+    || python3 -m pip install "$tool" 2>/dev/null \
+    || echo "  ⚠️  pip install $tool failed"
 }
 
 cargo_install() {
@@ -123,8 +138,14 @@ cargo_install() {
   fi
 
   if ! command -v cargo >/dev/null 2>&1; then
-    echo "  ⚠️  cargo not found — install rustup (https://rustup.rs) then: cargo install $tool"
-    return 1
+    echo "  ⚠️  cargo not found — installing rustup..."
+    curl https://sh.rustup.rs -sSf | sh -s -- -y
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
+    if ! command -v cargo >/dev/null 2>&1; then
+      echo "  ❌ Failed to install cargo. Install rustup manually: https://rustup.rs"
+      return 1
+    fi
   fi
 
   echo "  ➡️  Installing $tool via cargo..."
@@ -147,6 +168,30 @@ if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
   echo "     Add to your shell rc for persistence:"
   echo "       export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
+
+# ─── 0. Runtimes ──────────────────────────────────────────────────────────────
+
+echo ""
+echo "🧠 Runtimes (required):"
+
+case "$PM" in
+  brew)
+    pkg_install "node"
+    pkg_install "python3"
+    ;;
+  apt)
+    pkg_install "node"
+    pkg_install "npm"
+    pkg_install "python3"
+    pkg_install "python3-pip"
+    ;;
+  dnf)
+    pkg_install "node"
+    pkg_install "npm"
+    pkg_install "python3"
+    pkg_install "python3-pip"
+    ;;
+esac
 
 # ─── 1. Core tools ──────────────────────────────────────────────────────────
 
@@ -171,17 +216,18 @@ else
   cargo_install "stylua"
 fi
 
-# prettier ecosystem: always via npm
-npm_install "prettierd"
-npm_install "prettier"
 
 # ─── 2. Formatters & linters ────────────────────────────────────────────────
 
 echo ""
 echo "🎨 Formatters & linters:"
 
+# prettier ecosystem: always via npm
+npm_install "prettierd"
+npm_install "prettier"
 pip_install "ruff"
 npm_install "eslint_d"
+npm_install "tree-sitter-cli"
 
 # ─── 3. Productivity tools (optional) ───────────────────────────────────────
 
@@ -208,13 +254,33 @@ else
   pkg_install "eza" || cargo_install "eza"
 fi
 
+# ─── 4. Verify ──────────────────────────────────────────────────────────────
+
+echo ""
+echo "🔍 Verifying critical tools:"
+
+MISSING=0
+for tool in git rg fd node npm python3 tree-sitter stylua prettier prettierd ruff; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "  ✅ $tool ($(command -v "$tool"))"
+  else
+    echo "  ❌ $tool MISSING"
+    MISSING=$((MISSING + 1))
+  fi
+done
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🎉 Done! Next steps:"
+if [ "$MISSING" -gt 0 ]; then
+  echo "⚠️  Done with $MISSING missing tool(s). Check output above."
+else
+  echo "🎉 Done! All critical tools installed."
+fi
 echo ""
-echo "  1. Open nvim — plugins install automatically"
-echo "  2. Run :checkhealth to verify"
-echo "  3. Run :helptags ~/.config/nvim/doc"
+echo "  Next steps:"
+echo "    1. Open nvim — plugins install automatically"
+echo "    2. Run :checkhealth to verify"
+echo "    3. Run :TSUpdate to compile parsers"
 echo ""
