@@ -145,11 +145,14 @@ pip_install() {
     || echo "  ⚠️  pip install $tool failed"
 }
 
+# Install a cargo crate. Usage: cargo_install <command_name> [crate_name]
+# If crate_name is omitted, command_name is used as the crate.
 cargo_install() {
-  local tool="$1"
+  local cmd="$1"
+  local crate="${2:-$1}"
 
-  if command -v "$tool" >/dev/null 2>&1; then
-    echo "  ✅ $tool"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    echo "  ✅ $cmd"
     return 0
   fi
 
@@ -164,9 +167,9 @@ cargo_install() {
     fi
   fi
 
-  echo "  ➡️  Installing $tool via cargo..."
-  cargo install "$tool" 2>/dev/null \
-    || echo "  ⚠️  cargo install $tool failed"
+  echo "  ➡️  Installing $crate via cargo..."
+  cargo install "$crate" 2>/dev/null \
+    || echo "  ⚠️  cargo install $crate failed"
 }
 
 echo ""
@@ -249,7 +252,7 @@ npm_install "eslint_d"
 # tree-sitter-cli: npm binary requires glibc 2.35+ which RHEL 9 doesn't have.
 # Use cargo on dnf systems to compile from source; npm elsewhere.
 if [ "$PM" = "dnf" ]; then
-  cargo_install "tree-sitter"
+  cargo_install "tree-sitter" "tree-sitter-cli"
 else
   npm_install "tree-sitter" "tree-sitter-cli"
 fi
