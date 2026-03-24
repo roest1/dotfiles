@@ -245,7 +245,14 @@ npm_install "prettierd" "@fsouza/prettierd"
 npm_install "prettier"
 pip_install "ruff"
 npm_install "eslint_d"
-npm_install "tree-sitter" "tree-sitter-cli"
+
+# tree-sitter-cli: npm binary requires glibc 2.35+ which RHEL 9 doesn't have.
+# Use cargo on dnf systems to compile from source; npm elsewhere.
+if [ "$PM" = "dnf" ]; then
+  cargo_install "tree-sitter"
+else
+  npm_install "tree-sitter" "tree-sitter-cli"
+fi
 
 # ─── 3. Productivity tools (optional) ───────────────────────────────────────
 
