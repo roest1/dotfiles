@@ -92,31 +92,38 @@ ensure_symlink() {
   echo "  🔗 Symlinked $src -> $dest (~/.local/bin/$dest)"
 }
 
-npm_install() {
-  local tool="$1"
-
-  if command -v "$tool" >/dev/null 2>&1; then
-    echo "  ✅ $tool"
-    return 0
-  fi
-
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "  ⚠️  npm not found — install node/npm first, then: npm install -g $tool"
-    return 1
-  fi
-
-  # Ensure npm global prefix is user-writable (avoids EACCES on RHEL/Linux)
+# Ensure npm global prefix is user-writable (avoids EACCES on RHEL/Linux).
+# Called once before any npm_install calls.
+setup_npm_prefix() {
+  command -v npm >/dev/null 2>&1 || return 0
   local npm_prefix
   npm_prefix="$(npm config get prefix 2>/dev/null)"
   if [ ! -w "$npm_prefix" ] 2>/dev/null; then
     mkdir -p "$HOME/.npm-global"
     npm config set prefix "$HOME/.npm-global"
-    export PATH="$HOME/.npm-global/bin:$PATH"
+  fi
+  export PATH="$HOME/.npm-global/bin:$PATH"
+}
+
+# Install an npm package. Usage: npm_install <command_name> [package_name]
+# If package_name is omitted, command_name is used as the package.
+npm_install() {
+  local cmd="$1"
+  local pkg="${2:-$1}"
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    echo "  ✅ $cmd"
+    return 0
   fi
 
-  echo "  ➡️  Installing $tool via npm..."
-  npm install -g "$tool" 2>/dev/null \
-    || { echo "  ⚠️  npm install -g $tool failed"; return 1; }
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "  ⚠️  npm not found — install node/npm first, then: npm install -g $pkg"
+    return 1
+  fi
+
+  echo "  ➡️  Installing $pkg via npm..."
+  npm install -g "$pkg" 2>/dev/null \
+    || { echo "  ⚠️  npm install -g $pkg failed"; return 1; }
 }
 
 pip_install() {
@@ -202,6 +209,8 @@ case "$PM" in
     ;;
 esac
 
+setup_npm_prefix
+
 # ─── 1. Core tools ──────────────────────────────────────────────────────────
 
 echo ""
@@ -232,11 +241,11 @@ echo ""
 echo "🎨 Formatters & linters:"
 
 # prettier ecosystem: always via npm
-npm_install "prettierd"
+npm_install "prettierd" "@fsouza/prettierd"
 npm_install "prettier"
 pip_install "ruff"
 npm_install "eslint_d"
-npm_install "tree-sitter-cli"
+npm_install "tree-sitter" "tree-sitter-cli"
 
 # ─── 3. Productivity tools (optional) ───────────────────────────────────────
 
@@ -293,7 +302,7 @@ check_tool "python3"      "pkg: sudo ${PM:-apt} install python3"
 check_tool "tree-sitter"  "run: npm install -g tree-sitter-cli"
 check_tool "stylua"       "run: cargo install stylua"
 check_tool "prettier"     "run: npm install -g prettier"
-check_tool "prettierd"    "run: npm install -g prettierd"
+check_tool "prettierd"    "run: npm install -g @fsouza/prettierd"
 check_tool "ruff"         "run: python3 -m pip install --user ruff"
 check_tool "eslint_d"     "run: npm install -g eslint_d"
 
