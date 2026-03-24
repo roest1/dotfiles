@@ -105,9 +105,18 @@ npm_install() {
     return 1
   fi
 
+  # Ensure npm global prefix is user-writable (avoids EACCES on RHEL/Linux)
+  local npm_prefix
+  npm_prefix="$(npm config get prefix 2>/dev/null)"
+  if [ ! -w "$npm_prefix" ] 2>/dev/null; then
+    mkdir -p "$HOME/.npm-global"
+    npm config set prefix "$HOME/.npm-global"
+    export PATH="$HOME/.npm-global/bin:$PATH"
+  fi
+
   echo "  ➡️  Installing $tool via npm..."
   npm install -g "$tool" 2>/dev/null \
-    || echo "  ⚠️  npm install -g $tool failed"
+    || { echo "  ⚠️  npm install -g $tool failed"; return 1; }
 }
 
 pip_install() {
@@ -260,21 +269,44 @@ echo ""
 echo "🔍 Verifying critical tools:"
 
 MISSING=0
-for tool in git rg fd node npm python3 tree-sitter stylua prettier prettierd ruff; do
+FIXES=""
+
+check_tool() {
+  local tool="$1"
+  local fix="$2"
+
   if command -v "$tool" >/dev/null 2>&1; then
     echo "  ✅ $tool ($(command -v "$tool"))"
   else
     echo "  ❌ $tool MISSING"
+    FIXES="${FIXES}  ${fix}\n"
     MISSING=$((MISSING + 1))
   fi
-done
+}
+
+check_tool "git"          "pkg: sudo ${PM:-apt} install git"
+check_tool "rg"           "pkg: sudo ${PM:-apt} install ripgrep"
+check_tool "fd"           "pkg: sudo ${PM:-apt} install fd-find"
+check_tool "node"         "pkg: sudo ${PM:-apt} install nodejs"
+check_tool "npm"          "pkg: sudo ${PM:-apt} install npm"
+check_tool "python3"      "pkg: sudo ${PM:-apt} install python3"
+check_tool "tree-sitter"  "run: npm install -g tree-sitter-cli"
+check_tool "stylua"       "run: cargo install stylua"
+check_tool "prettier"     "run: npm install -g prettier"
+check_tool "prettierd"    "run: npm install -g prettierd"
+check_tool "ruff"         "run: python3 -m pip install --user ruff"
+check_tool "eslint_d"     "run: npm install -g eslint_d"
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [ "$MISSING" -gt 0 ]; then
-  echo "⚠️  Done with $MISSING missing tool(s). Check output above."
+  echo "⚠️  Done with $MISSING missing tool(s)."
+  echo ""
+  echo "To fix, run:"
+  echo ""
+  echo -e "$FIXES"
 else
   echo "🎉 Done! All critical tools installed."
 fi
