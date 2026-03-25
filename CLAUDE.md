@@ -1,6 +1,6 @@
 # dotfiles
 
-Riley Oest's cross-platform dotfiles (macOS + Linux/WSL). Bash-based.
+Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based.
 
 ## Setup workflow
 
@@ -20,7 +20,7 @@ Individual targets: `make deps`, `make install`, `make shell`, `make check`, `ma
 bash/
   bashrc                    # Main entrypoint (~/.bashrc). OS detection, history,
                             #   shell options, PATH, package managers, sources custom configs.
-  bash_profile              # macOS login shell shim — just sources .bashrc
+  bash_profile              # Login shell shim — just sources .bashrc (all platforms)
   bash_roest_theme          # Prompt (PS1 + right-aligned PROMPT_COMMAND), LS_COLORS,
                             #   conda env display, git branch/dirty/sync indicators,
                             #   GitHub Actions status in prompt (background-cached).
@@ -35,7 +35,7 @@ git/
   gitconfig                 # Global git config (user, credential, lfs)
 install.sh                  # Symlinks all dotfiles into ~. Backs up existing files.
                             #   Creates bash_profile shim on macOS. Safe to re-run.
-Makefile                    # Orchestrator: deps (brew install), install, shell, check, update.
+Makefile                    # Orchestrator: deps (brew/dnf), install, shell, check, update.
 ```
 
 ## Key conventions
@@ -45,11 +45,15 @@ Makefile                    # Orchestrator: deps (brew install), install, shell,
 - **Bash version**: macOS ships bash 3.2. `make deps` installs bash 5 via homebrew.
   Bash 4+ features (dirspell, globstar) are guarded with `BASH_VERSINFO` checks.
 - **Tool dependencies**: zoxide, fzf, bat, eza, fd, ripgrep, gh, jq. All optional —
-  features degrade gracefully via `command -v` guards. `make deps` installs all via brew.
+  features degrade gracefully via `command -v` guards. `make deps` installs via
+  brew (macOS/WSL) or dnf+EPEL (RHEL). Some tools (bat→batcat, fd→fdfind) have
+  alternate binary names on RHEL/Debian — all handled with fallback checks.
 - **Symlink pattern**: `install.sh` symlinks `bash/*` to `~/.*` (e.g., `bash/bashrc` -> `~/.bashrc`).
 - **Navigation UX**: All interactive fzf commands use consistent keybindings:
   menus (`-/q` back), lists (type to filter, `esc` back), pagers (`r` refresh, `-/q` back).
-- **No password files in repo**: `bash_roest_password_commands` is gitignored and optional-sourced.
+- **Machine-local config**: `bash_roest_local` holds per-machine setup (CUDA, nvim path,
+  RHEL-specific exports, etc.) — gitignored, optional-sourced before other custom configs.
+  `bash_roest_password_commands` is also gitignored for secrets.
 
 ## When editing
 

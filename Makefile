@@ -1,13 +1,13 @@
 # dotfiles/Makefile
 #
-# Portable dotfiles installer for macOS and Linux (WSL).
+# Portable dotfiles installer for macOS, Linux (WSL), and RHEL.
 # Every target is idempotent — safe to re-run.
 #
 # Usage:
 #   make              Show help
 #   make install      Symlink dotfiles into ~
-#   make deps         Install CLI tools via Homebrew
-#   make shell        Set default shell to bash (macOS)
+#   make deps         Install CLI tools (brew on mac/WSL, dnf on RHEL)
+#   make shell        Set default shell to bash
 #   make update       Pull latest changes and re-install
 #   make check        Verify tool availability
 #   make all          deps + install + check
@@ -20,6 +20,10 @@ DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && p
 
 # Tools this config depends on (brew package names).
 BREW_DEPS := bash zoxide fzf bat eza fd ripgrep gh jq
+
+# RHEL/Fedora equivalents (dnf package names).
+# eza and zoxide are not in base RHEL repos — installed separately.
+DNF_DEPS := fzf bat fd-find ripgrep gh jq
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
@@ -39,15 +43,42 @@ all: deps install check ## Install everything (deps + install + check)
 install: ## Symlink dotfiles into ~
 	@bash "$(DOTFILES_DIR)/install.sh"
 
-deps: _ensure_brew ## Install CLI tools via Homebrew
-	@echo ""
-	@echo "Installing tools: $(BREW_DEPS)"
-	@echo "-------------------------------------------"
-	@brew install $(BREW_DEPS) 2>&1 | grep -v 'already installed' || true
+deps: ## Install CLI tools (auto-detects package manager)
+	@if command -v dnf >/dev/null 2>&1; then \
+		echo ""; \
+		echo "Detected dnf (RHEL/Fedora)"; \
+		echo "-------------------------------------------"; \
+		echo "Enabling EPEL (if not already)..."; \
+		sudo dnf install -y epel-release 2>/dev/null \
+			|| sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$$(rpm -E %rhel).noarch.rpm 2>/dev/null \
+			|| echo "  EPEL already enabled or not needed"; \
+		echo "Installing: $(DNF_DEPS)"; \
+		sudo dnf install -y $(DNF_DEPS) 2>&1 | tail -1; \
+		echo ""; \
+		echo "Installing zoxide..."; \
+		if ! command -v zoxide >/dev/null 2>&1; then \
+			curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh; \
+		else \
+			echo "  zoxide already installed"; \
+		fi; \
+		echo "Installing eza..."; \
+		if ! command -v eza >/dev/null 2>&1; then \
+			cargo install eza 2>/dev/null \
+				|| echo "  eza requires cargo (rustup.rs) — skipping"; \
+		else \
+			echo "  eza already installed"; \
+		fi; \
+	elif command -v brew >/dev/null 2>&1 || [ "$(UNAME)" = "Darwin" ]; then \
+		$(MAKE) _brew_deps; \
+	else \
+		echo "No supported package manager found (need brew or dnf)."; \
+		echo "Install Homebrew: https://brew.sh"; \
+		exit 1; \
+	fi
 	@echo ""
 	@echo "Done. Run 'make check' to verify."
 
-shell: ## Set default shell to bash (macOS)
+shell: ## Set default shell to bash
 ifeq ($(UNAME),Darwin)
 	@current=$$(dscl . -read /Users/$$USER UserShell 2>/dev/null | awk '{print $$2}'); \
 	if echo "$$current" | grep -q bash; then \
@@ -70,7 +101,15 @@ ifeq ($(UNAME),Darwin)
 		echo "Done. Open a new terminal to use bash."; \
 	fi
 else
-	@echo "Not macOS — your shell is already bash."
+	@current=$$(getent passwd $$USER 2>/dev/null | cut -d: -f7); \
+	if echo "$$current" | grep -q bash; then \
+		echo "Already using bash ($$current)"; \
+	else \
+		echo "Current shell: $$current"; \
+		echo "Switching default shell to /bin/bash"; \
+		chsh -s /bin/bash; \
+		echo "Done. Log out and back in to use bash."; \
+	fi
 endif
 
 update: ## Pull latest changes and re-install
@@ -88,6 +127,8 @@ check: ## Verify tool availability
 			printf "  %-12s ok\n" "$$cmd"; \
 		elif [ "$$cmd" = "bat" ] && command -v batcat >/dev/null 2>&1; then \
 			printf "  %-12s ok (batcat)\n" "$$cmd"; \
+		elif [ "$$cmd" = "fd" ] && command -v fdfind >/dev/null 2>&1; then \
+			printf "  %-12s ok (fdfind)\n" "$$cmd"; \
 		else \
 			printf "  %-12s MISSING\n" "$$cmd"; \
 			all_ok=false; \
@@ -105,10 +146,16 @@ check: ## Verify tool availability
 #  Internal helpers                                                            #
 # --------------------------------------------------------------------------- #
 
-.PHONY: _ensure_brew
+.PHONY: _ensure_brew _brew_deps
 
 _ensure_brew:
 	@if ! command -v brew >/dev/null 2>&1; then \
 		echo "Homebrew not found. Installing..."; \
 		/bin/bash -c "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
 	fi
+
+_brew_deps: _ensure_brew
+	@echo ""
+	@echo "Installing tools via Homebrew: $(BREW_DEPS)"
+	@echo "-------------------------------------------"
+	@brew install $(BREW_DEPS) 2>&1 | grep -v 'already installed' || true

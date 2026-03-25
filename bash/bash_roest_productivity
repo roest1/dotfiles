@@ -41,11 +41,15 @@ fi
 if command -v fzf &>/dev/null; then
   eval "$(fzf --bash 2>/dev/null)" || source /usr/share/bash-completion/completions/fzf 2>/dev/null
   export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
-  if command -v fd &>/dev/null; then
-    export FZF_DEFAULT_COMMAND='fd --type f --hidden --exclude .git'
+  _fd=""
+  command -v fd &>/dev/null && _fd=fd
+  command -v fdfind &>/dev/null && _fd=fdfind
+  if [[ -n "$_fd" ]]; then
+    export FZF_DEFAULT_COMMAND="$_fd --type f --hidden --exclude .git"
     export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-    export FZF_ALT_C_COMMAND='fd --type d --hidden --exclude .git'
+    export FZF_ALT_C_COMMAND="$_fd --type d --hidden --exclude .git"
   fi
+  unset _fd
 fi
 
 # ─── Git aliases ──────────────────────────────────────────────────────────────
@@ -117,7 +121,9 @@ f() {
     file=$(fzf --preview 'head -50 {}' 2>/dev/null)
     [[ -n "$file" ]] && nvim "$file"
   else
-    fd --type f "$1"
+    local _fd="fd"
+    command -v fd &>/dev/null || _fd="fdfind"
+    "$_fd" --type f "$1"
   fi
 }
 
@@ -731,6 +737,8 @@ HELP
         
         # Special check logic for variations
         if [[ "$cmd" == "bat" ]] && command -v batcat &>/dev/null; then
+          found=true
+        elif [[ "$cmd" == "fd" ]] && command -v fdfind &>/dev/null; then
           found=true
         elif [[ "$cmd" == "rg" ]] && command -v rg &>/dev/null; then
           found=true
