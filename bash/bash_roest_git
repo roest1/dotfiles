@@ -66,6 +66,27 @@ gha-open() { # gha-open: Open github actions in browser
 # ─── Interactive workflow picker + actions ─────────────────────────
 
 gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
+  local scope
+  scope=$(printf '%s\n' \
+    "📌 Current commit (HEAD)" \
+    "📋 Recent workflow runs" \
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="GitHub Actions  │  ↑↓ nav  enter select  -/q back" \
+        --height=5 --no-info)
+
+  [[ -z "$scope" ]] && return
+
+  case "$scope" in
+    *"Current commit"*)
+      _gha_ui_head
+      ;;
+    *"Recent"*)
+      _gha_ui_recent
+      ;;
+  esac
+}
+
+_gha_ui_head() {
   local repo sha
   repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
   sha=$(git rev-parse HEAD)
@@ -94,7 +115,7 @@ gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
 
   local selection
   selection=$(echo "$runs_data" \
-    | fzf --header="GitHub Actions  │  enter=actions  esc=exit" \
+    | fzf --header="GitHub Actions (HEAD)  │  enter=actions  esc=exit" \
         --preview 'echo {}' \
         --delimiter=$'\t' \
         --with-nth=1,2)
@@ -105,8 +126,6 @@ gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
   name=$(echo "$selection" | awk -F'\t' '{print $1}')
   url=$(echo "$selection" | awk -F'\t' '{print $3}')
 
-  # Extract run ID from the check run URL
-  # URL format: https://github.com/owner/repo/actions/runs/RUNID/job/JOBID
   run_id=$(echo "$url" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
 
   if [[ -z "$run_id" ]]; then
@@ -115,6 +134,45 @@ gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
   fi
 
   _gha_action_menu "$run_id" "$name" "$url"
+}
+
+_gha_ui_recent() {
+  local runs_data
+  runs_data=$(gh run list --limit 15 --json databaseId,displayTitle,status,conclusion,headBranch,createdAt,name \
+    --jq '.[] | [
+      .databaseId,
+      (if .status == "completed" then
+        (if .conclusion == "success" then "✅"
+         elif .conclusion == "failure" then "❌"
+         elif .conclusion == "skipped" then "⏭"
+         else "❓" end)
+       else "⏳" end),
+      .displayTitle,
+      .headBranch,
+      .name,
+      .createdAt[:10]
+    ] | @tsv' 2>/dev/null)
+
+  if [[ -z "$runs_data" ]]; then
+    echo "No recent workflow runs found"
+    return
+  fi
+
+  local selection
+  selection=$(echo "$runs_data" \
+    | awk -F'\t' '{ printf "%s  %-50.50s  %-20.20s  %s  %s\t%s\t%s\n", $2, $3, $4, $5, $6, $1, $3 }' \
+    | fzf --ansi \
+        --header="Recent Runs  │  enter=actions  esc=back" \
+        --delimiter=$'\t' --with-nth=1 \
+        --preview 'echo {}')
+
+  [[ -z "$selection" ]] && return
+
+  local run_id job_name
+  run_id=$(echo "$selection" | awk -F'\t' '{print $2}')
+  job_name=$(echo "$selection" | awk -F'\t' '{print $3}')
+
+  [[ -n "$run_id" ]] && _gha_action_menu "$run_id" "$job_name" ""
 }
 
 # ─── Action menu after picking a workflow ──────────────────────────
@@ -142,6 +200,8 @@ _gha_action_menu() {
       gh run rerun "$run_id" 2>/dev/null \
         && echo "✅ Rerun triggered for run $run_id" \
         || echo "❌ Rerun failed — check permissions"
+      sleep 1
+      _gha_action_menu "$run_id" "$job_name" "$url"
       ;;
   esac
 }

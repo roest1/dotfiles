@@ -2,16 +2,17 @@
 
 Interactive GitHub management from the terminal — no browser needed for most workflows.
 
-> **6 commands. That's it.** Each opens an interactive screen you navigate with arrow keys.
+> **One command to rule them all: `gh-ui`.** Or use any tool directly as a shortcut.
 
-| Command     | What it does                              |
-| ----------- | ----------------------------------------- |
-| `gha-ui`    | CI/CD workflows → logs → rerun            |
-| `gpr`       | Full PR lifecycle (create, review, merge) |
-| `ghsecrets` | Repo + environment secrets                |
-| `ghbranch`  | Branch management + protection rules      |
-| `ghenv`     | Deployment environments                   |
-| `gha`       | Quick workflow status (non-interactive)   |
+| Command     | What it does                                      |
+| ----------- | ------------------------------------------------- |
+| `gh-ui`     | **Unified hub** → all tools below (with preview)  |
+| `gpr`       | PR lifecycle — filter, create, review, merge       |
+| `gha-ui`    | CI/CD workflows → logs → rerun (HEAD or recent)   |
+| `ghsecrets` | Repo + environment secrets                         |
+| `ghbranch`  | Branch management + protection rules               |
+| `ghenv`     | Deployment environments                            |
+| `gha`       | Quick workflow status (non-interactive)             |
 
 ## Navigation
 
@@ -32,9 +33,35 @@ gh auth login
 
 ---
 
+## gh-ui — Unified Hub
+
+One command, live preview, access to everything.
+
+<!-- [![gh-ui demo](https://asciinema.org/a/XXXXXX.svg)](https://asciinema.org/a/XXXXXX) -->
+
+The hub pre-fetches data in parallel (open PRs, CI status, secrets, environments, branches) and shows it in a live preview pane as you navigate. Select an item to jump into the full tool — when you're done, you return to the hub.
+
+```
+┌─────────────────────────────┬──────────────────────────────┐
+│ 🔀 Pull Requests          > │ #42 Fix auth flow     ⏳     │
+│ 📋 Pull Requests (mine)     │ #41 Add dark mode     ✅     │
+│ ➕ Create Pull Request       │ #39 Refactor API      🔄     │
+│ ───────────────────────────  │                              │
+│ 🚀 CI / Actions              │                              │
+│ ───────────────────────────  │                              │
+│ 🔑 Secrets                   │                              │
+│ 🌍 Environments              │                              │
+│ 🌿 Branches                  │                              │
+└─────────────────────────────┴──────────────────────────────┘
+```
+
+All individual commands (`gpr`, `gha-ui`, `ghsecrets`, etc.) still work as standalone shortcuts.
+
+---
+
 ## gha-ui — CI/CD Workflow Viewer + Logs
 
-Pick a workflow → action menu → smart logs or step browser.
+Choose scope first: **current commit (HEAD)** or **recent workflow runs** (cross-branch). Then pick a workflow → action menu → smart logs or step browser.
 
 <!-- Replace with your asciinema recording -->
 <!-- [![gha-ui demo](https://asciinema.org/a/XXXXXX.svg)](https://asciinema.org/a/XXXXXX) -->
@@ -84,9 +111,20 @@ gpr create    # walks you through draft/ready, opens gh's interactive flow
 ### PR list + actions
 
 ```sh
-gpr           # list all open PRs with live preview pane
-gpr mine      # filtered to your PRs
+gpr           # filter picker → list PRs with live preview pane
+gpr mine      # shortcut: your PRs only
+gpr create    # shortcut: create PR from current branch
 ```
+
+The filter picker lets you choose what to view:
+
+| Filter               | What it shows                        |
+| -------------------- | ------------------------------------ |
+| All open PRs         | Every open PR in the repo            |
+| Needs my review      | PRs where your review is requested   |
+| My PRs               | PRs you authored                     |
+| Recently closed      | Last 50 closed PRs                   |
+| Recently merged      | Last 50 merged PRs                   |
 
 Select a PR to get the action menu:
 
@@ -99,13 +137,13 @@ Select a PR to get the action menu:
 | 💬 Add comment       | Inline or open your editor                |
 | ✅ Approve           | With optional message                     |
 | 🔄 Request changes   | Opens editor for feedback                 |
-| 🏷 Manage labels     | Add/remove from repo's label list         |
-| 👤 Request reviewers | Pick from collaborators                   |
+| 🏷 Manage labels     | Multi-select (TAB toggle) add/remove      |
+| 👤 Request reviewers | Multi-select from collaborators            |
 | ✏️ Edit title/body   | Rename or rewrite description             |
 | 🔀 Merge             | Strategy picker (squash/merge/rebase)     |
 | ❌ Close PR          | Close without merging                     |
 | 🌐 Open in browser   | Fallback to GitHub UI                     |
-| 🔍 View CI checks    | Pass/fail status, refreshable             |
+| 🔍 View CI checks    | Pick a check → drill into logs/rerun      |
 
 Most actions loop back to the menu — do multiple things on the same PR without re-running the command.
 
@@ -255,9 +293,27 @@ asciinema rec --idle-time-limit=2 demos/gha-ui.cast
 
 Record each demo separately. Keep each under 60 seconds. Here's the sequence:
 
-#### 1. `gha-ui` — the flagship demo (~45s)
+#### 1. `gh-ui` — the unified hub (~30s)
 
-This is the most impressive one. Record this first.
+Show the hub as the single entry point. Best first impression.
+
+```
+Pre-setup:
+  Have a repo with open PRs and recent CI runs
+
+Script:
+  1. gh-ui
+  2. Arrow through menu items — show preview pane updating live
+     (PR titles, CI status, branch list appear on the right)
+  3. Select "Pull Requests" → show filter picker
+  4. Pick "All open PRs" → show PR list with preview
+  5. esc back → - back to hub
+  6. Select "CI / Actions" → show scope picker
+  7. Pick "Current commit (HEAD)" → show workflow list
+  8. - back, q to exit hub
+```
+
+#### 2. `gha-ui` — CI deep dive (~45s)
 
 ```
 Pre-setup:
@@ -266,19 +322,20 @@ Pre-setup:
 
 Script:
   1. gha-ui
-  2. Pick a workflow with ❌
-  3. Select "Smart log view"
-  4. Scroll through — show collapsed passes, expanded failure
-  5. Press q to exit less
-  6. Press r to refresh
-  7. Press - to go back to action menu
-  8. Select "Browse steps interactively"
-  9. Arrow through a few steps (show preview pane updating)
-  10. Enter on the failed step → full log in less
-  11. q out, esc out, - back, q to exit
+  2. Pick "Current commit (HEAD)"
+  3. Pick a workflow with ❌
+  4. Select "Smart log view"
+  5. Scroll through — show collapsed passes, expanded failure
+  6. Press q to exit less
+  7. Press r to refresh
+  8. Press - to go back to action menu
+  9. Select "Browse steps interactively"
+  10. Arrow through a few steps (show preview pane updating)
+  11. Enter on the failed step → full log in less
+  12. q out, esc out, - back, q to exit
 ```
 
-#### 2. `gpr` — PR lifecycle (~50s)
+#### 3. `gpr` — PR lifecycle (~50s)
 
 ```
 Pre-setup:
@@ -289,16 +346,17 @@ Script:
   1. gpr create
   2. Pick "Draft"
   3. Fill in title/body via gh's interactive flow
-  4. gpr (list PRs — your new one appears)
+  4. gpr → filter picker → "All open PRs" (your new one appears)
   5. Arrow to it (show preview pane)
   6. Enter → action menu
   7. "View diff" → scroll a bit → q
-  8. "View file changes" → pick a file → show preview → esc
-  9. "Approve" (if you have a second PR from someone else)
-  10. - to exit
+  8. "View CI checks" → pick a check → smart log view (show CI drill-down)
+  9. q out, back to action menu
+  10. "Manage labels" → TAB to multi-select labels → ENTER (show multi-select)
+  11. - to exit
 ```
 
-#### 3. `ghsecrets` — quick and clean (~25s)
+#### 4. `ghsecrets` — quick and clean (~25s)
 
 ```
 Script:
@@ -313,7 +371,7 @@ Script:
   9. q to exit
 ```
 
-#### 4. `ghbranch` — protection rules (~30s)
+#### 5. `ghbranch` — protection rules (~30s)
 
 ```
 Pre-setup:
@@ -333,7 +391,7 @@ Script:
   11. q to exit
 ```
 
-#### 5. `ghenv` — environment lifecycle (~30s)
+#### 6. `ghenv` — environment lifecycle (~30s)
 
 ```
 Script:
@@ -348,7 +406,7 @@ Script:
   9. q to exit
 ```
 
-#### 6. Navigation patterns (~15s, optional)
+#### 7. Navigation patterns (~15s, optional)
 
 ```
 Show the navigation feel across different screens:
