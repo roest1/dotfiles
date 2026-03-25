@@ -26,7 +26,7 @@ Personal configuration files. One clone, one script, full setup.
 
 Neovim config is a separate repo: [roest-nvim](https://github.com/roest1/roest-nvim)
 
-**[GitHub Terminal Tools Guide →](git/GITHUB_TOOLS.md)** — Full walkthrough with demos of `gpr`, `ghsecrets`, `ghbranch`, `ghenv`, and `gha-ui`.
+**[GitHub Terminal Tools Guide →](git/GITHUB_TOOLS.md)** — Full walkthrough with demos. Start with `gh-ui` for everything, or use `gpr`, `gha-ui`, `ghsecrets`, `ghbranch`, `ghenv` directly.
 
 ## Install
 
@@ -72,7 +72,7 @@ exec bash
 | `bash/bash_roest_theme`             | Prompt, colors, LS_COLORS, man page colors                          |
 | `bash/bash_roest_productivity`      | Custom commands, aliases, help system                               |
 | `bash/bash_roest_git`               | GitHub Actions commands (gha, gha-ui, gha-fail, gha-open)           |
-| `bash/bash_roest_github`            | Interactive GitHub screens (gpr, ghsecrets, ghbranch, ghenv)        |
+| `bash/bash_roest_github`            | GitHub hub (gh-ui) + interactive screens (gpr, ghsecrets, ghbranch, ghenv) |
 | `bash/bash_roest_local`             | Machine-specific config — CUDA, nvim path, etc. (not tracked)      |
 | `bash/bash_roest_password_commands` | Sensitive commands (not tracked in git)                             |
 | `git/GITHUB_TOOLS.md`               | Walkthrough + demo recordings for all GitHub tools                  |

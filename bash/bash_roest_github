@@ -6,6 +6,7 @@
 #   source ~/.bash_roest_github
 #
 # Commands:
+#   gh-ui         Unified hub → all GitHub & Actions tools (with live preview)
 #   gpr           Interactive PR management (list → pick → act)
 #   gpr create    Create a new PR from current branch
 #   gpr mine      Show only your PRs
@@ -56,6 +57,113 @@ __gh_pick_branch() {
 }
 
 # ─────────────────────────────────────────────────────────────────
+#  gh-ui — Unified GitHub Hub
+# ─────────────────────────────────────────────────────────────────
+
+gh-ui() {
+  __gh_check || return 1
+
+  local repo
+  repo=$(__gh_repo)
+
+  # ─── Pre-fetch preview data in parallel ───────────────────────
+  local tmpdir
+  tmpdir=$(mktemp -d /tmp/gh-ui-XXXXXX)
+
+  gh pr list --limit 8 --state open \
+    --json number,title,reviewDecision,isDraft,author \
+    --jq '.[] | "#\(.number)  \(
+      if .isDraft then "📝"
+      elif .reviewDecision == "APPROVED" then "✅"
+      elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
+      else "⏳" end)  \(.title)  (\(.author.login))"' \
+    > "$tmpdir/prs" 2>/dev/null &
+
+  gh pr list --limit 8 --state open --author=@me \
+    --json number,title,reviewDecision,isDraft \
+    --jq '.[] | "#\(.number)  \(
+      if .isDraft then "📝"
+      elif .reviewDecision == "APPROVED" then "✅"
+      elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
+      else "⏳" end)  \(.title)"' \
+    > "$tmpdir/mine" 2>/dev/null &
+
+  {
+    local branch
+    branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached)")
+    local default_br
+    default_br=$(__gh_default_branch)
+    echo "Branch: $branch → $default_br"
+    local unpushed
+    unpushed=$(git log --oneline "@{u}..HEAD" 2>/dev/null | head -5)
+    if [[ -n "$unpushed" ]]; then
+      local count
+      count=$(git log --oneline "@{u}..HEAD" 2>/dev/null | wc -l)
+      echo "$count unpushed commit(s):"
+      echo "$unpushed"
+    else
+      echo "(no unpushed commits)"
+    fi
+  } > "$tmpdir/branch" 2>/dev/null &
+
+  (gha 2>/dev/null || echo "(no CI runs for HEAD)") > "$tmpdir/ci" &
+
+  (gh secret list 2>/dev/null || echo "(none)") > "$tmpdir/secrets" &
+
+  gh api "repos/$repo/environments" \
+    --jq '.environments[] | "\(.name)   created: \(.created_at[:10])"' \
+    > "$tmpdir/envs" 2>/dev/null &
+
+  gh api "repos/$repo/branches" --paginate \
+    --jq '.[] | "\(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
+    > "$tmpdir/branches" 2>/dev/null &
+
+  wait
+
+  # ─── Hub menu with live preview ───────────────────────────────
+  local action
+  action=$(printf '%s\n' \
+    "🔀 Pull Requests" \
+    "📋 Pull Requests (mine)" \
+    "➕ Create Pull Request" \
+    "─────────────────────────────" \
+    "🚀 CI / Actions" \
+    "─────────────────────────────" \
+    "🔑 Secrets" \
+    "🌍 Environments" \
+    "🌿 Branches" \
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="GitHub — $repo  │  ↑↓ nav  enter select  -/q exit" \
+        --preview "case {} in
+          *'Pull Requests (mine)'*) cat $tmpdir/mine 2>/dev/null || echo '(none)' ;;
+          *'Pull Requests'*) cat $tmpdir/prs 2>/dev/null || echo '(none)' ;;
+          *'Create'*) cat $tmpdir/branch 2>/dev/null ;;
+          *'CI'*) cat $tmpdir/ci 2>/dev/null ;;
+          *'Secrets'*) cat $tmpdir/secrets 2>/dev/null ;;
+          *'Environments'*) cat $tmpdir/envs 2>/dev/null || echo '(none)' ;;
+          *'Branches'*) cat $tmpdir/branches 2>/dev/null || echo '(none)' ;;
+          *) echo '' ;;
+        esac" \
+        --preview-window=right:50%:wrap --no-info)
+
+  rm -rf "$tmpdir"
+
+  [[ -z "$action" || "$action" == *"───"* ]] && return
+
+  case "$action" in
+    *"Pull Requests (mine)"*)  gpr mine ;;
+    *"Create Pull Request"*)   gpr create ;;
+    *"Pull Requests"*)         gpr ;;
+    *"CI / Actions"*)          gha-ui ;;
+    *"Secrets"*)               ghsecrets ;;
+    *"Environments"*)          ghenv ;;
+    *"Branches"*)              ghbranch ;;
+  esac
+
+  gh-ui
+}
+
+# ─────────────────────────────────────────────────────────────────
 #  gpr — Interactive Pull Request Management
 # ─────────────────────────────────────────────────────────────────
 
@@ -63,9 +171,31 @@ gpr() {
   __gh_check || return 1
 
   case "${1:-}" in
-    create) _gpr_create ;;
-    mine)   _gpr_list "--author=@me" ;;
-    *)      _gpr_list ;;
+    create) _gpr_create; return ;;
+    mine)   _gpr_list "--author=@me"; return ;;
+  esac
+
+  # Filter picker for bare `gpr`
+  local filter
+  filter=$(printf '%s\n' \
+    "📋 All open PRs" \
+    "👀 Needs my review" \
+    "📝 My PRs" \
+    "─────────────────────────────" \
+    "🔒 Recently closed" \
+    "✅ Recently merged" \
+    | fzf --disabled --bind 'q:abort,-:abort' \
+        --header="Pull Requests  │  ↑↓ nav  enter select  -/q back" \
+        --height=9 --no-info)
+
+  [[ -z "$filter" || "$filter" == *"───"* ]] && return
+
+  case "$filter" in
+    *"All open"*)        _gpr_list ;;
+    *"Needs my review"*) _gpr_list "--search review-requested:@me" ;;
+    *"My PRs"*)          _gpr_list "--author=@me" ;;
+    *"Recently closed"*) _gpr_list "--state closed" ;;
+    *"Recently merged"*) _gpr_list "--state merged" ;;
   esac
 }
 
@@ -282,11 +412,29 @@ _gpr_actions() {
       ;;
 
     *"CI checks"*)
-      echo "━━━ CI Checks for PR #${number} ━━━"
-      gh pr checks "$number" 2>/dev/null || echo "  No checks found"
-      echo ""
-      local key; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-      [[ "$key" == "r" || "$key" == "R" ]] && { _gpr_actions "$number"; return; }
+      local checks
+      checks=$(gh pr checks "$number" 2>/dev/null)
+      if [[ -z "$checks" ]]; then
+        echo "  No checks found"
+        sleep 1
+      else
+        local pick
+        pick=$(echo "$checks" \
+          | fzf --ansi \
+              --header="CI for PR #${number}  │  enter=view logs  esc=back" \
+              --preview 'echo {}' --preview-window=right:50%:wrap)
+        if [[ -n "$pick" ]]; then
+          local check_url run_id check_name
+          check_url=$(echo "$pick" | awk '{print $NF}')
+          run_id=$(echo "$check_url" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
+          check_name=$(echo "$pick" | awk '{print $1}')
+          if [[ -n "$run_id" ]]; then
+            _gha_action_menu "$run_id" "$check_name" "$check_url"
+          else
+            _open_url "$check_url"
+          fi
+        fi
+      fi
       _gpr_actions "$number"
       ;;
   esac
@@ -407,20 +555,28 @@ _gpr_labels() {
         echo "No labels in this repo. Create them on GitHub first."
         return
       fi
-      local label
-      label=$(echo "$available" \
-        | fzf --header="Select label to add  │  type to filter  esc=back")
-      [[ -n "$label" ]] && gh pr edit "$number" --add-label "$label" && echo "✅ Added: $label"
+      local labels
+      labels=$(echo "$available" \
+        | fzf --multi --header="Select labels (TAB toggle, ENTER confirm)  │  esc=back")
+      if [[ -n "$labels" ]]; then
+        local joined
+        joined=$(echo "$labels" | paste -sd,)
+        gh pr edit "$number" --add-label "$joined" && echo "✅ Added: $joined"
+      fi
       ;;
     "Remove label")
       if [[ -z "$current" ]]; then
         echo "No labels to remove"
         return
       fi
-      local label
-      label=$(echo "$current" \
-        | fzf --header="Select label to remove  │  esc=back")
-      [[ -n "$label" ]] && gh pr edit "$number" --remove-label "$label" && echo "✅ Removed: $label"
+      local labels
+      labels=$(echo "$current" \
+        | fzf --multi --header="Select labels to remove (TAB toggle, ENTER confirm)  │  esc=back")
+      if [[ -n "$labels" ]]; then
+        local joined
+        joined=$(echo "$labels" | paste -sd,)
+        gh pr edit "$number" --remove-label "$joined" && echo "✅ Removed: $joined"
+      fi
       ;;
   esac
 }
@@ -436,13 +592,17 @@ _gpr_reviewers() {
   collabs=$(gh api "repos/$repo/collaborators" --jq '.[].login' 2>/dev/null)
 
   if [[ -n "$collabs" ]]; then
-    local reviewer
-    reviewer=$(echo "$collabs" \
-      | fzf --header="Select reviewer for PR #${number}  │  type to filter  esc=back")
-    [[ -n "$reviewer" ]] && gh pr edit "$number" --add-reviewer "$reviewer" \
-      && echo "✅ Reviewer requested: $reviewer"
+    local reviewers
+    reviewers=$(echo "$collabs" \
+      | fzf --multi --header="Select reviewers (TAB toggle, ENTER confirm)  │  esc=back")
+    if [[ -n "$reviewers" ]]; then
+      local joined
+      joined=$(echo "$reviewers" | paste -sd,)
+      gh pr edit "$number" --add-reviewer "$joined" \
+        && echo "✅ Reviewers requested: $joined"
+    fi
   else
-    read -rp "Reviewer username: " reviewer
+    read -rp "Reviewer username(s), comma-separated: " reviewer
     [[ -n "$reviewer" ]] && gh pr edit "$number" --add-reviewer "$reviewer" \
       && echo "✅ Reviewer requested: $reviewer"
   fi

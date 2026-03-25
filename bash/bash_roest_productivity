@@ -346,6 +346,9 @@ h() {
     gb                 branch (sorted by recent use)
     gst / gstp         stash / stash pop
 
+  GitHub Hub                                               [gh, fzf, jq]
+    gh-ui              All GitHub tools in one menu (with preview)
+
   GitHub Actions                                           [gh]
     gha                Show workflow status for HEAD
     gha-fail           Show only failed workflows
@@ -353,7 +356,7 @@ h() {
     gha-open           Open Actions tab in browser
 
   GitHub Interactive (fzf-powered screens)                 [gh, fzf, jq]
-    gpr                PR management (pick → act)
+    gpr                PR management (filter → pick → act)
     gpr create         Create PR from current branch
     gpr mine           Show only your PRs
     ghsecrets          Manage repo & environment secrets
@@ -379,7 +382,7 @@ h() {
     Ctrl+T             Fuzzy file picker (inserts path)
     Alt+C              Fuzzy cd into subdirectory
 
-  Interactive Navigation (gpr, ghsecrets, ghbranch, ghenv, gha-ui)
+  Interactive Navigation (gh-ui, gpr, ghsecrets, ghbranch, ghenv, gha-ui)
     Menus:  ↑↓ navigate  enter select  -/q back   (nvim-like)
     Lists:  type to filter  enter select  esc back
     Pagers: r refresh (re-fetches)  -/q back
@@ -568,6 +571,29 @@ Git aliases — short forms for daily git commands
   Use it instead of --force when rewriting history.
 HELP
       ;;
+    gh-ui)
+      cat <<'HELP'
+gh-ui — unified GitHub command hub
+
+  gh-ui             Opens interactive menu with live preview pane
+
+  Top-level menu provides access to:
+    Pull Requests     List, filter, create, manage PRs (gpr)
+    CI / Actions      Workflow status, logs, rerun (gha-ui)
+    Secrets           Repo & environment secrets (ghsecrets)
+    Environments      Create, configure, delete (ghenv)
+    Branches          Protection rules, defaults (ghbranch)
+
+  The preview pane shows live data as you navigate:
+    Hover "Pull Requests" → see open PR titles + status
+    Hover "CI / Actions"  → see workflow pass/fail for HEAD
+    Hover "Branches"      → see branch list with protection status
+
+  All individual commands still work as standalone shortcuts.
+
+  Depends on: gh, fzf, jq
+HELP
+      ;;
     gha|gha-fail|gha-ui|gha-open)
       cat <<'HELP'
 GitHub Actions — CI/CD observability + log viewer
@@ -582,6 +608,7 @@ GitHub Actions — CI/CD observability + log viewer
                   Fallback when you need the full GitHub UI
 
   gha-ui          Interactive workflow picker with action menu
+                  Choose scope: current HEAD or recent runs.
                   Pick a workflow, then choose:
 
     📋 Smart log view
@@ -623,9 +650,11 @@ HELP
       cat <<'HELP'
 gpr — interactive PR management
 
-  gpr              List open PRs → pick one → action menu
+  gpr              Filter picker → list PRs → pick one → action menu
+                   Filters: all open, needs my review, my PRs,
+                   recently closed, recently merged
   gpr create       Create a new PR from current branch
-  gpr mine         Show only PRs you authored
+  gpr mine         Show only PRs you authored (shortcut)
 
   The PR list shows: number, review status, title, author,
   branch, changes (+/-), and date. The preview pane (right side)
