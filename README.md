@@ -5,22 +5,23 @@ Personal configuration files. One clone, one script, full setup.
 ## Structure
 
 ```
-~/.dotfiles/
+~/dotfiles/
+├── Makefile                    Orchestrator: deps, install, shell, check, update
 ├── install.sh                  Symlink everything into ~
-├── .gitignore                  Keeps sensitive bash scripts out of git
 ├── README.md                   Setup instructions (you are here)
+├── CLAUDE.md                   AI assistant project instructions
 ├── bash/
-│   ├── bashrc                  → ~/.bashrc (source)
+│   ├── bashrc                  → ~/.bashrc (main entrypoint)
 │   ├── bash_roest_theme        → ~/.bash_roest_theme
 │   ├── bash_roest_productivity → ~/.bash_roest_productivity (core commands)
-│   ├── bash_roest_git          → ~/.bash_roest_git (git tools and commands)
+│   ├── bash_roest_git          → ~/.bash_roest_git (GitHub Actions tools)
 │   ├── bash_roest_github       → ~/.bash_roest_github (interactive GitHub screens)
-│   ├── bash_roest_local          → ~/.bash_roest_local (machine-specific, not tracked)
+│   ├── bash_roest_local        → ~/.bash_roest_local (machine-specific, not tracked)
 │   └── bash_roest_password_commands → ~/.bash_roest_password_commands (not tracked)
 └── git/
-│   ├── README.md              GitHub tips and tricks
-│   ├── GITHUB_TOOLS.md        Interactive tools walkthrough + demos
-    └── gitconfig              → ~/.gitconfig
+    ├── README.md               GitHub tips and tricks
+    ├── GITHUB_TOOLS.md         Interactive tools walkthrough + demos
+    └── gitconfig               → ~/.gitconfig
 ```
 
 Neovim config is a separate repo: [roest-nvim](https://github.com/roest1/roest-nvim)
@@ -30,29 +31,30 @@ Neovim config is a separate repo: [roest-nvim](https://github.com/roest1/roest-n
 ## Install
 
 ```sh
-git clone https://github.com/roest1/dotfiles.git ~/.dotfiles
-cd ~/.dotfiles
-chmod +x install.sh
-./install.sh
+git clone https://github.com/roest1/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+make all
 ```
 
-The install script:
+`make all` runs three steps:
 
-- Symlinks files into `$HOME`
-- Backs up any existing files to `~/.dotfiles_backup/`
-- Safe to re-run (skips already-correct symlinks)
+1. **`make deps`** — installs CLI tools (brew on macOS/WSL, dnf on RHEL)
+2. **`make install`** — symlinks dotfiles into `$HOME`, backs up existing files to `~/.dotfiles_backup/`
+3. **`make check`** — verifies all tools are available
+
+Other targets: `make shell` (set default shell to bash), `make update` (git pull + re-install).
+
+All targets are idempotent — safe to re-run.
 
 > **NOTE:** filenames in `bash/` and `git/` are hard-coded in `install.sh`.
->
-> You must edit the install script manually if you are changing or adding any files to these directories
-> or else they will not install correctly.
+> Edit the install script if you add or rename files.
 
 ## New machine setup
 
 ```sh
 # 1. Dotfiles
-git clone https://github.com/roest1/dotfiles.git ~/.dotfiles
-~/.dotfiles/install.sh
+git clone https://github.com/roest1/dotfiles.git ~/dotfiles
+cd ~/dotfiles && make all
 
 # 2. Neovim config
 git clone https://github.com/roest1/roest-nvim.git ~/.config/nvim

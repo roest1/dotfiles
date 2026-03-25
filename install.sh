@@ -2,15 +2,15 @@
 set -euo pipefail
 
 #####################################################################
-# ~/.dotfiles/install.sh
+# ~/dotfiles/install.sh
 #
 # Symlinks dotfiles into place. Safe to re-run — skips existing links,
 # backs up existing files. Works on both Linux (WSL) and macOS.
 #
 # Usage:
-#   git clone https://github.com/roest1/dotfiles.git ~/.dotfiles
-#   cd ~/.dotfiles
-#   ./install.sh
+#   git clone https://github.com/roest1/dotfiles.git ~/dotfiles
+#   cd ~/dotfiles
+#   make all        # or: ./install.sh
 #####################################################################
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
