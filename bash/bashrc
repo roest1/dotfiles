@@ -111,6 +111,9 @@ elif [[ -d /usr/lib/jvm ]]; then
 fi
 [[ -n "$JAVA_HOME" ]] && export PATH="$JAVA_HOME/bin:$PATH"
 
+# Machine-local config (env vars needed before package managers init)
+[[ -f ~/.bash_roest_local ]] && source ~/.bash_roest_local
+
 #####################################################################
 # Package managers (auto-generated blocks — don't manually edit)
 #####################################################################
@@ -147,7 +150,6 @@ export NVM_DIR="$HOME/.nvm"
 #####################################################################
 
 source ~/.bash_roest_theme
-[[ -f ~/.bash_roest_local ]] && source ~/.bash_roest_local
 [[ -f ~/.bash_roest_password_commands ]] && source ~/.bash_roest_password_commands
 source ~/.bash_roest_productivity
 source ~/.bash_roest_git
