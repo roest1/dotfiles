@@ -70,55 +70,61 @@ gh-ui() {
   local tmpdir
   tmpdir=$(mktemp -d /tmp/gh-ui-XXXXXX)
 
-  gh pr list --limit 8 --state open \
-    --json number,title,reviewDecision,isDraft,author \
-    --jq '.[] | "#\(.number)  \(
-      if .isDraft then "📝"
-      elif .reviewDecision == "APPROVED" then "✅"
-      elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
-      else "⏳" end)  \(.title)  (\(.author.login))"' \
-    > "$tmpdir/prs" 2>/dev/null &
+  # Run all fetches inside a single subshell to suppress job control
+  # notifications and prevent any output from leaking to the terminal
+  (
+    gh pr list --limit 8 --state open \
+      --json number,title,reviewDecision,isDraft,author \
+      --jq '.[] | "#\(.number)  \(
+        if .isDraft then "📝"
+        elif .reviewDecision == "APPROVED" then "✅"
+        elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
+        else "⏳" end)  \(.title)  (\(.author.login))"' \
+      > "$tmpdir/prs" 2>/dev/null &
 
-  gh pr list --limit 8 --state open --author=@me \
-    --json number,title,reviewDecision,isDraft \
-    --jq '.[] | "#\(.number)  \(
-      if .isDraft then "📝"
-      elif .reviewDecision == "APPROVED" then "✅"
-      elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
-      else "⏳" end)  \(.title)"' \
-    > "$tmpdir/mine" 2>/dev/null &
+    gh pr list --limit 8 --state open --author=@me \
+      --json number,title,reviewDecision,isDraft \
+      --jq '.[] | "#\(.number)  \(
+        if .isDraft then "📝"
+        elif .reviewDecision == "APPROVED" then "✅"
+        elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
+        else "⏳" end)  \(.title)"' \
+      > "$tmpdir/mine" 2>/dev/null &
 
-  {
-    local branch
-    branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached)")
-    local default_br
-    default_br=$(__gh_default_branch)
-    echo "Branch: $branch → $default_br"
-    local unpushed
-    unpushed=$(git log --oneline "@{u}..HEAD" 2>/dev/null | head -5)
-    if [[ -n "$unpushed" ]]; then
-      local count
-      count=$(git log --oneline "@{u}..HEAD" 2>/dev/null | wc -l)
-      echo "$count unpushed commit(s):"
-      echo "$unpushed"
-    else
-      echo "(no unpushed commits)"
-    fi
-  } > "$tmpdir/branch" 2>/dev/null &
+    {
+      branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached)")
+      default_br=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
+      echo "Branch: $branch → $default_br"
+      unpushed=$(git log --oneline "@{u}..HEAD" 2>/dev/null | head -5)
+      if [[ -n "$unpushed" ]]; then
+        count=$(git log --oneline "@{u}..HEAD" 2>/dev/null | wc -l)
+        echo "$count unpushed commit(s):"
+        echo "$unpushed"
+      else
+        echo "(no unpushed commits)"
+      fi
+    } > "$tmpdir/branch" 2>/dev/null &
 
-  (gha 2>/dev/null || echo "(no CI runs for HEAD)") > "$tmpdir/ci" &
+    {
+      repo_ci=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+      sha_ci=$(git rev-parse HEAD 2>/dev/null)
+      gh api "repos/$repo_ci/commits/$sha_ci/check-runs" 2>/dev/null \
+        | jq -r '.check_runs[] | [.name, (if .status == "completed" then (if .conclusion == "success" then "✅" elif .conclusion == "failure" then "❌" elif .conclusion == "skipped" then "⏭" else "❓" end) else "⏳" end)] | @tsv' 2>/dev/null \
+        | while IFS=$'\t' read -r name status; do printf "%-40s %s\n" "$name" "$status"; done
+    } > "$tmpdir/ci" 2>/dev/null &
 
-  (gh secret list 2>/dev/null || echo "(none)") > "$tmpdir/secrets" &
+    gh secret list > "$tmpdir/secrets" 2>/dev/null &
 
-  gh api "repos/$repo/environments" \
-    --jq '.environments[] | "\(.name)   created: \(.created_at[:10])"' \
-    > "$tmpdir/envs" 2>/dev/null &
+    gh api "repos/$repo/environments" \
+      --jq '.environments[] | "\(.name)   created: \(.created_at[:10])"' \
+      > "$tmpdir/envs" 2>/dev/null &
 
-  gh api "repos/$repo/branches" --paginate \
-    --jq '.[] | "\(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
-    > "$tmpdir/branches" 2>/dev/null &
+    gh api "repos/$repo/branches" --paginate \
+      --jq '.[] | "\(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
+      > "$tmpdir/branches" 2>/dev/null &
 
-  wait
+    wait
+  ) 2>/dev/null
 
   # ─── Hub menu with live preview ───────────────────────────────
   local action
