@@ -15,6 +15,17 @@ case $- in
       *) return;;
 esac
 
+# ─── OS Detection ─────────────────────────────────────────────────
+case "$(uname -s)" in
+  Darwin) _OS=mac ;;
+  *)      _OS=linux ;;
+esac
+
+# ─── Global definitions (RHEL/Fedora) ────────────────────────────
+# RHEL's /etc/bashrc sets up the module system, /etc/profile.d/*,
+# and default environment. Source it early so our config can override.
+[[ -f /etc/bashrc ]] && . /etc/bashrc
+
 # ─── History ───────────────────────────────────────────────────────
 # don't put duplicate lines or lines starting with space in the history.
 # See bash(1) for more options
@@ -32,8 +43,10 @@ HISTFILESIZE=100000 # on disk (hard drive) .bash_history
 # update the values of LINES and COLUMNS.
 shopt -s checkwinsize
 shopt -s cdspell        # Auto-correct minor cd typos (e.g. `cd projetcs` → `cd projects`)
-shopt -s dirspell       # Auto-correct directory names during tab completion
-shopt -s globstar       # ** matches files + directories recursively (e.g. `ls **/*.py`)
+if ((BASH_VERSINFO[0] >= 4)); then
+  shopt -s dirspell     # Auto-correct directory names during tab completion
+  shopt -s globstar     # ** matches files + directories recursively (e.g. `ls **/*.py`)
+fi
 
 # ─── Completion ────────────────────────────────────────────────────
 # enable programmable completion features (you don't need to enable
@@ -51,10 +64,22 @@ fi
 # make less more friendly for non-text input files, see lesspipe(1)
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"
 
-# ─── Alert alias (for long-running commands: `sleep 10; alert`) ───
-# Add an "alert" alias for long running commands.  Use like so:
-#   sleep 10; alert
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+# ─── Alert (for long-running commands: `sleep 10; alert`) ────────
+unalias alert 2>/dev/null
+if [[ "$_OS" == "mac" ]]; then
+  alert() {
+    local msg
+    msg=$(history | tail -n1 | sed 's/^[[:space:]]*[0-9][0-9]*[[:space:]]*//;s/[;&|][[:space:]]*alert$//')
+    osascript -e "display notification \"$msg\" with title \"Terminal\""
+  }
+else
+  alert() {
+    local icon msg
+    icon=$([ $? = 0 ] && echo terminal || echo error)
+    msg=$(history | tail -n1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')
+    notify-send --urgency=low -i "$icon" "$msg"
+  }
+fi
 
 #####################################################################
 # PATH
@@ -62,8 +87,12 @@ alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo
 
 export PATH="$HOME/bin:$PATH"
 
-# distro
-export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+# Homebrew
+if [[ "$_OS" == "mac" ]]; then
+  eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
+else
+  [[ -d "/home/linuxbrew/.linuxbrew" ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+fi
 
 # ─── .NET ──────────────────────────────────────────────────────────
 export DOTNET_ROOT="$HOME/.dotnet"
@@ -71,26 +100,41 @@ export DOTNET_MULTILEVEL_LOOKUP=1
 export PATH="$DOTNET_ROOT:$PATH"
 
 # ─── Java ──────────────────────────────────────────────────────────
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-export PATH=$JAVA_HOME/bin:$PATH
+if [[ "$_OS" == "mac" ]]; then
+  export JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null)
+elif [[ -d /usr/lib/jvm ]]; then
+  # Works on both Debian (-amd64 suffix) and RHEL (no suffix)
+  for _jvm in /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/java-17*; do
+    [[ -d "$_jvm" ]] && export JAVA_HOME="$_jvm" && break
+  done
+  unset _jvm
+fi
+[[ -n "$JAVA_HOME" ]] && export PATH="$JAVA_HOME/bin:$PATH"
 
 #####################################################################
 # Package managers (auto-generated blocks — don't manually edit)
 #####################################################################
 
 # >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/riley/miniconda3/bin/conda' 'shell.bash' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
+# Search common conda locations (~/miniconda3 on WSL/mac, ~/tools/miniconda3 on RHEL)
+_conda_root=""
+for _d in "$HOME/miniconda3" "$HOME/tools/miniconda3" "$HOME/anaconda3"; do
+  [[ -x "$_d/bin/conda" ]] && _conda_root="$_d" && break
+done
+if [[ -n "$_conda_root" ]]; then
+  __conda_setup="$("$_conda_root/bin/conda" 'shell.bash' 'hook' 2>/dev/null)"
+  if [ $? -eq 0 ]; then
     eval "$__conda_setup"
-else
-    if [ -f "/home/riley/miniconda3/etc/profile.d/conda.sh" ]; then
-        . "/home/riley/miniconda3/etc/profile.d/conda.sh"
+  else
+    if [ -f "$_conda_root/etc/profile.d/conda.sh" ]; then
+      . "$_conda_root/etc/profile.d/conda.sh"
     else
-        export PATH="/home/riley/miniconda3/bin:$PATH"
+      export PATH="$_conda_root/bin:$PATH"
     fi
+  fi
+  unset __conda_setup
 fi
-unset __conda_setup
+unset _conda_root _d
 # <<< conda initialize <<<
 
 # nvm
@@ -103,7 +147,9 @@ export NVM_DIR="$HOME/.nvm"
 #####################################################################
 
 source ~/.bash_roest_theme
-source ~/.bash_roest_password_commands
+[[ -f ~/.bash_roest_local ]] && source ~/.bash_roest_local
+[[ -f ~/.bash_roest_password_commands ]] && source ~/.bash_roest_password_commands
 source ~/.bash_roest_productivity
 source ~/.bash_roest_git
 source ~/.bash_roest_github
+export PATH="$HOME/.local/bin:$PATH"

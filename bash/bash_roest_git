@@ -16,6 +16,17 @@
 #
 # Dependencies: gh, jq, fzf
 
+# ─── Portable browser open ───────────────────────────────────────
+_open_url() {
+  if command -v xdg-open &>/dev/null; then
+    xdg-open "$1" >/dev/null 2>&1
+  elif command -v open &>/dev/null; then
+    open "$1"
+  else
+    echo "Open: $1"
+  fi
+}
+
 # ─── Quick status ─────────────────────────────────────────────────
 
 gha() { # gha: show most recent workflows ran
@@ -49,7 +60,7 @@ gha-fail() { # gha-fail: Failed runs
 gha-open() { # gha-open: Open github actions in browser
   local url
   url=$(gh repo view --json url -q .url)
-  xdg-open "$url/actions" >/dev/null 2>&1
+  _open_url "$url/actions"
 }
 
 # ─── Interactive workflow picker + actions ─────────────────────────
@@ -99,7 +110,7 @@ gha-ui() { # gha-ui: interactive workflow picker → action menu → logs
   run_id=$(echo "$url" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
 
   if [[ -z "$run_id" ]]; then
-    xdg-open "$url" >/dev/null 2>&1
+    _open_url "$url"
     return
   fi
 
@@ -126,7 +137,7 @@ _gha_action_menu() {
   case "$action" in
     *"Smart log"*)     _gha_smart_log "$run_id" "$job_name" ;;
     *"Browse steps"*)  _gha_step_browser "$run_id" "$job_name" ;;
-    *"Open"*)          xdg-open "$url" >/dev/null 2>&1 ;;
+    *"Open"*)          _open_url "$url" ;;
     *"Rerun"*)
       gh run rerun "$run_id" 2>/dev/null \
         && echo "✅ Rerun triggered for run $run_id" \
@@ -188,8 +199,13 @@ _gha_smart_log() {
         completed=$(echo "$step" | jq -r '.completed // empty')
         if [[ -n "$started" && -n "$completed" && "$started" != "null" && "$completed" != "null" ]]; then
           local s_epoch c_epoch dur
-          s_epoch=$(date -d "$started" +%s 2>/dev/null || echo 0)
-          c_epoch=$(date -d "$completed" +%s 2>/dev/null || echo 0)
+          if date -d "$started" +%s &>/dev/null; then
+            s_epoch=$(date -d "$started" +%s)
+            c_epoch=$(date -d "$completed" +%s)
+          else
+            s_epoch=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$started" +%s 2>/dev/null || echo 0)
+            c_epoch=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$completed" +%s 2>/dev/null || echo 0)
+          fi
           if (( c_epoch > s_epoch )); then
             dur=$(( c_epoch - s_epoch ))
             if (( dur >= 60 )); then
