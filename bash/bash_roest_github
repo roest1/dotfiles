@@ -109,8 +109,12 @@ gh-ui() {
       repo_ci=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
       sha_ci=$(git rev-parse HEAD 2>/dev/null)
       gh api "repos/$repo_ci/commits/$sha_ci/check-runs" 2>/dev/null \
-        | jq -r '.check_runs[] | [.name, (if .status == "completed" then (if .conclusion == "success" then "✅" elif .conclusion == "failure" then "❌" elif .conclusion == "skipped" then "⏭" else "❓" end) else "⏳" end)] | @tsv' 2>/dev/null \
-        | while IFS=$'\t' read -r name status; do printf "%-40s %s\n" "$name" "$status"; done
+        | jq -r '.check_runs[] | [.name, (if .status == "completed" then (if .conclusion == "success" then "✅" elif .conclusion == "failure" then "❌" elif .conclusion == "skipped" then "⏭" else "❓" end) else "⏳" end), (.completed_at // .started_at // "")] | @tsv' 2>/dev/null \
+        | while IFS=$'\t' read -r name status ts; do
+            local age=""
+            [[ -n "$ts" ]] && age=$(__relative_time "$ts")
+            printf "%-40s %s  %s\n" "$name" "$status" "${age:-}"
+          done
     } > "$tmpdir/ci" 2>/dev/null &
 
     gh secret list > "$tmpdir/secrets" 2>/dev/null &
@@ -261,7 +265,7 @@ _gpr_list() {
       .author.login,
       .headRefName,
       "+\(.additions)/-\(.deletions)",
-      .createdAt[:10]
+      .createdAt
     ] | @tsv' 2>/dev/null)
 
   if [[ -z "$pr_lines" ]]; then
@@ -269,19 +273,24 @@ _gpr_list() {
     return
   fi
 
+  local formatted_prs
+  formatted_prs=$(echo "$pr_lines" | while IFS=$'\t' read -r num status title author branch changes created; do
+    local emoji age
+    case "$status" in
+      APPROVED) emoji="✅" ;;
+      CHANGES)  emoji="🔄" ;;
+      DRAFT)    emoji="📝" ;;
+      *)        emoji="⏳" ;;
+    esac
+    age=$(__relative_time "$created")
+    printf "#%-5s %s %-10s  %-48.48s  %-10s  %-22.22s  %s  %s\n" \
+      "$num" "$emoji" "$status" "$title" "$author" "$branch" "$changes" "${age:-}"
+  done)
+
   local selection
-  selection=$(echo "$pr_lines" \
-    | awk -F'\t' '{
-        status=$2
-        if (status == "APPROVED")   emoji="✅"
-        else if (status == "CHANGES")  emoji="🔄"
-        else if (status == "DRAFT")    emoji="📝"
-        else                           emoji="⏳"
-        printf "#%-5s %s %-10s  %-48.48s  %-10s  %-22.22s  %s  %s\n",
-          $1, emoji, status, $3, $4, $5, $6, $7
-      }' \
+  selection=$(echo "$formatted_prs" \
     | fzf --ansi --no-sort \
-        --header="  PR     Status       Title                                              Author      Branch                  Changes  Created
+        --header="  PR     Status       Title                                              Author      Branch                  Changes  Age
 $(printf '─%.0s' {1..130})
   type to filter  │  enter=actions  esc=back" \
         --preview 'gh pr view $(echo {} | awk "{print \$1}" | tr -d "#")' \

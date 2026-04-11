@@ -78,6 +78,73 @@ __git_right() {
   [[ -n "$parts" ]] && printf "%b" "$parts"
 }
 
+# ─── Shared time helpers ─────────────────────────────────────────────
+# Used by PS1, gha-ui, gh-ui, gpr for consistent timestamps.
+
+# __parse_iso_epoch <iso_timestamp>
+# Converts ISO 8601 timestamp to epoch. Handles GNU + BSD date.
+# Normalizes both Z and +00:00 suffixes.
+__parse_iso_epoch() {
+  local iso="$1"
+  [[ -z "$iso" || "$iso" == "null" ]] && return 1
+  # Normalize +00:00 → Z for BSD date
+  iso="${iso%+00:00}Z"
+  iso="${iso%%ZZ}Z"
+  if date -d "$iso" +%s &>/dev/null 2>&1; then
+    date -d "$iso" +%s
+  else
+    date -jf "%Y-%m-%dT%H:%M:%SZ" "$iso" +%s 2>/dev/null || return 1
+  fi
+}
+
+# __relative_time <iso_timestamp> [now_epoch]
+# Returns: now / 2m / 1h / 3d / 2w
+__relative_time() {
+  local epoch
+  epoch=$(__parse_iso_epoch "$1") || return
+  local now="${2:-$(date +%s)}"
+  local age=$(( now - epoch ))
+  if (( age < 60 )); then
+    printf "now"
+  elif (( age < 3600 )); then
+    printf "%dm" $(( age / 60 ))
+  elif (( age < 86400 )); then
+    printf "%dh" $(( age / 3600 ))
+  elif (( age < 604800 )); then
+    printf "%dd" $(( age / 86400 ))
+  else
+    printf "%dw" $(( age / 604800 ))
+  fi
+}
+
+# __duration_str <start_iso> <end_iso>
+# Returns: 2m15s / 8s / empty on error
+__duration_str() {
+  local s_epoch c_epoch
+  s_epoch=$(__parse_iso_epoch "$1") || return
+  c_epoch=$(__parse_iso_epoch "$2") || return
+  if (( c_epoch > s_epoch )); then
+    local dur=$(( c_epoch - s_epoch ))
+    if (( dur >= 60 )); then
+      printf "%dm%ds" $(( dur / 60 )) $(( dur % 60 ))
+    else
+      printf "%ds" "$dur"
+    fi
+  fi
+}
+
+# __local_time <iso_timestamp>
+# Returns HH:MM in system local timezone
+__local_time() {
+  local epoch
+  epoch=$(__parse_iso_epoch "$1") || return
+  if date -d "@$epoch" +%H:%M &>/dev/null 2>&1; then
+    date -d "@$epoch" +%H:%M
+  else
+    date -jf "%s" "$epoch" +%H:%M 2>/dev/null
+  fi
+}
+
 # ─── GitHub Actions (opt-in: export GH_PROMPT=1) ───────────────────
 #
 # Only displays for repos that HAVE workflows.
@@ -137,22 +204,13 @@ __gh_actions() {
 
           last_run_iso=$(echo "$result" | jq -r '.check_runs[0].completed_at // .check_runs[0].started_at // empty')
 
-          last_run_epoch=0
-          if [[ -n "$last_run_iso" ]]; then
-            if date -d "$last_run_iso" +%s &>/dev/null; then
-              last_run_epoch=$(date -d "$last_run_iso" +%s)
-            else
-              last_run_epoch=$(date -jf "%Y-%m-%dT%H:%M:%SZ" "$last_run_iso" +%s 2>/dev/null || echo 0)
-            fi
-          fi
-
           # Determine symbol
           local sym_key="ok"
           (( running > 0 )) && sym_key="run"
           (( failed > 0 )) && sym_key="fail"
 
           printf "%s|%s|%s|%s|%s" \
-            "$succeeded" "$total" "$sym_key" "$last_run_epoch" "$skipped" \
+            "$succeeded" "$total" "$sym_key" "$last_run_iso" "$skipped" \
             > "$cache_file"
         else
           rm -f "$cache_file"
@@ -167,8 +225,8 @@ __gh_actions() {
 
   # ─── Display ────────────────────────────────────────────────────
   if [[ -f "$cache_file" ]]; then
-    local s t sym_key run_epoch skipped
-    IFS='|' read -r s t sym_key run_epoch skipped < "$cache_file"
+    local s t sym_key run_iso skipped
+    IFS='|' read -r s t sym_key run_iso skipped < "$cache_file"
 
     [[ -z "$s" || -z "$t" ]] && return
 
@@ -181,18 +239,7 @@ __gh_actions() {
     esac
 
     local age_str=""
-    if [[ -n "$run_epoch" && "$run_epoch" -gt 0 ]]; then
-      local age_secs=$(( now - run_epoch ))
-      if (( age_secs < 60 )); then
-        age_str="now"
-      elif (( age_secs < 3600 )); then
-        age_str="$(( age_secs / 60 ))m"
-      elif (( age_secs < 86400 )); then
-        age_str="$(( age_secs / 3600 ))h"
-      else
-        age_str="$(( age_secs / 86400 ))d"
-      fi
-    fi
+    age_str=$(__relative_time "$run_iso" "$now")
 
     local skipped_str=""
     (( skipped > 0 )) && skipped_str=" (${skipped} skipped)"

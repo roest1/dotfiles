@@ -73,6 +73,33 @@ alias gb='git branch --sort=-committerdate'
 alias gst='git stash'
 alias gstp='git stash pop'
 
+# gprune: fetch + prune remotes + delete local branches whose remote is gone
+gprune() {
+  echo "⏳ Fetching and pruning remote tracking refs..."
+  git fetch --prune
+
+  local gone_branches
+  gone_branches=$(git for-each-ref --format '%(refname:short) %(upstream:track)' refs/heads \
+    | awk '$2 == "[gone]" { print $1 }')
+
+  if [[ -z "$gone_branches" ]]; then
+    echo "✅ No stale branches to clean up"
+    return
+  fi
+
+  echo ""
+  echo "Branches with deleted remotes:"
+  echo "$gone_branches" | sed 's/^/  /'
+  echo ""
+  read -rp "Delete these local branches? (y/N): " confirm
+  if [[ "$confirm" =~ ^[yY]$ ]]; then
+    echo "$gone_branches" | while IFS= read -r branch; do
+      git branch -D "$branch" && echo "  🗑  Deleted: $branch"
+    done
+    echo "✅ Done"
+  fi
+}
+
 # ─── Better defaults ──────────────────────────────────────────────────────────
 # eza: modern ls replacement with git integration and icons.
 # bat: cat with syntax highlighting and line numbers.
@@ -345,6 +372,7 @@ h() {
     gco / gcb          checkout / checkout -b
     gb                 branch (sorted by recent use)
     gst / gstp         stash / stash pop
+    gprune             Fetch + delete branches with gone remotes
 
   GitHub Hub                                               [gh, fzf, jq]
     gh-ui              All GitHub tools in one menu (with preview)
@@ -543,6 +571,25 @@ up — go up N directories
   up 3      Go up 3 directories (cd ../../..)
 
   Faster than typing ../../../ especially deep in a tree.
+HELP
+      ;;
+    gprune)
+      cat <<'HELP'
+gprune — clean up stale local branches
+
+  gprune
+
+  Fetches from origin and prunes remote tracking refs, then finds
+  local branches whose upstream remote has been deleted (e.g., after
+  a PR merge on GitHub). Shows the list and asks for confirmation
+  before deleting.
+
+  Safe: only deletes branches whose remote is already gone.
+  Uses git branch -D (force) since the remote was merged/deleted.
+
+  Typical workflow:
+    1. Merge PR on GitHub (deletes remote branch)
+    2. Run `gprune` to clean up your local copy
 HELP
       ;;
     git|gs|ga|gc|gp|gd|gl|gco|gcb|gb|gst|gstp|gaa|gca|gpf|gll|gds)
