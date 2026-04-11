@@ -1,0 +1,33 @@
+name: Demo Workflow
+
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  test-run:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          echo "Installing imaginary dependencies..."
+          sleep 2
+          echo "✅ Done."
+
+      - name: Run unit tests
+        run: |
+          echo "Running test suite..."
+          sleep 2
+          echo "FAIL src/auth/login.test.js"
+          echo "  ● should handle invalid passwords"
+          echo "    Expected: 401 Unauthorized"
+          echo "    Received: 200 OK"
+          exit 1
+
+      - name: Upload artifacts
+        if: success()
+        run: echo "This will be skipped because tests failed!"
