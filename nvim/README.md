@@ -95,7 +95,7 @@ Now `:help roest` works.
 
 ### Commands: <operator> <count> <motion>
 
-- all three are [optional] (2^3 = 8 styles of vim commands)
+- all three are [optional] ($2^3 = 8$ styles of vim commands)
 
 * `:<count>` (go to line)
 * `<motion>`
