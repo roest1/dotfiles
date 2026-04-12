@@ -1,53 +1,20 @@
 # dotfiles
 
-Personal configuration files. One clone, one script, full setup.
-
-## Structure
-
-```
-~/dotfiles/
-├── Makefile                    Orchestrator: deps, install, shell, check, update
-├── install.sh                  Symlink everything into ~
-├── README.md                   Setup instructions (you are here)
-├── CLAUDE.md                   AI assistant project instructions
-├── bash/
-│   ├── bashrc                  → ~/.bashrc (main entrypoint)
-│   ├── bash_roest_theme        → ~/.bash_roest_theme
-│   ├── bash_roest_productivity → ~/.bash_roest_productivity (core commands)
-│   ├── bash_roest_git          → ~/.bash_roest_git (GitHub Actions tools)
-│   ├── bash_roest_github       → ~/.bash_roest_github (interactive GitHub screens)
-│   ├── bash_roest_local        → ~/.bash_roest_local (machine-specific, not tracked)
-│   └── bash_roest_password_commands → ~/.bash_roest_password_commands (not tracked)
-└── git/
-    ├── README.md               GitHub tips and tricks
-    ├── GITHUB_TOOLS.md         Interactive tools walkthrough + demos
-    └── gitconfig               → ~/.gitconfig
-```
-
-Neovim config is a separate repo: [roest-nvim](https://github.com/roest1/roest-nvim)
-
-**[GitHub Terminal Tools Guide →](git/GITHUB_TOOLS.md)** — Full walkthrough with demos. Start with `gh-ui` for everything, or use `gpr`, `gha-ui`, `ghsecrets`, `ghbranch`, `ghenv` directly.
+Personal configuration files. One clone, one script, full setup. Cross-platform bash (macOS + Linux/WSL + RHEL).
 
 ## Install
 
-```sh
-git clone https://github.com/roest1/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-make all
-```
+| Step | Command |
+| ---- | ------- |
+| 1. Clone          | `git clone https://github.com/roest1/dotfiles.git ~/dotfiles` |
+| 2. Run everything | `cd ~/dotfiles && make all` |
+| 3. Restart shell  | `exec bash` |
 
-`make all` runs three steps:
+`make all` runs three idempotent steps: `make deps` (brew/dnf installs CLI tools) → `make install` (symlinks `bash/*` and `git/gitconfig` into `~`, backs up existing files to `~/.dotfiles_backup/`) → `make check` (verifies tools).
 
-1. **`make deps`** — installs CLI tools (brew on macOS/WSL, dnf on RHEL)
-2. **`make install`** — symlinks dotfiles into `$HOME`, backs up existing files to `~/.dotfiles_backup/`
-3. **`make check`** — verifies all tools are available
+**Other targets:** `make shell` (set default shell to bash), `make update` (git pull + reinstall).
 
-Other targets: `make shell` (set default shell to bash), `make update` (git pull + re-install).
-
-All targets are idempotent — safe to re-run.
-
-> **NOTE:** filenames in `bash/` and `git/` are hard-coded in `install.sh`.
-> Edit the install script if you add or rename files.
+**Tools installed:** zoxide, fzf, bat, eza, fd, ripgrep, gh, jq, plus bash 5 on macOS (ships 3.2).
 
 ## New machine setup
 
@@ -64,36 +31,70 @@ cd ~/.config/nvim && chmod +x bootstrap.sh && ./bootstrap.sh
 exec bash
 ```
 
+## GitHub Terminal Tools
+
+**[Full walkthrough → git/GITHUB_TOOLS.md](git/GITHUB_TOOLS.md)** — walkthroughs and demos for the interactive GitHub tools.
+
+Start with `gh-ui` for the unified hub, or jump directly to:
+
+| Command | What |
+| ------- | ---- |
+| `gh-ui`     | Unified interactive GitHub hub |
+| `gpr`       | PR management with filters |
+| `gha-ui`    | Workflow run picker with smart log view |
+| `ghsecrets` | Repository secrets |
+| `ghbranch`  | Branch management |
+| `ghenv`     | Environment management |
+
+## Layout
+
+<details>
+<summary>Directory tree</summary>
+
+```
+~/dotfiles/
+├── Makefile                              Orchestrator: deps, install, shell, check, update
+├── install.sh                            Symlink engine (backs up existing files)
+├── bash/
+│   ├── bashrc                          → ~/.bashrc
+│   ├── bash_roest_theme                → ~/.bash_roest_theme
+│   ├── bash_roest_productivity         → ~/.bash_roest_productivity
+│   ├── bash_roest_git                  → ~/.bash_roest_git
+│   ├── bash_roest_github               → ~/.bash_roest_github
+│   ├── bash_roest_local                → ~/.bash_roest_local               (untracked)
+│   └── bash_roest_password_commands    → ~/.bash_roest_password_commands   (untracked)
+└── git/
+    ├── gitconfig                       → ~/.gitconfig
+    ├── README.md                         GitHub tips and tricks
+    └── GITHUB_TOOLS.md                   Interactive tools walkthrough
+```
+</details>
+
+Neovim config lives in a separate repo: [roest-nvim](https://github.com/roest1/roest-nvim).
+
 ## What goes where
 
-| File                                | Controls                                                            |
-| ----------------------------------- | ------------------------------------------------------------------- |
-| `bash/bashrc`                       | Shell options, PATH, package managers, sources theme + productivity |
-| `bash/bash_roest_theme`             | Prompt, colors, LS_COLORS, man page colors                          |
-| `bash/bash_roest_productivity`      | Custom commands, aliases, help system                               |
-| `bash/bash_roest_git`               | GitHub Actions commands (gha, gha-ui, gha-fail, gha-open)           |
-| `bash/bash_roest_github`            | GitHub hub (gh-ui) + interactive screens (gpr, ghsecrets, ghbranch, ghenv) |
-| `bash/bash_roest_local`             | Machine-specific config — CUDA, nvim path, etc. (not tracked)      |
-| `bash/bash_roest_password_commands` | Sensitive commands (not tracked in git)                             |
-| `git/GITHUB_TOOLS.md`               | Walkthrough + demo recordings for all GitHub tools                  |
+| File                                | Controls                                                             |
+| ----------------------------------- | -------------------------------------------------------------------- |
+| `bash/bashrc`                       | Shell options, PATH, package managers, sources theme + productivity  |
+| `bash/bash_roest_theme`             | Prompt, colors, LS_COLORS, man page colors                           |
+| `bash/bash_roest_productivity`      | Custom commands, aliases, `h` help system                            |
+| `bash/bash_roest_git`               | GitHub Actions tools (`gha`, `gha-ui`, `gha-fail`, `gha-open`)       |
+| `bash/bash_roest_github`            | Unified GitHub hub (`gh-ui`) + `gpr`, `ghsecrets`, `ghbranch`, `ghenv` |
+| `bash/bash_roest_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)          |
+| `bash/bash_roest_password_commands` | Sensitive commands (untracked)                                       |
 
 ## Machine-local config
 
-Create `bash/bash_roest_local` on each machine for host-specific setup (gitignored):
+Create either file for host-specific setup. Both are gitignored and sourced by `bashrc`:
 
 ```sh
-touch ~/dotfiles/bash/bash_roest_local
+touch ~/dotfiles/bash/bash_roest_local              # CUDA paths, per-machine exports
+touch ~/dotfiles/bash/bash_roest_password_commands  # secrets
 ```
 
-This is sourced by bashrc but never committed. Use it for things like CUDA paths,
-custom nvim installs, RHEL-specific exports, etc.
+> **Note:** filenames in `bash/` and `git/` are hard-coded in `install.sh`. Edit the script if you add or rename files.
 
-## Password commands
+## License
 
-Create `bash/bash_roest_password_commands` locally (gitignored):
-
-```sh
-touch ~/dotfiles/bash/bash_roest_password_commands
-```
-
-This file is sourced by bashrc but never committed.
+MIT
