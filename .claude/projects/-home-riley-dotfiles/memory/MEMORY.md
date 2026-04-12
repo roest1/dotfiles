@@ -1,1 +1,0 @@
-- [GitHub TUI plan](project_github_tui.md) -- gpr/ghsecrets/ghbranch/ghenv/gha-ui will merge into one TUI command
