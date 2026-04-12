@@ -127,6 +127,33 @@ vim.o.inccommand = 'split'
 -- Show which line your cursor is on
 vim.o.cursorline = true
 
+-- Custom statusline: git branch + file path (strips oil:// prefix)
+vim.o.statusline = '%{%v:lua.Statusline()%}'
+function Statusline()
+  local parts = {}
+
+  -- git branch (gitsigns for file buffers, git command for oil/other buffers)
+  local head = vim.b.gitsigns_head
+  if not head or head == '' then
+    head = vim.fn.system('git -C ' .. vim.fn.shellescape(vim.fn.expand '%:p:h') .. ' rev-parse --abbrev-ref HEAD 2>/dev/null'):gsub('\n', '')
+    if vim.v.shell_error ~= 0 then head = '' end
+  end
+  if head ~= '' then
+    table.insert(parts, '[' .. head .. ']')
+  end
+
+  -- file path, strip oil:// prefix
+  local name = vim.fn.expand '%f'
+  name = name:gsub('^oil://', '')
+  table.insert(parts, name)
+
+  -- flags
+  local flags = vim.bo.modified and ' [+]' or ''
+  if vim.bo.readonly then flags = flags .. ' [RO]' end
+
+  return table.concat(parts, ' ') .. flags .. '%=%l,%c %P'
+end
+
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.o.scrolloff = 10
 
