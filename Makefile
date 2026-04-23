@@ -22,8 +22,8 @@ DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && p
 BREW_DEPS := bash zoxide fzf bat eza fd ripgrep gh jq
 
 # RHEL/Fedora equivalents (dnf package names).
-# eza and zoxide are not in base RHEL repos — installed separately.
-DNF_DEPS := fzf bat fd-find ripgrep gh jq
+# zoxide is not in base RHEL repos — installed separately.
+DNF_DEPS := fzf bat fd-find ripgrep gh jq eza
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
@@ -60,13 +60,6 @@ deps: ## Install CLI tools (auto-detects package manager)
 			curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh; \
 		else \
 			echo "  zoxide already installed"; \
-		fi; \
-		echo "Installing eza..."; \
-		if ! command -v eza >/dev/null 2>&1; then \
-			cargo install eza 2>/dev/null \
-				|| echo "  eza requires cargo (rustup.rs) — skipping"; \
-		else \
-			echo "  eza already installed"; \
 		fi; \
 	elif command -v brew >/dev/null 2>&1 || [ "$(UNAME)" = "Darwin" ]; then \
 		$(MAKE) _brew_deps; \
@@ -122,7 +115,7 @@ check: ## Verify tool availability
 	@echo "Checking tools..."
 	@echo "-------------------------------------------"
 	@all_ok=true; \
-	for cmd in zoxide fzf bat eza rg fd nvim gh jq; do \
+	for cmd in zoxide fzf bat eza rg fd gh jq; do \
 		if command -v "$$cmd" >/dev/null 2>&1; then \
 			printf "  %-12s ok\n" "$$cmd"; \
 		elif [ "$$cmd" = "bat" ] && command -v batcat >/dev/null 2>&1; then \
