@@ -86,17 +86,6 @@ SHIM
 fi
 link_file "$local_bash_profile" "$HOME/.bash_profile"
 
-# --- Neovim config -------------------------------------------------
-
-echo ""
-echo "Neovim:"
-
-if [[ -d "$HOME/.config/nvim/.git" ]]; then
-  echo "  ok ~/.config/nvim (separate git repo, skipping)"
-else
-  link_file "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
-fi
-
 # --- Git config ----------------------------------------------------
 
 echo ""

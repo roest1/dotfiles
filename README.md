@@ -24,7 +24,7 @@ git clone https://github.com/roest1/dotfiles.git ~/dotfiles
 cd ~/dotfiles && make all
 
 # 2. Neovim config
-git clone https://github.com/roest1/roest-nvim.git ~/.config/nvim
+git clone https://github.com/roest1/nvim.git ~/.config/nvim
 cd ~/.config/nvim && make all
 
 # 3. Restart shell
@@ -70,7 +70,7 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ```
 </details>
 
-Neovim config lives in a separate repo: [roest-nvim](https://github.com/roest1/roest-nvim).
+Neovim config lives in a separate repo: [nvim](https://github.com/roest1/nvim).
 
 ## What goes where
 

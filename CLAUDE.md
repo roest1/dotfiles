@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based. Paired with [roest-nvim](https://github.com/roest1/roest-nvim) for the editor side of the workflow.
+Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based. Paired with [nvim](https://github.com/roest1/nvim) for the editor side of the workflow.
 
 ## Setup Workflow
 
