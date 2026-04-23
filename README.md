@@ -25,7 +25,7 @@ cd ~/dotfiles && make all
 
 # 2. Neovim config
 git clone https://github.com/roest1/roest-nvim.git ~/.config/nvim
-cd ~/.config/nvim && chmod +x bootstrap.sh && ./bootstrap.sh
+cd ~/.config/nvim && make all
 
 # 3. Restart shell
 exec bash
