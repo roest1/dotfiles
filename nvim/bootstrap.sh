@@ -34,6 +34,7 @@ apt_pkg_name() {
     rg)          echo "ripgrep" ;;
     fd)          echo "fd-find" ;;
     node|nodejs) echo "nodejs" ;;
+    nvim)        echo "neovim" ;;
     *)           echo "$1" ;;
   esac
 }
@@ -42,6 +43,7 @@ dnf_pkg_name() {
   case "$1" in
     rg)   echo "ripgrep" ;;
     node) echo "nodejs" ;;
+    nvim) echo "neovim" ;;
     *)    echo "$1" ;;
   esac
 }
@@ -222,6 +224,7 @@ echo "📦 Core tools:"
 pkg_install "git"
 pkg_install "make"
 pkg_install "unzip"
+pkg_install "nvim"
 pkg_install "rg"
 pkg_install "fd"
 
@@ -310,6 +313,7 @@ check_tool() {
 }
 
 check_tool "git"          "pkg: sudo ${PM:-apt} install git"
+check_tool "nvim"         "pkg: sudo ${PM:-apt} install neovim"
 check_tool "rg"           "pkg: sudo ${PM:-apt} install ripgrep"
 check_tool "fd"           "pkg: sudo ${PM:-apt} install fd-find"
 check_tool "node"         "pkg: sudo ${PM:-apt} install nodejs"

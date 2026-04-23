@@ -4,17 +4,19 @@ Personal Neovim configuration. Modular, documented, and designed to be understoo
 
 ## Install
 
-Requires Neovim 0.10+ and a Nerd Font (e.g. [0xProto](https://github.com/ryanoasis/nerd-fonts/releases)) set as your terminal font.
+Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](https://github.com/ryanoasis/nerd-fonts/releases)) set as your terminal font.
 
 | Step               | Command                                                             |
 | ------------------ | ------------------------------------------------------------------- |
-| 1. Install Neovim  | `brew install neovim` &nbsp;·&nbsp; `sudo apt install neovim`       |
-| 2. Clone config    | `git clone https://github.com/roest1/roest-nvim.git ~/.config/nvim` |
-| 3. Bootstrap tools | `cd ~/.config/nvim && chmod +x bootstrap.sh && ./bootstrap.sh`      |
-| 4. First launch    | `nvim` &nbsp;(Lazy + Mason auto-install)                            |
-| 5. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`          |
+| 1. Clone config    | `git clone https://github.com/roest1/roest-nvim.git ~/.config/nvim` |
+| 2. Install + sync  | `cd ~/.config/nvim && make all`                                     |
+| 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`          |
 
-**Bootstrap installs:** ripgrep, fd, stylua, prettierd, ruff, eslint_d, zoxide, fzf, bat, eza, plus runtimes (node, python3, cargo). Mason handles LSP servers on first launch. Run `:checkhealth roest` to verify everything.
+`make all` runs three idempotent steps: `make deps` (installs neovim + CLI tools via brew/apt/dnf) → `make sync` (lazy.nvim plugin install + tree-sitter parsers, headless) → `make check` (`:checkhealth roest`).
+
+**Installs:** neovim, ripgrep, fd, stylua, prettierd, ruff, eslint_d, zoxide, fzf, bat, eza, plus runtimes (node, python3, cargo). Mason handles LSP servers on first launch.
+
+**Other targets:** `make update` (git pull + reinstall), `make clean` (wipe plugin + cache state).
 
 ## Layout
 
