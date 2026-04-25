@@ -12,7 +12,7 @@ Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](
 | 2. Install + sync  | `cd ~/.config/nvim && make all`                                     |
 | 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`          |
 
-`make all` runs three idempotent steps: `make deps` (installs neovim + CLI tools via brew/apt/dnf) → `make sync` (lazy.nvim plugin install + tree-sitter parsers, headless) → `make check` (`:checkhealth roest`).
+`make all` runs two idempotent steps: `make deps` (installs neovim + CLI tools via brew/apt/dnf) → `make sync` (lazy.nvim plugin install + tree-sitter parsers, headless). Verify the install with `:checkhealth external` inside nvim.
 
 **Installs:** neovim, ripgrep, fd, stylua, prettierd, ruff, eslint_d, zoxide, fzf, bat, eza, plus runtimes (node, python3, cargo). Mason handles LSP servers on first launch.
 

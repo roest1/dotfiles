@@ -8,9 +8,9 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Bootstrap & Dependencies
 
-`bootstrap.sh` installs external dependencies across macOS (brew), Ubuntu/WSL (apt), and RHEL (dnf): runtimes (node, python3, cargo), core tools (ripgrep, fd, stylua, prettierd), formatters (ruff, eslint_d), and productivity tools (zoxide, fzf, bat, eza). The authoritative list lives in `lua/external/reqs.lua` and is consumed by both `bootstrap.sh` and `:checkhealth roest`.
+`bootstrap.sh` installs external dependencies across macOS (brew), Ubuntu/WSL (apt), and RHEL (dnf): runtimes (node, python3, cargo), core tools (ripgrep, fd, stylua, prettierd), formatters (ruff, eslint_d), and productivity tools (zoxide, fzf, bat, eza). The authoritative list lives in `lua/external/reqs.lua` and is consumed by both `bootstrap.sh` and `:checkhealth external`.
 
-Run `:checkhealth roest` to verify tool availability — logic in `lua/external/health.lua`.
+Run `:checkhealth external` to verify tool availability — logic in `lua/external/health.lua`.
 
 ## Architecture
 

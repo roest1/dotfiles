@@ -7,10 +7,11 @@
 #   make              Show help
 #   make deps         Install nvim + external deps (runs bootstrap.sh)
 #   make sync         Install/update plugins + compile TS parsers (headless)
-#   make check        Run :checkhealth roest (headless)
 #   make update       git pull + deps + sync
 #   make clean        Wipe plugin + cache state (matches :ResetNvim)
-#   make all          deps + sync + check
+#   make all          deps + sync
+#
+# Verify install with :checkhealth external inside nvim.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
@@ -25,7 +26,7 @@ CLEAN_PATHS := $(HOME)/.local/share/nvim $(HOME)/.cache/nvim
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help all deps sync check update clean
+.PHONY: help all deps sync update clean
 
 help: ## Show this help
 	@echo ""
@@ -34,7 +35,7 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  make %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 
-all: deps sync check ## Install everything (deps + sync + check)
+all: deps sync ## Install everything (deps + sync)
 
 deps: ## Install nvim + external deps (runs bootstrap.sh)
 	@bash "$(NVIM_DIR)/bootstrap.sh"
@@ -49,13 +50,6 @@ sync: ## Install/update plugins + compile TS parsers (headless)
 	@nvim --headless "+TSUpdateSync" +qa 2>&1 | tail -5
 	@echo ""
 	@echo "Done."
-
-check: ## Run :checkhealth roest (headless)
-	@command -v nvim >/dev/null 2>&1 || { echo "nvim not found — run 'make deps' first"; exit 1; }
-	@echo ""
-	@nvim --headless "+checkhealth roest" "+write /dev/stdout" +qa! 2>/dev/null \
-		|| nvim --headless "+checkhealth roest" +qa
-	@echo ""
 
 update: ## Pull latest changes and re-run deps + sync
 	@echo "Pulling latest..."

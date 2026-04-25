@@ -21,71 +21,47 @@ vim.schedule(function()
   vim.o.clipboard = 'unnamedplus'
 end)
 
--- built in OSC52
-local function copy(lines, regtype)
-  -- Copy via OSC52
-  vim.fn.chansend(vim.v.stderr, '\x1b]52;c;' .. vim.fn.system('base64', table.concat(lines, '\n')) .. '\x07')
-
-  -------------------------------------------------------
-  -- FIX: Remove extra trailing empty line (linewise yank)
-  -------------------------------------------------------
-  if lines[#lines] == '' and regtype:match 'V' then
-    table.remove(lines)
-  end
-
-  -------------------------------------------------------
-  -- Determine what to print
-  -------------------------------------------------------
-  local msg = ''
-
-  if regtype == 'V' then
-    -- Linewise yank
-    local count = #lines
-    msg = (count == 1) and '1 line copied to system clipboard' or (count .. ' lines copied to system clipboard')
-  elseif regtype == 'v' then
-    -- Characterwise yank → count characters
-    local chars = 0
-    for _, l in ipairs(lines) do
-      chars = chars + #l
-    end
-    msg = chars .. ' characters copied to system clipboard'
-  elseif regtype == '\022' then
-    -- Blockwise yank
-    local chars = 0
-    for _, l in ipairs(lines) do
-      chars = chars + #l
-    end
-    msg = chars .. ' characters (blockwise) copied to clipboard'
-  else
-    -- Fallback (rare)
-    msg = 'Copied text to system clipboard'
-  end
-
-  -------------------------------------------------------
-  -- Print notification
-  -------------------------------------------------------
-  vim.notify(msg, vim.log.levels.INFO, { title = 'clipboard' })
+-- Smart clipboard provider:
+--   • SSH session  → OSC52 (escape sequence forwarded by terminal)
+--   • Local        → leave unset; nvim auto-picks wl-copy / pbcopy / xclip
+-- Note: tmux swallows OSC52 unless `set -g set-clipboard on` is set.
+if vim.env.SSH_TTY or vim.env.SSH_CONNECTION then
+  local osc52 = require 'vim.ui.clipboard.osc52'
+  vim.g.clipboard = {
+    name = 'OSC 52',
+    copy = { ['+'] = osc52.copy '+', ['*'] = osc52.copy '*' },
+    paste = { ['+'] = osc52.paste '+', ['*'] = osc52.paste '*' },
+  }
 end
 
-local function paste()
-  return { vim.fn.split(vim.fn.getreg '', '\n'), vim.fn.getregtype '' }
-end
-
-vim.g.clipboard = {
-  name = 'osc52',
-  copy = {
-    ['+'] = function(lines, regtype)
-      copy(lines, regtype)
-    end,
-    ['*'] = function(lines, regtype)
-      copy(lines, regtype)
-    end,
-  },
-  paste = {
-    ['+'] = paste,
-    ['*'] = paste,
-  },
-}
+-- Yank notification — fires for any yank, any provider, any buffer.
+vim.api.nvim_create_autocmd('TextYankPost', {
+  callback = function()
+    local ev = vim.v.event
+    if ev.operator ~= 'y' then
+      return
+    end
+    local lines, regtype = ev.regcontents, ev.regtype
+    local msg
+    if regtype == 'V' then
+      local n = #lines
+      msg = (n == 1 and '1 line' or n .. ' lines') .. ' copied to system clipboard'
+    elseif regtype:sub(1, 1) == '\22' then
+      local c = 0
+      for _, l in ipairs(lines) do
+        c = c + #l
+      end
+      msg = c .. ' characters (blockwise) copied to clipboard'
+    else
+      local c = 0
+      for _, l in ipairs(lines) do
+        c = c + #l
+      end
+      msg = c .. ' characters copied to system clipboard'
+    end
+    vim.notify(msg, vim.log.levels.INFO, { title = 'clipboard' })
+  end,
+})
 
 -- Enable break indent
 vim.o.breakindent = true
