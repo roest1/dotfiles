@@ -183,7 +183,7 @@ vim.api.nvim_create_autocmd('BufWritePre', {
     -- format using conform plugin
     require('conform').format {
       bufnr = args.buf,
-      lsp_fallback = true,
+      lsp_format = 'fallback',
       async = false,
       timeout_ms = 3000,
     }

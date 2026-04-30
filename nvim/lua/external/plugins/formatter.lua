@@ -72,9 +72,9 @@ return {
 
     vim.keymap.set({ 'n', 'v' }, '<leader>l', function()
       conform.format {
-        lsp_fallback = true,
+        lsp_format = 'fallback',
         async = false,
-        timeout = 3000, -- ms
+        timeout_ms = 3000,
       }
     end, { desc = 'Format file or range (Visual mode)' })
   end,
