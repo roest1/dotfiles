@@ -13,6 +13,32 @@ git config --global user.name "username"
 
 - Use the email by going to `Settings > Emails` and at the top you'll see your no-reply email.
 
+### Setup SSH Keys
+
+Check for existing keys:
+
+```bash
+ls -al ~/.ssh
+```
+
+Generate a key:
+
+```bash
+ssh-keygen -t ed25519 -C "example@email.com"
+```
+
+Add key to github:
+
+copy the output of:
+
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+
+and paste it into Github Settings > SSH and GPG keys
+
+When cloning repos, make sure to use the ssh link.
+
 ### Create/Switch to a new branch
 
 ```bash
@@ -140,3 +166,9 @@ git branch -vv | awk '/: gone]/{print $1}' | xargs -r git branch -d
 ```
 
 ---
+
+### Change repo names
+
+1. Change repo name in repo > settings > change repository name
+2. Change local root folder name
+3. git remote set-url origin https://github.com/roest1/new-repo-name.git
