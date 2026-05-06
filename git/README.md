@@ -27,6 +27,8 @@ Generate a key:
 ssh-keygen -t ed25519 -C "example@email.com"
 ```
 
+> As far as the SSH protocol is concerned, the email at the end of the public key is just a comment. It's there so that when you open your authorized_keys file six months from now, you can remember which device that specific key belongs to.
+
 Add key to github:
 
 copy the output of:
