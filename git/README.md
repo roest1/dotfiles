@@ -41,6 +41,38 @@ and paste it into Github Settings > SSH and GPG keys
 
 When cloning repos, make sure to use the ssh link.
 
+### Create a Repo
+
+- GitHub -> Add Repository -> Code (SSH) -> Copy <url>
+
+### Set a URL for the first time
+
+- Open Terminal
+
+```bash
+git init
+git remote add origin <url>
+```
+
+### Check current remote:
+
+```bash
+git remote -v
+```
+
+outputs:
+
+```bash
+origin  git@github.com:<owner>/<repo>.git (fetch)
+origin  git@github.com:<owner>/<repo>.git (push)
+```
+
+### Update a URL
+
+```bash
+git remote set-url origin git@github.com:<owner>/<repo>.git
+```
+
 ### Create/Switch to a new branch
 
 ```bash
