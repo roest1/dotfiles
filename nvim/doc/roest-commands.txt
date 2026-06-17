@@ -213,6 +213,29 @@ Install:~
 Location: lua/external/plugins/glow.lua
 
 ==============================================================================
+:PASTEIMAGE                                            *roest-commands-pasteimage*
+
+Paste an image from the OS clipboard into a directory as a PNG. Pairs with Oil
+for a "screenshot → snip → paste" workflow. See |roest-plugins-pasteimage|.
+
+Usage:~
+    :PasteImage                     Screenshot-YYYYMMDD-HHMMSS.png
+    :PasteImage --rename name.png   name.png  (.png added if no extension)
+
+Behavior:~
+    - In Oil       -> writes to the directory Oil is showing, then refreshes
+    - Elsewhere    -> writes to the current file's directory, else the cwd
+    - Won't overwrite an existing file
+
+Backend (auto-detected):~
+    WSL2            Windows PowerShell    (no install)
+    Linux/Wayland   wl-paste              (pkg: wl-clipboard)
+    Linux/X11       xclip                 (pkg: xclip)
+    macOS           pngpaste              (brew), else osascript
+
+Location: lua/external/pasteimg.lua
+
+==============================================================================
 CORE TOOLING                                                *roest-commands-core*
 
 ==============================================================================
