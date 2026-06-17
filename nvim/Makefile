@@ -32,6 +32,8 @@ help: ## Show this help
 	@echo ""
 	@echo "roest-nvim — $(UNAME)"
 	@echo ""
+	@echo "  Not sure?  First time → make all    •    Updating → make update"
+	@echo ""
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  make %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 
@@ -52,6 +54,10 @@ sync: ## Install/update plugins + compile TS parsers (headless)
 	@echo "Done."
 
 update: ## Pull latest changes and re-run deps + sync
+	@if [ -n "$$(git -C "$(NVIM_DIR)" status --porcelain)" ]; then \
+		echo "Local changes present — commit/stash first, or 'make all' to rebuild without pulling."; \
+		exit 1; \
+	fi
 	@echo "Pulling latest..."
 	@git -C "$(NVIM_DIR)" pull --ff-only
 	@$(MAKE) deps
