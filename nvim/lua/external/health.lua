@@ -79,5 +79,22 @@ return {
       { name = 'bat', desc = 'Better cat', required = false },
       { name = 'eza', desc = 'Better ls', required = false },
     })
+
+    -- Clipboard image paste (:PasteImage) — backend is platform-specific, so
+    -- only check the tool relevant to the current environment.
+    local paste_title = 'Clipboard image paste (:PasteImage)'
+    if vim.fn.has 'mac' == 1 then
+      check_tools(paste_title, { { name = 'pngpaste', desc = 'macOS clipboard → PNG', required = false } })
+    elseif vim.fn.has 'wsl' == 1 then
+      vim.health.start(paste_title)
+      vim.health.ok 'WSL — uses Windows PowerShell, no extra tool needed'
+    elseif vim.env.WAYLAND_DISPLAY then
+      check_tools(paste_title, { { name = 'wl-paste', desc = 'Wayland clipboard → PNG (wl-clipboard)', required = false } })
+    elseif vim.env.DISPLAY then
+      check_tools(paste_title, { { name = 'xclip', desc = 'X11 clipboard → PNG', required = false } })
+    else
+      vim.health.start(paste_title)
+      vim.health.info 'No GUI clipboard detected (headless/SSH) — :PasteImage needs a desktop session'
+    end
   end,
 }

@@ -100,6 +100,50 @@ Inside Oil:
 
 Edit the buffer to rename/delete/create files, then :w to apply.
 
+Git diffstat ~
+
+Inside a git repo, each changed file shows its diff floated at the window's
+right edge, matching the git section of the bash PS1:
+    +N              Added lines (green), total vs the last commit (HEAD)
+    -N              Deleted lines (red), total vs the last commit
+    +N (untracked)  Line count of a new/untracked file
+
+Combines staged and unstaged changes. Commands:
+    :OilGit         Toggle the diffstat overlay on/off
+
+Location: lua/external/oilgit.lua
+
+Paste image from clipboard ~                       *roest-plugins-pasteimage*
+                                                                  *:PasteImage*
+
+Drop an image off the OS clipboard into a directory as a PNG — the
+"screenshot → snip → paste into Oil" workflow, like pasting a file in a GUI
+file manager.
+
+    1. Take a screenshot to the clipboard:
+         Windows/WSL   Win+Shift+S         (Snipping Tool)
+         macOS         Cmd+Ctrl+Shift+4    (region → clipboard)
+         Linux         your snipper's "copy to clipboard" option
+    2. Open Oil at the destination directory (`-`).
+    3. Run a command:
+         :PasteImage                    Screenshot-YYYYMMDD-HHMMSS.png
+         :PasteImage --rename name.png  name.png  (.png added if no extension)
+
+The file is written to disk and Oil refreshes to show it. Outside Oil the
+image lands in the current file's directory (or the cwd).
+
+The clipboard backend is detected at runtime, so the same command works
+everywhere:
+    WSL2            Windows PowerShell        (no install needed)
+    Linux / Wayland wl-paste                  (pkg: wl-clipboard)
+    Linux / X11     xclip                     (pkg: xclip)
+    macOS           pngpaste                  (brew), else osascript
+
+Install the per-platform tool with ./bootstrap.sh; verify with
+`:checkhealth external`.
+
+Location: lua/external/pasteimg.lua
+
 ==============================================================================
 LSP                                                          *roest-plugins-lsp*
 

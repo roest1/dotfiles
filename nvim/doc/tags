@@ -1,3 +1,4 @@
+:PasteImage	roest-plugins.txt	/*:PasteImage*
 roest	roest.txt	/*roest*
 roest-bash	roest-bash.txt	/*roest-bash*
 roest-bash-ddiff	roest-bash.txt	/*roest-bash-ddiff*
@@ -32,6 +33,7 @@ roest-commands-glow	roest-commands.txt	/*roest-commands-glow*
 roest-commands-lazy	roest-commands.txt	/*roest-commands-lazy*
 roest-commands-lsp	roest-commands.txt	/*roest-commands-lsp*
 roest-commands-mason	roest-commands.txt	/*roest-commands-mason*
+roest-commands-pasteimage	roest-commands.txt	/*roest-commands-pasteimage*
 roest-commands-reset	roest-commands.txt	/*roest-commands-reset*
 roest-commands-roslyn	roest-commands.txt	/*roest-commands-roslyn*
 roest-commands-telescope	roest-commands.txt	/*roest-commands-telescope*
@@ -91,18 +93,24 @@ roest-options-timing	roest-options.txt	/*roest-options-timing*
 roest-options-undo	roest-options.txt	/*roest-options-undo*
 roest-options.txt	roest-options.txt	/*roest-options.txt*
 roest-plugins	roest-plugins.txt	/*roest-plugins*
+roest-plugins-blink	roest-plugins.txt	/*roest-plugins-blink*
 roest-plugins-formatter	roest-plugins.txt	/*roest-plugins-formatter*
 roest-plugins-gitsigns	roest-plugins.txt	/*roest-plugins-gitsigns*
 roest-plugins-glow	roest-plugins.txt	/*roest-plugins-glow*
 roest-plugins-harpoon	roest-plugins.txt	/*roest-plugins-harpoon*
+roest-plugins-lint	roest-plugins.txt	/*roest-plugins-lint*
 roest-plugins-lsp	roest-plugins.txt	/*roest-plugins-lsp*
+roest-plugins-mini	roest-plugins.txt	/*roest-plugins-mini*
 roest-plugins-oil	roest-plugins.txt	/*roest-plugins-oil*
+roest-plugins-pasteimage	roest-plugins.txt	/*roest-plugins-pasteimage*
 roest-plugins-roslyn	roest-plugins.txt	/*roest-plugins-roslyn*
 roest-plugins-telescope	roest-plugins.txt	/*roest-plugins-telescope*
 roest-plugins-theme	roest-plugins.txt	/*roest-plugins-theme*
+roest-plugins-todo-comments	roest-plugins.txt	/*roest-plugins-todo-comments*
 roest-plugins-treesitter	roest-plugins.txt	/*roest-plugins-treesitter*
 roest-plugins-trouble	roest-plugins.txt	/*roest-plugins-trouble*
 roest-plugins-undotree	roest-plugins.txt	/*roest-plugins-undotree*
+roest-plugins-which-key	roest-plugins.txt	/*roest-plugins-which-key*
 roest-plugins.txt	roest-plugins.txt	/*roest-plugins.txt*
 roest-quickstart	roest.txt	/*roest-quickstart*
 roest-structure	roest.txt	/*roest-structure*
