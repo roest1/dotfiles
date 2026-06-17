@@ -10,6 +10,7 @@ set -euo pipefail
 #   1. Core tools  — git, make, unzip, rg, fd, stylua, prettierd, prettier
 #   2. Formatters  — ruff, eslint_d, tree-sitter-cli
 #   3. Productivity — zoxide, fzf, bat, eza
+#   4. Clipboard   — pngpaste (macOS) / xclip + wl-clipboard (Linux) for :PasteImage
 #
 # Run:
 #   chmod +x bootstrap.sh
@@ -35,16 +36,18 @@ apt_pkg_name() {
     fd)          echo "fd-find" ;;
     node|nodejs) echo "nodejs" ;;
     nvim)        echo "neovim" ;;
+    wl-paste)    echo "wl-clipboard" ;;
     *)           echo "$1" ;;
   esac
 }
 
 dnf_pkg_name() {
   case "$1" in
-    rg)   echo "ripgrep" ;;
-    node) echo "nodejs" ;;
-    nvim) echo "neovim" ;;
-    *)    echo "$1" ;;
+    rg)       echo "ripgrep" ;;
+    node)     echo "nodejs" ;;
+    nvim)     echo "neovim" ;;
+    wl-paste) echo "wl-clipboard" ;;
+    *)        echo "$1" ;;
   esac
 }
 
@@ -291,7 +294,26 @@ else
   pkg_install "eza" || cargo_install "eza"
 fi
 
-# ─── 4. Verify ──────────────────────────────────────────────────────────────
+# ─── 4. Clipboard image paste (:PasteImage) ─────────────────────────────────
+# Lets `:PasteImage` drop a screenshot from the OS clipboard into a directory
+# (e.g. while browsing in Oil). Backend depends on the platform:
+#   • WSL2  → uses Windows PowerShell, nothing to install
+#   • macOS → pngpaste (brew)
+#   • Linux → xclip (X11) + wl-clipboard (Wayland); install both, harmless
+
+echo ""
+echo "🖼️  Clipboard image paste (optional):"
+
+if grep -qiE "microsoft|wsl" /proc/version 2>/dev/null; then
+  echo "  ✅ WSL — uses Windows PowerShell, no install needed"
+elif [ "$PM" = "brew" ]; then
+  pkg_install "pngpaste"
+elif [ -n "${PM}" ]; then
+  pkg_install "xclip"
+  pkg_install "wl-paste"
+fi
+
+# ─── 5. Verify ──────────────────────────────────────────────────────────────
 
 echo ""
 echo "🔍 Verifying critical tools:"
