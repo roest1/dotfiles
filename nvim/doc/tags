@@ -72,7 +72,6 @@ roest-motions-search	roest-motions.txt	/*roest-motions-search*
 roest-motions-vertical	roest-motions.txt	/*roest-motions-vertical*
 roest-motions-word	roest-motions.txt	/*roest-motions-word*
 roest-motions.txt	roest-motions.txt	/*roest-motions.txt*
-roest-nvim	roest.txt	/*roest-nvim*
 roest-options	roest-options.txt	/*roest-options*
 roest-options-appearance	roest-options.txt	/*roest-options-appearance*
 roest-options-autoformat	roest-options.txt	/*roest-options-autoformat*

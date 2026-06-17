@@ -50,7 +50,7 @@ end
 
 return {
   check = function()
-    vim.health.start 'roest-nvim'
+    vim.health.start 'nvim config'
 
     vim.health.info [[Fix only warnings for tools you actually use.
   Run ./bootstrap.sh to install everything at once.]]

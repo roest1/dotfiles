@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─── Bootstrap: install all external tools for roest-nvim ─────────────────────
+# ─── Bootstrap: install all external tools for nvim config ───────────────────
 #
 # Cross-platform: works on macOS (brew), Ubuntu/WSL (apt), and RHEL (dnf).
 #
@@ -175,7 +175,7 @@ cargo_install() {
 }
 
 echo ""
-echo "🔧 roest-nvim bootstrap"
+echo "🔧 nvim bootstrap"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  Platform: $(uname -s) (${PM:-no package manager found})"
 

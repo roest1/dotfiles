@@ -1,4 +1,4 @@
-# roest-nvim
+# nvim
 
 Personal Neovim configuration. Modular, documented, and designed to be understood line-by-line. Rebuilt from [kickstart-modular.nvim](https://github.com/dam9000/kickstart-modular.nvim).
 
@@ -8,7 +8,7 @@ Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](
 
 | Step               | Command                                                             |
 | ------------------ | ------------------------------------------------------------------- |
-| 1. Clone config    | `git clone https://github.com/roest1/roest-nvim.git ~/.config/nvim` |
+| 1. Clone config    | `git clone https://github.com/roest1/nvim.git ~/.config/nvim`       |
 | 2. Install + sync  | `cd ~/.config/nvim && make all`                                     |
 | 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`          |
 

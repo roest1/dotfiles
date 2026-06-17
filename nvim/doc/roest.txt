@@ -1,7 +1,7 @@
 *roest.txt*    Riley's Neovim Configuration Documentation
 
 ==============================================================================
-ROEST'S NEOVIM                                                    *roest* *roest-nvim*
+ROEST'S NEOVIM                                                               *roest*
 
 Welcome back! This is your personal Neovim setup.
 

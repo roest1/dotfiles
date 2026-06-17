@@ -12,6 +12,7 @@
 
 return {
   'saghen/blink.cmp',
+  enabled = false,
   version = '1.*',
 
   ---@module 'blink.cmp'
