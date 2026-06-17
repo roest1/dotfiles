@@ -22,15 +22,21 @@ vim.schedule(function()
 end)
 
 -- Smart clipboard provider:
---   • SSH session  → OSC52 (escape sequence forwarded by terminal)
---   • Local        → leave unset; nvim auto-picks wl-copy / pbcopy / xclip
+--   • WSL/SSH  → manual OSC52 write to stderr (copy-only; no terminal query)
+--               paste reads local register to avoid the terminal-response timeout
+--   • Local    → leave unset; nvim auto-picks wl-copy / pbcopy / xclip
 -- Note: tmux swallows OSC52 unless `set -g set-clipboard on` is set.
-if vim.env.SSH_TTY or vim.env.SSH_CONNECTION then
-  local osc52 = require 'vim.ui.clipboard.osc52'
+if vim.fn.has 'wsl' == 1 or vim.env.SSH_TTY or vim.env.SSH_CONNECTION then
+  local function osc52_copy(lines, _)
+    vim.fn.chansend(vim.v.stderr, '\x1b]52;c;' .. vim.fn.system('base64', table.concat(lines, '\n')) .. '\x07')
+  end
+  local function local_paste()
+    return { vim.fn.split(vim.fn.getreg '', '\n'), vim.fn.getregtype '' }
+  end
   vim.g.clipboard = {
-    name = 'OSC 52',
-    copy = { ['+'] = osc52.copy '+', ['*'] = osc52.copy '*' },
-    paste = { ['+'] = osc52.paste '+', ['*'] = osc52.paste '*' },
+    name = 'OSC52',
+    copy = { ['+'] = osc52_copy, ['*'] = osc52_copy },
+    paste = { ['+'] = local_paste, ['*'] = local_paste },
   }
 end
 
