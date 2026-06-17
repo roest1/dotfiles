@@ -24,12 +24,31 @@ return {
       typescriptreact = { 'eslint_d' },
     }
 
+    -- Only run linters whose executable is installed. eslint_d/ruff are
+    -- optional (not in reqs.lua), so when missing we skip them instead of
+    -- erroring on every buffer read. Install eslint_d for JS/TS linting:
+    -- `npm i -g eslint_d` (or :MasonInstall eslint_d).
+    local function available_linters(ft)
+      local found = {}
+      for _, name in ipairs(lint.linters_by_ft[ft] or {}) do
+        local linter = lint.linters[name]
+        local cmd = type(linter) == 'table' and linter.cmd or name
+        if type(cmd) == 'function' then
+          cmd = cmd()
+        end
+        if vim.fn.executable(cmd) == 1 then
+          table.insert(found, name)
+        end
+      end
+      return found
+    end
+
     vim.api.nvim_create_autocmd({ 'BufWritePost', 'InsertLeave', 'BufReadPost' }, {
       group = vim.api.nvim_create_augroup('roest-lint', { clear = true }),
       callback = function()
-        local ft = vim.bo.filetype
-        if lint.linters_by_ft[ft] then
-          lint.try_lint()
+        local names = available_linters(vim.bo.filetype)
+        if #names > 0 then
+          lint.try_lint(names)
         end
       end,
     })
