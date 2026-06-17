@@ -10,18 +10,11 @@ vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 vim.keymap.set('n', 'L', '$')
 vim.keymap.set('v', 'L', '$')
 
--- Remove carriage return characters (^M from Windows files)
-vim.keymap.set('n', '<leader>cr', [[:%s/\r//g<CR>]], { desc = 'Remove ^M (carriage returns)' })
-
 -- Split navigation with Ctrl+hjkl
 vim.keymap.set('n', '<C-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
 vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
 vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
 vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
-
--- Diagnostics
-vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = 'Show diagnostic [E]rror messages' })
-vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
 -- Highlight yanked text briefly
 vim.api.nvim_create_autocmd('TextYankPost', {
