@@ -28,10 +28,5 @@ return {
       end,
       desc = 'Prev [T]odo comment',
     },
-    {
-      '<leader>st',
-      '<cmd>TodoTelescope<cr>',
-      desc = '[S]earch [T]odos',
-    },
   },
 }
