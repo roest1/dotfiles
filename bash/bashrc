@@ -118,28 +118,6 @@ fi
 # Package managers (auto-generated blocks — don't manually edit)
 #####################################################################
 
-# >>> conda initialize >>>
-# Search common conda locations (~/miniconda3 on WSL/mac, ~/tools/miniconda3 on RHEL)
-_conda_root=""
-for _d in "$HOME/miniconda3" "$HOME/tools/miniconda3" "$HOME/anaconda3"; do
-  [[ -x "$_d/bin/conda" ]] && _conda_root="$_d" && break
-done
-if [[ -n "$_conda_root" ]]; then
-  __conda_setup="$("$_conda_root/bin/conda" 'shell.bash' 'hook' 2>/dev/null)"
-  if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-  else
-    if [ -f "$_conda_root/etc/profile.d/conda.sh" ]; then
-      . "$_conda_root/etc/profile.d/conda.sh"
-    else
-      export PATH="$_conda_root/bin:$PATH"
-    fi
-  fi
-  unset __conda_setup
-fi
-unset _conda_root _d
-# <<< conda initialize <<<
-
 # nvm
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
