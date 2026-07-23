@@ -63,10 +63,14 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 │   ├── bash_roest_github               → ~/.bash_roest_github
 │   ├── bash_roest_local                → ~/.bash_roest_local               (untracked)
 │   └── bash_roest_password_commands    → ~/.bash_roest_password_commands   (untracked)
-└── git/
-    ├── gitconfig                       → ~/.gitconfig
-    ├── README.md                         GitHub tips and tricks
-    └── GITHUB_TOOLS.md                   Interactive tools walkthrough
+├── git/
+│   ├── gitconfig                       → ~/.gitconfig
+│   ├── README.md                         GitHub tips and tricks
+│   └── GITHUB_TOOLS.md                   Interactive tools walkthrough
+├── podman/
+│   └── README.md                         podman container-engine reference (Linux)
+└── systemd/
+    └── README.md                         systemctl / journalctl reference (Linux)
 ```
 </details>
 
@@ -83,6 +87,8 @@ Neovim config lives in a separate repo: [nvim](https://github.com/roest1/nvim).
 | `bash/bash_roest_github`            | Unified GitHub hub (`gh-ui`) + `gpr`, `ghsecrets`, `ghbranch`, `ghenv` |
 | `bash/bash_roest_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)          |
 | `bash/bash_roest_password_commands` | Sensitive commands (untracked)                                       |
+| `podman/README.md`                  | `podman` container-engine reference (Linux/RHEL)                     |
+| `systemd/README.md`                 | `systemctl` / `journalctl` reference (Linux/RHEL)                    |
 
 ## Machine-local config
 
