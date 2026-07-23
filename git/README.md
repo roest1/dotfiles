@@ -213,6 +213,14 @@ git push origin --delete feature/feature-name
 
 Sends a "delete ref" instruction to the remote, removing the branch there.
 
+Force deletion:
+
+```bash
+git branch -D feature/feature-name
+```
+
+shorthand for `git branch --delete --force feature/feature/name`
+
 Keep `main` up to date locally:
 
 ```bash
