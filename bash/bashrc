@@ -9,6 +9,19 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
+# ─── PATH for tools that live nowhere else ────────────────────────
+# ABOVE the interactive guard on purpose. bun installs to ~/.bun/bin,
+# which no system profile adds (unlike ~/.local/bin, which /etc/profile.d
+# handles) — so below the guard it would vanish from every shell that
+# reads this file non-interactively: `bash -lc ...` and `ssh host 'cmd'`.
+# Anything whose only home is a dot-directory belongs up here;
+# interactive-only setup (history, completion, prompt, aliases) stays below.
+#
+# NOTE: this does NOT reach systemd user units or cron — neither reads
+# .bashrc at all. Those need ~/.config/environment.d/ or an absolute path.
+export BUN_INSTALL="$HOME/.bun"
+[ -d "$BUN_INSTALL/bin" ] && export PATH="$BUN_INSTALL/bin:$PATH"
+
 # If not running interactively, don't do anything
 case $- in
     *i*) ;;
@@ -125,10 +138,6 @@ export NVM_DIR="$HOME/.nvm"
 
 # rust / cargo (rustup)
 [ -s "$HOME/.cargo/env" ] && \. "$HOME/.cargo/env"
-
-# bun
-export BUN_INSTALL="$HOME/.bun"
-[ -d "$BUN_INSTALL/bin" ] && export PATH="$BUN_INSTALL/bin:$PATH"
 
 #####################################################################
 # Custom config
