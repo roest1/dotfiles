@@ -1,0 +1,208 @@
+*roest-keymaps.txt*    Complete Keymap Reference
+
+==============================================================================
+KEYMAPS                                                        *roest-keymaps*
+
+All keybindings in your config. Leader is <Space>.
+
+==============================================================================
+NAVIGATION - BASIC                                    *roest-keymaps-navigation*
+
+    h/j/k/l         Move left/down/up/right
+    w               Next word (start) - stops at punctuation
+    W               Next WORD (start) - only stops at whitespace
+    b               Previous word - stops at punctuation
+    B               Previous WORD - only stops at whitespace
+    e               End of word - stops at punctuation
+    E               End of WORD - only stops at whitespace
+    0               Beginning of line
+    ^               First non-whitespace character
+    L               End of line (custom, replaces $)
+    gg              Top of file
+    G               Bottom of file
+    {  /  }         Paragraph up / down
+    %               Jump to matching bracket
+
+    Pro tip: W/B/E are faster for navigating code because they skip punctuation.
+    Example: `foo.bar.baz` is 3 words but 1 WORD.
+
+==============================================================================
+NAVIGATION - SPLITS                                     *roest-keymaps-splits*
+
+    <C-h>           Move to left split
+    <C-j>           Move to lower split
+    <C-k>           Move to upper split
+    <C-l>           Move to right split
+
+    :vsp            Vertical split
+    :sp             Horizontal split
+    <C-w>=          Equalize split sizes
+    <C-w>o          Close all other splits (":only")
+
+==============================================================================
+FILE FINDING - TELESCOPE                             *roest-keymaps-telescope*
+
+All start with <leader>s for [S]earch:
+
+    <leader>sf      [S]earch [F]iles in project
+    <leader>sg      [S]earch by [G]rep (text in files)
+    <leader>sw      [S]earch current [W]ord under cursor
+    <leader>sh      [S]earch [H]elp documentation
+    <leader>sk      [S]earch [K]eymaps
+    <leader>sd      [S]earch [D]iagnostics
+    <leader>sr      [S]earch [R]esume last search
+    <leader>s.      [S]earch recent files
+    <leader>s/      [S]earch in open files only
+    <leader>sn      [S]earch [N]eovim config files
+    <leader>ss      [S]earch [S]elect Telescope picker
+
+    <leader>/       Fuzzy search in current buffer
+    <leader><leader> Find existing buffers
+
+Inside Telescope:
+    <C-/>           Show help (insert mode)
+    ?               Show help (normal mode)
+    <CR>            Select item
+    <C-x>           Open in horizontal split
+    <C-v>           Open in vertical split
+    <Esc>           Close Telescope
+
+==============================================================================
+FILE NAVIGATION - HARPOON                              *roest-keymaps-harpoon*
+
+Harpoon is your "working set" of files - like browser tabs for code.
+
+    <leader>a       Add current file to Harpoon list
+    <C-e>           Open Harpoon quick menu
+    <C-n>           Next file in Harpoon list
+    <C-p>           Previous file in Harpoon list
+    <leader>fl      Open Harpoon list in Telescope
+    <leader>hr      Reset (clear) Harpoon list
+
+Workflow:
+    1. Open files you're working on
+    2. <leader>a on each one
+    3. <C-n>/<C-p> to jump between them
+    4. <leader>hr when done with task
+
+==============================================================================
+FILE BROWSER - OIL                                        *roest-keymaps-oil*
+
+Oil turns directories into editable buffers.
+
+    -               Open parent directory
+    <leader>-       Open parent directory (floating window)
+
+Inside Oil:
+    <CR>            Open file/directory
+    -               Go up one directory
+    g?              Show help
+    <C-p>           Preview file
+    <C-c>           Close Oil
+
+You can rename/delete files by editing the buffer and saving!
+
+==============================================================================
+LSP - CODE INTELLIGENCE                                    *roest-keymaps-lsp*
+
+These work when an LSP server is attached (most code files):
+
+    grd             [G]o to [D]efinition
+    grD             [G]o to [D]eclaration (e.g., header file)
+    grr             [G]o to [R]eferences
+    gri             [G]o to [I]mplementation
+    grt             [G]o to [T]ype definition
+    grn             [R]e[n]ame symbol
+    gra             Code [A]ction (quick fixes, refactors)
+    gO              Document symbols (functions, classes, etc.)
+    gW              Workspace symbols (across project)
+
+    <leader>th      [T]oggle inlay [H]ints
+    <C-t>           Jump back (after goto definition)
+
+==============================================================================
+DIAGNOSTICS                                          *roest-keymaps-diagnostics*
+
+    <leader>e       Show error popup for current line
+    <leader>q       Open quickfix list with all diagnostics
+
+    [d              Previous diagnostic
+    ]d              Next diagnostic
+
+==============================================================================
+DIAGNOSTICS - TROUBLE                                  *roest-keymaps-trouble*
+
+Trouble gives you a better diagnostics panel.
+
+    <leader>xx      Toggle all diagnostics
+    <leader>xX      Toggle buffer diagnostics only
+    <leader>cs      Toggle symbols outline
+    <leader>cl      Toggle LSP references/definitions
+    <leader>xL      Toggle location list
+    <leader>xQ      Toggle quickfix list
+
+==============================================================================
+GIT - GITSIGNS                                        *roest-keymaps-gitsigns*
+
+Hunks are chunks of changed code. Signs appear in the gutter.
+
+Navigation:
+    ]c              Next git change (hunk)
+    [c              Previous git change (hunk)
+
+Staging (like `git add` but for specific lines):
+    <leader>hs      Stage hunk
+    <leader>hS      Stage entire buffer
+    <leader>hu      Undo stage hunk
+    <leader>hr      Reset hunk (discard changes)
+    <leader>hR      Reset entire buffer
+
+Viewing:
+    <leader>hp      Preview hunk (popup)
+    <leader>hb      Blame current line
+    <leader>hd      Diff against index
+    <leader>hD      Diff against last commit
+
+Toggles:
+    <leader>tb      Toggle blame on current line
+    <leader>tD      Toggle deleted lines inline
+
+==============================================================================
+FORMATTING                                          *roest-keymaps-formatting*
+
+    <leader>l       Format file (or selection in visual mode)
+
+Auto-formats on save via conform.nvim.
+
+Formatters by filetype:
+    Lua         → stylua
+    JS/TS/JSON  → prettierd (falls back to prettier)
+    Python      → black
+    HTML/CSS    → prettierd
+    Markdown    → prettierd
+
+==============================================================================
+EDITING                                                *roest-keymaps-editing*
+
+    <Esc>           Clear search highlights
+    <leader>cr      Remove ^M (carriage returns)
+    :%y             Copy entire buffer to clipboard
+    u               Undo
+    <C-r>           Redo
+    :UndotreeToggle Visual undo history
+
+==============================================================================
+CUSTOM COMMANDS                                        *roest-keymaps-commands*
+
+    :Find <keyword>                 Find files containing keyword
+    :FindReplace <old> <new>        Replace across project
+    :Copy                           Copy directory contents to clipboard
+    :Copy -r                        Copy recursively
+    :Copy --exclude=pattern         Exclude files matching pattern
+    :ResetNvim                      Wipe plugin cache (nuclear option)
+    :ResetNvim!                     Force reset without confirmation
+    :Glow                           Render markdown preview
+    :Mason                          Manage LSP servers
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
