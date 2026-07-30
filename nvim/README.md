@@ -26,14 +26,14 @@ Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](
 ```
 ~/.config/nvim/
 ├── init.lua                 Entry point
-├── bootstrap.sh             One-command dependency installer
+├── deps.sh                  Editor-toolchain installer
 ├── lua/
 │   ├── options.lua          Editor settings (tabs, search, clipboard, etc.)
 │   ├── keymaps.lua          Core keybindings
 │   ├── lazy-bootstrap.lua   Plugin manager setup
 │   ├── lazy-plugins.lua     Plugin loader
 │   └── external/
-│       ├── reqs.lua         Tool dependency list (used by bootstrap + health)
+│       ├── reqs.lua         Tool dependency list (used by deps + health)
 │       ├── copy.lua         :Copy command (clipboard export for AI/docs)
 │       ├── findreplace.lua  :Find / :FindReplace commands
 │       ├── reset.lua        :ResetNvim command

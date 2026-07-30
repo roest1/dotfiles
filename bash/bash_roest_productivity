@@ -138,7 +138,7 @@ up() {
 
 # ─── Quick file search ────────────────────────────────────────────────────────
 
-# f: find file by name. No args → fzf picker → open in nvim.
+# f: find file by name. No args → fzf picker → open in $EDITOR.
 # With args → fd search (respects .gitignore).
 #
 # Depends on: fzf, fd
@@ -146,7 +146,7 @@ f() {
   if [[ $# -eq 0 ]]; then
     local file
     file=$(fzf --preview 'head -50 {}' 2>/dev/null)
-    [[ -n "$file" ]] && nvim "$file"
+    [[ -n "$file" ]] && "$EDITOR" "$file"
   else
     local _fd="fd"
     command -v fd &>/dev/null || _fd="fdfind"
@@ -292,7 +292,7 @@ extract() {
 dotfiles-edit() {
     local dotdir
     dotdir="$(cd "$(dirname "$(readlink -f ~/.bashrc 2>/dev/null || readlink ~/.bashrc)")" && pwd)"
-    nvim "$dotdir"
+    "$EDITOR" "$dotdir"
 }
 
 reload() {
@@ -317,17 +317,9 @@ dtest() {
     dotnet test
 }
 
-# nvim spelling errors
-
-nvi() { # nvim spelling errors
-    nvim .
-}
-nv() { # nvim spelling errors
-    nvim .
-}
-n() { # nvim spelling errors
-    nvim .
-}
+# n / nv / nvi moved to bash_roest_nvim — they're nvim-only by definition, and
+# that file is symlinked in only by the nvim area, so a bash-only install (a
+# work machine that disallows neovim) simply doesn't get them.
 
 
 # ─── Help System ──────────────────────────────────────────────────────────────

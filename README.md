@@ -1,35 +1,56 @@
 # dotfiles
 
-Personal configuration files. One clone, one script, full setup. Cross-platform bash (macOS + Linux/WSL + RHEL).
+Personal configuration files — bash and neovim in one repo. Cross-platform (macOS + Linux/WSL + RHEL).
 
 ## Install
 
-| Step | Command |
-| ---- | ------- |
-| 1. Clone          | `git clone https://github.com/roest1/dotfiles.git ~/dotfiles` |
-| 2. Run everything | `cd ~/dotfiles && make all` |
-| 3. Restart shell  | `exec bash` |
-
-`make all` runs three idempotent steps: `make deps` (brew/dnf installs CLI tools) → `make install` (symlinks `bash/*` and `git/gitconfig` into `~`, backs up existing files to `~/.dotfiles_backup/`) → `make check` (verifies tools).
-
-**Other targets:** `make shell` (set default shell to bash), `make update` (git pull + reinstall).
-
-**Tools installed:** zoxide, fzf, bat, eza, fd, ripgrep, gh, jq, plus bash 5 on macOS (ships 3.2).
-
-## New machine setup
+One line on a fresh machine — installs git if needed, clones, and runs `make all`:
 
 ```sh
-# 1. Dotfiles
-git clone https://github.com/roest1/dotfiles.git ~/dotfiles
-cd ~/dotfiles && make all
-
-# 2. Neovim config
-git clone https://github.com/roest1/nvim.git ~/.config/nvim
-cd ~/.config/nvim && make all
-
-# 3. Restart shell
-exec bash
+curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh | bash
 ```
+
+Already cloned? `cd ~/dotfiles && make all`, then `exec bash`.
+
+## Install only what you're allowed to
+
+Two axes: **which area**, and **how far** (symlink only, or also install tools).
+
+|            | symlink only     | symlink + tools |
+| ---------- | ---------------- | --------------- |
+| bash       | `make link-bash` | `make bash`     |
+| nvim       | `make link-nvim` | `make nvim`     |
+| dev        | —                | `make dev`      |
+| everything | `make link`      | `make all`      |
+
+- **`make bash`** — complete working shell with no editor involved. For a machine where neovim isn't permitted. The `n`/`nv`/`nvi` shortcuts belong to the nvim area and simply won't exist; `f` and `dotfiles-edit` use `$EDITOR`, which you can point at `vim` in `~/.bash_roest_local`.
+- **`make link`** — every config symlinked, nothing installed. No sudo, no network. For a locked-down box.
+- **`make dev`** — project runtimes (bun) only. Kept separate because a work machine may forbid curl-pipe installers even where symlinking a bashrc is fine.
+
+Scope the one-liner the same way: `DOTFILES_TARGET=bash curl ... | bash`.
+
+**Tools by area** — `fd` and `rg` are wanted by both; the installers short-circuit on `command -v`, so they're installed once.
+
+| Area | Tools |
+| ---- | ----- |
+| bash | zoxide, fzf, bat, eza, fd, ripgrep, gh, jq (+ bash 5 on macOS, which ships 3.2) |
+| nvim | neovim, node, npm, python3, tree-sitter, stylua, prettier, prettierd, ruff, eslint_d |
+| dev  | bun |
+
+**Verify:** `make check` (or `check-bash` / `check-nvim` / `check-dev`).
+
+**Other targets:** `make shell` (set default shell to bash), `make update` (git pull + re-link), `make sync` (nvim plugins + parsers).
+
+## Layout
+
+| Path | What |
+| ---- | ---- |
+| `bootstrap.sh` | Curl-able entry point for a fresh machine |
+| `install.sh`   | Symlinks only; takes area args (`bash`, `nvim`) |
+| `lib/pkg.sh`   | The single implementation of "install a tool", shared by all areas |
+| `bash/`        | Shell config + `deps.sh` |
+| `nvim/`        | Neovim config + `deps.sh` (self-contained; has its own Makefile and README) |
+| `dev/`         | `deps.sh` for project runtimes |
 
 ## GitHub Terminal Tools
 
@@ -74,7 +95,9 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ```
 </details>
 
-Neovim config lives in a separate repo: [nvim](https://github.com/roest1/nvim).
+Neovim config lives in `nvim/` — merged in from the former `roest1/nvim` repo with
+its full history. It keeps its own `Makefile` and `README.md` so the directory
+still stands alone.
 
 ## What goes where
 

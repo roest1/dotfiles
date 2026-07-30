@@ -29,7 +29,7 @@ local check_external_reqs = function()
     if is_executable then
       vim.health.ok(string.format("Found: '%s'", exe))
     else
-      vim.health.warn(string.format("Missing: '%s' — run ./bootstrap.sh or install manually", exe))
+      vim.health.warn(string.format("Missing: '%s' — run ./deps.sh or install manually", exe))
     end
   end
 end
@@ -53,7 +53,7 @@ return {
     vim.health.start 'nvim config'
 
     vim.health.info [[Fix only warnings for tools you actually use.
-  Run ./bootstrap.sh to install everything at once.]]
+  Run ./deps.sh to install everything at once.]]
 
     local uv = vim.uv or vim.loop
     vim.health.info('System: ' .. vim.inspect(uv.os_uname()))

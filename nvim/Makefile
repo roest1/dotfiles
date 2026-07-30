@@ -5,7 +5,7 @@
 #
 # Usage:
 #   make              Show help
-#   make deps         Install nvim + external deps (runs bootstrap.sh)
+#   make deps         Install nvim + external deps (runs deps.sh)
 #   make sync         Install/update plugins + compile TS parsers (headless)
 #   make update       git pull + deps + sync
 #   make clean        Wipe plugin + cache state (matches :ResetNvim)
@@ -39,8 +39,8 @@ help: ## Show this help
 
 all: deps sync ## Install everything (deps + sync)
 
-deps: ## Install nvim + external deps (runs bootstrap.sh)
-	@bash "$(NVIM_DIR)/bootstrap.sh"
+deps: ## Install nvim + external deps (runs deps.sh)
+	@bash "$(NVIM_DIR)/deps.sh"
 
 sync: ## Install/update plugins + compile TS parsers (headless)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not found — run 'make deps' first"; exit 1; }
@@ -49,7 +49,7 @@ sync: ## Install/update plugins + compile TS parsers (headless)
 	@nvim --headless "+Lazy! sync" +qa 2>&1 | tail -20
 	@echo ""
 	@echo "Updating tree-sitter parsers..."
-	@nvim --headless "+TSUpdateSync" +qa 2>&1 | tail -5
+	@nvim --headless "+TSUpdate" +qa 2>&1 | tail -5
 	@echo ""
 	@echo "Done."
 

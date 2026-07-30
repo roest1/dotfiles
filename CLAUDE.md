@@ -4,19 +4,30 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based. Paired with [nvim](https://github.com/roest1/nvim) for the editor side of the workflow.
+Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based. A monorepo: the neovim config lives in `nvim/`, merged in from the former `roest1/nvim` repo with full history.
 
 ## Setup Workflow
 
 ```bash
-git clone https://github.com/roest1/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-make all        # deps → install → check
+curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh | bash
+# or, already cloned:
+cd ~/dotfiles && make all
 ```
 
-Individual targets: `make deps`, `make install`, `make shell`, `make check`, `make update`. All idempotent.
+**Areas matter.** Installs are selectable because some machines disallow neovim, and some disallow installing anything at all:
 
-`install.sh` is the core symlinking engine — the `Makefile` wraps it. Both are needed; neither is a pure superset of the other.
+- `make bash` / `make nvim` / `make dev` — one area, config + tools
+- `make link-bash` / `make link-nvim` / `make link` — symlinks only, no sudo or network
+- `make all` — everything
+
+When adding a tool, put it in the right area's `deps.sh` (`bash/`, `nvim/`, `dev/`) and add it to the matching `check-*` target. **Don't add install logic to those scripts** — `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`, `npm_install`, `pip_install`, `cargo_install`, `ensure_symlink`), and every helper short-circuits on `command -v`, which is what makes overlapping tools like `fd` and `rg` safe to declare in two areas.
+
+`install.sh` is the core symlinking engine and takes area arguments — the `Makefile` wraps it. Both are needed; neither is a pure superset of the other.
+
+Two footguns worth knowing:
+
+- **`make` never reads `.bashrc`** (non-interactive, non-login), so the Makefile sets `PATH` explicitly to include `~/.local/bin`, `~/.cargo/bin`, `~/.bun/bin`, and `~/.npm-global/bin`. Without it every `check-*` target reports false MISSINGs.
+- **`EDITOR` is set unconditionally to `nvim`**, before `bash_roest_local` is sourced. It cannot be `${EDITOR:-nvim}`: Fedora's `/etc/profile.d/nano-default-editor.sh` sets `EDITOR=/usr/bin/nano` first, so a `:-` default silently loses. Per-machine overrides go in `~/.bash_roest_local`, which is sourced immediately after and wins.
 
 ## Architecture
 

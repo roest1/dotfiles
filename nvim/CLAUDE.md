@@ -8,7 +8,7 @@ A modular Neovim configuration built on **lazy.nvim**, forked from kickstart-mod
 
 ## Bootstrap & Dependencies
 
-`bootstrap.sh` installs external dependencies across macOS (brew), Ubuntu/WSL (apt), and RHEL (dnf): runtimes (node, python3, cargo), core tools (ripgrep, fd, stylua, prettierd), formatters (ruff, eslint_d), and productivity tools (zoxide, fzf, bat, eza). The authoritative list lives in `lua/external/reqs.lua` and is consumed by both `bootstrap.sh` and `:checkhealth external`.
+`nvim/deps.sh` installs external dependencies across macOS (brew), Ubuntu/WSL (apt), and RHEL (dnf): runtimes (node, python3, cargo), core tools (ripgrep, fd, stylua, prettierd), formatters (ruff, eslint_d), — shell tools (zoxide, fzf, bat, eza) belong to the bash area (`bash/deps.sh`). The authoritative list lives in `lua/external/reqs.lua` and is consumed by both `deps.sh` and `:checkhealth external`.
 
 Run `:checkhealth external` to verify tool availability — logic in `lua/external/health.lua`.
 

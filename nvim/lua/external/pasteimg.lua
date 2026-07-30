@@ -24,7 +24,7 @@
 --   • Linux / X11     → xclip      (package: xclip)
 --   • macOS           → pngpaste (brew), else an osascript fallback
 --
--- See lua/external/reqs.lua, bootstrap.sh, and `:checkhealth external` for the
+-- See lua/external/reqs.lua, deps.sh, and `:checkhealth external` for the
 -- per-platform tool. Documented in `:help roest-plugins-oil`.
 
 local M = {}
