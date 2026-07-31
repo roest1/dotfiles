@@ -177,7 +177,66 @@ cargo_install() {
     || echo "  ⚠️  cargo install $crate failed"
 }
 
-# Ensure ~/.local/bin is on PATH for this process (apt symlinks, pip/cargo bins).
+# Install a Python tool with uv. Usage: uv_install <command> [package]
+#
+# Replaces pip_install: uv is packaged by distros (no curl needed), installs
+# tools into isolated environments, and is made by the same people as ruff.
+uv_install() {
+  local cmd="$1"
+  local pkg="${2:-$1}"
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    echo "  ✅ $cmd"
+    return 0
+  fi
+
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "  ➡️  Installing uv..."
+    pkg_install "uv" || {
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      ensure_local_bin_on_path
+      export PATH="$HOME/.local/bin:$PATH"
+    }
+  fi
+
+  command -v uv >/dev/null 2>&1 || { echo "  ⚠️  uv unavailable — skipping $pkg"; return 1; }
+
+  echo "  ➡️  Installing $pkg via uv..."
+  uv tool install "$pkg" 2>/dev/null || { echo "  ⚠️  uv tool install $pkg failed"; return 1; }
+  # uv puts shims in ~/.local/bin
+  ensure_local_bin_on_path
+}
+
+# Install a tool with mise. Usage: mise_install <command> [tool-name]
+#
+# For tools distros don't reliably carry (stylua, tree-sitter, bun). Gives
+# pinned versions across machines and downloads binaries instead of compiling.
+mise_install() {
+  local cmd="$1"
+  local tool="${2:-$1}"
+
+  if command -v "$cmd" >/dev/null 2>&1; then
+    echo "  ✅ $cmd"
+    return 0
+  fi
+
+  if ! command -v mise >/dev/null 2>&1; then
+    echo "  ➡️  Installing mise..."
+    pkg_install "mise" || curl -fsSL https://mise.run | sh
+    export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+  fi
+
+  command -v mise >/dev/null 2>&1 || { echo "  ⚠️  mise unavailable — skipping $tool"; return 1; }
+
+  echo "  ➡️  Installing $tool via mise..."
+  mise use -g "$tool@latest" 2>/dev/null || {
+    echo "  ⚠️  mise use -g $tool failed"
+    return 1
+  }
+  export PATH="$HOME/.local/share/mise/shims:$PATH"
+}
+
+# Ensure ~/.local/bin is on PATH for this process (apt symlinks, uv/cargo bins).
 ensure_local_bin_on_path() {
   if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$HOME/.local/bin:$PATH"

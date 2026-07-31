@@ -141,13 +141,16 @@ export EDITOR=nvim
 # Package managers (auto-generated blocks — don't manually edit)
 #####################################################################
 
-# nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+# nvm was removed on 2026-07-31: it had zero node versions installed and was
+# sourcing a heavy init script on every interactive shell to do nothing. node
+# comes from the system package manager via deps.conf's [nvim] section. If you
+# ever need multiple node versions, prefer mise (already a provider) over nvm.
 
 # rust / cargo (rustup)
 [ -s "$HOME/.cargo/env" ] && \. "$HOME/.cargo/env"
+
+# mise — shims for tools declared with the `mise` provider in deps.conf
+[ -d "$HOME/.local/share/mise/shims" ] && export PATH="$HOME/.local/share/mise/shims:$PATH"
 
 #####################################################################
 # Custom config

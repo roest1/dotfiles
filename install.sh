@@ -4,52 +4,37 @@ set -euo pipefail
 #####################################################################
 # ~/dotfiles/install.sh
 #
-# Symlinks dotfiles into place. Safe to re-run — skips existing links,
-# backs up existing files. Works on both Linux (WSL) and macOS.
+# Symlinks config into place, driven entirely by the `link` lines in
+# deps.conf. Safe to re-run — skips correct links, backs up anything
+# it would overwrite to ~/.dotfiles_backup/<timestamp>/.
 #
 # Symlinks ONLY. No packages, no sudo, no network — which makes this
 # the right entry point on a locked-down machine where you can't
 # install anything but still want your config.
 #
 # Usage:
-#   ./install.sh            # all areas (default)
-#   ./install.sh bash       # bash config only
-#   ./install.sh nvim       # nvim config only
-#   ./install.sh bash nvim  # both, explicitly
+#   ./install.sh              # every section in deps.conf
+#   ./install.sh bash         # one section
+#   ./install.sh bash nvim    # several
 #
-# Tool installation lives elsewhere, per area:
-#   bash/deps.sh · nvim/deps.sh · dev/deps.sh   (see `make help`)
+# Tool installation is `make install` — see `make help`.
 #####################################################################
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
+
+# shellcheck source=lib/manifest.sh
+source "$DOTFILES_DIR/lib/manifest.sh"
 
 case "$(uname -s)" in
   Darwin) _OS=mac ;;
   *)      _OS=linux ;;
 esac
 
-# --- Area selection ------------------------------------------------
-
-AREAS=("$@")
-if [[ ${#AREAS[@]} -eq 0 ]]; then
-  AREAS=(bash nvim)
+SECTIONS=("$@")
+if [[ ${#SECTIONS[@]} -gt 0 ]]; then
+  manifest_validate_sections "${SECTIONS[@]}"
 fi
-
-has_area() {
-  local want="$1" a
-  for a in "${AREAS[@]}"; do
-    [[ "$a" == "$want" || "$a" == "all" ]] && return 0
-  done
-  return 1
-}
-
-for a in "${AREAS[@]}"; do
-  case "$a" in
-    bash|nvim|all) ;;
-    *) echo "Unknown area: $a (expected: bash, nvim, all)"; exit 1 ;;
-  esac
-done
 
 # --- Helpers -------------------------------------------------------
 
@@ -74,37 +59,41 @@ link_file() {
 }
 
 echo ""
-echo "Installing dotfiles from $DOTFILES_DIR ($_OS)"
-echo "Areas: ${AREAS[*]}"
+echo "Linking dotfiles from $DOTFILES_DIR ($_OS)"
+if [[ ${#SECTIONS[@]} -gt 0 ]]; then
+  echo "Sections: ${SECTIONS[*]}"
+else
+  echo "Sections: $(manifest_sections | tr '\n' ' ')"
+fi
 echo "-------------------------------------------"
 
-# --- Bash config ---------------------------------------------------
+# --- Walk the manifest's link lines --------------------------------
 
-if has_area bash; then
-  echo ""
-  echo "Bash:"
-
-  link_file "$DOTFILES_DIR/bash/bashrc"                  "$HOME/.bashrc"
-  link_file "$DOTFILES_DIR/bash/bash_roest_theme"        "$HOME/.bash_roest_theme"
-  link_file "$DOTFILES_DIR/bash/bash_roest_productivity" "$HOME/.bash_roest_productivity"
-  link_file "$DOTFILES_DIR/bash/bash_roest_git"          "$HOME/.bash_roest_git"
-  link_file "$DOTFILES_DIR/bash/bash_roest_github"       "$HOME/.bash_roest_github"
-
-  if [[ -f "$DOTFILES_DIR/bash/bash_roest_local" ]]; then
-    link_file "$DOTFILES_DIR/bash/bash_roest_local" "$HOME/.bash_roest_local"
+current=""
+linked_any=0
+while IFS=$'\t' read -r section src dest; do
+  [[ -z "$section" ]] && continue
+  if [[ "$section" != "$current" ]]; then
+    current="$section"
+    echo ""
+    echo "[$section]"
   fi
-  if [[ -f "$DOTFILES_DIR/bash/bash_roest_password_commands" ]]; then
-    link_file "$DOTFILES_DIR/bash/bash_roest_password_commands" "$HOME/.bash_roest_password_commands"
-  fi
+  link_file "$DOTFILES_DIR/$src" "$dest"
+  linked_any=1
+done < <(manifest_lines link ${SECTIONS[@]+"${SECTIONS[@]}"})
 
-  # --- Login shell shim (.bash_profile) -----------------------------
-  #
-  # Login shells (macOS Terminal/iTerm2, SSH on Linux/RHEL) read
-  # ~/.bash_profile instead of ~/.bashrc. This shim ensures .bashrc
-  # is always loaded regardless of shell mode.
+[[ $linked_any -eq 0 ]] && echo "  (nothing to link)"
 
+# --- Login shell shim (.bash_profile) ------------------------------
+#
+# Login shells (macOS Terminal/iTerm2, SSH on Linux/RHEL) read
+# ~/.bash_profile instead of ~/.bashrc. This shim ensures .bashrc is
+# always loaded regardless of shell mode. Generated rather than tracked
+# because it's boilerplate, and only relevant when bash is being linked.
+
+if [[ ${#SECTIONS[@]} -eq 0 ]] || printf '%s\n' "${SECTIONS[@]}" | grep -qx bash; then
   echo ""
-  echo "Login shell shim:"
+  echo "[bash] login shell shim:"
 
   local_bash_profile="$DOTFILES_DIR/bash/bash_profile"
   if [[ ! -f "$local_bash_profile" ]]; then
@@ -117,31 +106,6 @@ SHIM
     echo "  created $local_bash_profile"
   fi
   link_file "$local_bash_profile" "$HOME/.bash_profile"
-fi
-
-# --- Nvim config ---------------------------------------------------
-#
-# The config directory itself is symlinked, so ~/.config/nvim is a link
-# into this repo. bash_roest_nvim (n/nv/nvi) is linked here too, so those
-# shortcuts exist only when the nvim area is installed.
-
-if has_area nvim; then
-  echo ""
-  echo "Nvim:"
-
-  link_file "$DOTFILES_DIR/nvim"                  "$HOME/.config/nvim"
-  link_file "$DOTFILES_DIR/bash/bash_roest_nvim"  "$HOME/.bash_roest_nvim"
-fi
-
-# --- Git config ----------------------------------------------------
-
-if has_area bash; then
-  echo ""
-  echo "Git:"
-
-  if [[ -f "$DOTFILES_DIR/git/gitconfig" ]]; then
-    link_file "$DOTFILES_DIR/git/gitconfig" "$HOME/.gitconfig"
-  fi
 fi
 
 # --- Summary -------------------------------------------------------

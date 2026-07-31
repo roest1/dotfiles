@@ -3,37 +3,42 @@
 # Portable dotfiles + nvim monorepo. macOS (brew), Ubuntu/WSL (apt), RHEL (dnf).
 # Every target is idempotent — safe to re-run.
 #
-# Two axes: WHICH area, and HOW FAR (symlink only vs. also install tools).
+# Everything this repo installs or links is declared in deps.conf. This file
+# does not know what a "bash" or an "nvim" is; it reads sections from the
+# manifest. Adding a program means adding a section there, not editing here.
 #
-#                  symlink only        symlink + tools
-#     bash         make link-bash      make bash
-#     nvim         make link-nvim      make nvim
-#     dev          —                   make dev
-#     everything   make link           make all
+#   make install              everything enabled in deps.conf
+#   make install nvim         one section  (repeatable: make install bash nvim)
+#   make link                 symlinks only — no sudo, no network
+#   make check                verify what's enabled is actually present
 #
-# `make link` is the one for a locked-down work machine: full config, no sudo,
-# no network, nothing downloaded. `make bash` is the one for a machine where
-# neovim isn't allowed — it produces a complete working shell on its own.
+# To skip a tool, comment it out in deps.conf. There is no flag.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # make(1) spawns a non-interactive, non-login shell, which never reads .bashrc —
 # so tool directories that only .bashrc puts on PATH are invisible here. Without
-# this line the check-* targets report false MISSINGs for anything installed by
-# cargo, bun, or a user-prefixed npm.
-export PATH := $(HOME)/.local/bin:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(HOME)/.npm-global/bin:$(PATH)
+# this line the check target reports false MISSINGs for anything installed by
+# cargo, bun, uv, mise, or a user-prefixed npm.
+export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(HOME)/.npm-global/bin:$(PATH)
 
 UNAME := $(shell uname -s)
 DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && pwd)
+
+# Sections come from the manifest, not from this file.
+SECTIONS := $(shell sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/\1/p' $(DOTFILES_DIR)/deps.conf)
+
+# Anything after the goal on the command line is treated as section names
+# (`make install nvim`) rather than as targets to build.
+ARGS := $(filter-out install link check,$(MAKECMDGOALS))
+$(eval $(ARGS):;@:)
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help all bash nvim dev link link-bash link-nvim \
-        deps-bash deps-nvim deps-dev sync shell update \
-        check check-bash check-nvim check-dev
+.PHONY: help install link check sync shell update sections $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -41,94 +46,35 @@ help: ## Show this help
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
+	@echo "  Sections (from deps.conf): $(SECTIONS)"
+	@echo "    make install nvim        install just that section"
+	@echo "    make link bash           link just that section's config"
+	@echo "    make check nvim          verify just that section"
+	@echo ""
+	@echo "  To skip a single tool, comment it out in deps.conf."
+	@echo ""
 
-# ---- composite ------------------------------------------------------------
+sections: ## List sections declared in deps.conf
+	@echo "$(SECTIONS)" | tr ' ' '\n'
 
-all: link deps-bash deps-nvim deps-dev sync check ## Everything: both areas + dev runtimes
+install: ## Link config + install tools (optionally: make install <section>...)
+	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
+	@source "$(DOTFILES_DIR)/lib/run.sh" && run_tools $(ARGS)
+	@source "$(DOTFILES_DIR)/lib/run.sh" && run_post $(ARGS)
+	@$(MAKE) --no-print-directory check $(ARGS)
 
-bash: link-bash deps-bash check-bash ## Bash config + shell tools (no editor)
+link: ## Symlink config only — no sudo, no network, nothing installed
+	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 
-nvim: link-nvim deps-nvim sync check-nvim ## Nvim config + editor toolchain
-
-dev: deps-dev check-dev ## Project runtimes only (bun)
-
-# ---- symlinks only (no sudo, no network) ----------------------------------
-
-link: ## Symlink everything, install nothing
-	@bash "$(DOTFILES_DIR)/install.sh" bash nvim
-
-link-bash: ## Symlink bash config only
-	@bash "$(DOTFILES_DIR)/install.sh" bash
-
-link-nvim: ## Symlink nvim config only (~/.config/nvim -> this repo)
-	@bash "$(DOTFILES_DIR)/install.sh" nvim
-
-# ---- tool installation, per area ------------------------------------------
-
-deps-bash: ## Install shell tools (fzf, bat, eza, fd, rg, gh, jq, zoxide)
-	@bash "$(DOTFILES_DIR)/bash/deps.sh"
-
-deps-nvim: ## Install editor toolchain (neovim, node, formatters, tree-sitter)
-	@bash "$(DOTFILES_DIR)/nvim/deps.sh"
-
-deps-dev: ## Install project runtimes (bun)
-	@bash "$(DOTFILES_DIR)/dev/deps.sh"
+check: ## Verify enabled tools are present (optionally: make check <section>...)
+	@source "$(DOTFILES_DIR)/lib/run.sh" && run_check $(ARGS) || true
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
 
-# ---- verification ---------------------------------------------------------
-
-check: check-bash check-nvim check-dev ## Verify every area
-
-check-bash: ## Verify shell tools
-	@echo ""
-	@echo "bash — shell tools"
-	@echo "-------------------------------------------"
-	@all_ok=true; \
-	for cmd in zoxide fzf bat eza rg fd gh jq; do \
-		if command -v "$$cmd" >/dev/null 2>&1; then \
-			printf "  %-12s ok\n" "$$cmd"; \
-		elif [ "$$cmd" = "bat" ] && command -v batcat >/dev/null 2>&1; then \
-			printf "  %-12s ok (batcat)\n" "$$cmd"; \
-		elif [ "$$cmd" = "fd" ] && command -v fdfind >/dev/null 2>&1; then \
-			printf "  %-12s ok (fdfind)\n" "$$cmd"; \
-		else \
-			printf "  %-12s MISSING\n" "$$cmd"; all_ok=false; \
-		fi; \
-	done; \
-	$$all_ok && echo "  all present" || echo "  run 'make deps-bash'"
-	@echo ""
-
-check-nvim: ## Verify editor toolchain
-	@echo "nvim — editor toolchain"
-	@echo "-------------------------------------------"
-	@if [ ! -e "$(HOME)/.config/nvim" ]; then \
-		echo "  not installed (run 'make nvim')"; \
-	else \
-		all_ok=true; \
-		for cmd in nvim node npm python3 tree-sitter stylua prettier prettierd ruff eslint_d; do \
-			if command -v "$$cmd" >/dev/null 2>&1; then \
-				printf "  %-12s ok\n" "$$cmd"; \
-			else \
-				printf "  %-12s MISSING\n" "$$cmd"; all_ok=false; \
-			fi; \
-		done; \
-		$$all_ok && echo "  all present" || echo "  run 'make deps-nvim'"; \
-	fi
-	@echo ""
-
-check-dev: ## Verify project runtimes
-	@echo "dev — project runtimes"
-	@echo "-------------------------------------------"
-	@if command -v bun >/dev/null 2>&1; then \
-		printf "  %-12s ok (%s)\n" "bun" "$$(bun --version)"; \
-	else \
-		printf "  %-12s MISSING — run 'make deps-dev'\n" "bun"; \
-	fi
-	@echo ""
-
-# ---- misc -----------------------------------------------------------------
+# --------------------------------------------------------------------------- #
+#  Misc                                                                        #
+# --------------------------------------------------------------------------- #
 
 shell: ## Set default shell to bash
 ifeq ($(UNAME),Darwin)
@@ -167,4 +113,4 @@ endif
 update: ## Pull latest changes and re-link
 	@echo "Pulling latest..."
 	@git -C "$(DOTFILES_DIR)" pull --ff-only
-	@$(MAKE) link
+	@$(MAKE) --no-print-directory link
