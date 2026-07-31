@@ -5,7 +5,7 @@
 #
 # Usage:
 #   make              Show help
-#   make deps         Install nvim + external deps (runs deps.sh)
+#   make deps         Install nvim + external deps (via ../deps.conf)
 #   make sync         Install/update plugins + compile TS parsers (headless)
 #   make update       git pull + deps + sync
 #   make clean        Wipe plugin + cache state (matches :ResetNvim)
@@ -39,8 +39,10 @@ help: ## Show this help
 
 all: deps sync ## Install everything (deps + sync)
 
-deps: ## Install nvim + external deps (runs deps.sh)
-	@bash "$(NVIM_DIR)/deps.sh"
+deps: ## Install nvim + external deps (delegates to the repo manifest)
+	@# The toolchain is declared in ../deps.conf, so there is one source of
+	@# truth. deps.sh here is only platform fixups and runs as part of that.
+	@$(MAKE) --no-print-directory -C "$(NVIM_DIR)/.." install nvim
 
 sync: ## Install/update plugins + compile TS parsers (headless)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not found — run 'make deps' first"; exit 1; }

@@ -4,53 +4,105 @@ Personal configuration files — bash and neovim in one repo. Cross-platform (ma
 
 ## Install
 
-One line on a fresh machine — installs git if needed, clones, and runs `make all`:
+One line on a fresh machine — installs git if needed, clones, and runs `make install`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh | bash
 ```
 
-Already cloned? `cd ~/dotfiles && make all`, then `exec bash`.
+Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
 
-## Install only what you're allowed to
+## Everything lives in `deps.conf`
 
-Two axes: **which area**, and **how far** (symlink only, or also install tools).
+One file declares every config symlink and every dependency. **Toggling is
+commenting** — there's no flag to remember and no profile vocabulary to learn.
 
-|            | symlink only     | symlink + tools |
-| ---------- | ---------------- | --------------- |
-| bash       | `make link-bash` | `make bash`     |
-| nvim       | `make link-nvim` | `make nvim`     |
-| dev        | —                | `make dev`      |
-| everything | `make link`      | `make all`      |
+```conf
+[nvim]
+link  nvim                    ~/.config/nvim
+tool  pkg   nvim        neovim
+tool  mise  stylua
+tool  uv    ruff
+# tool  npm   prettierd   @fsouza/prettierd    ← disabled: no node on this box
+post  make -C nvim sync
+```
 
-- **`make bash`** — complete working shell with no editor involved. For a machine where neovim isn't permitted. The `n`/`nv`/`nvi` shortcuts belong to the nvim area and simply won't exist; `f` and `dotfiles-edit` use `$EDITOR`, which you can point at `vim` in `~/.bash_roest_local`.
-- **`make link`** — every config symlinked, nothing installed. No sudo, no network. For a locked-down box.
-- **`make dev`** — project runtimes (bun) only. Kept separate because a work machine may forbid curl-pipe installers even where symlinking a bashrc is fine.
+| Command | What |
+| ------- | ---- |
+| `make install` | everything enabled in `deps.conf` |
+| `make install nvim` | one section (repeatable: `make install bash nvim`) |
+| `make link` | symlinks only — no sudo, no network, nothing downloaded |
+| `make check` | verify what's enabled is actually present |
+| `make sections` | list sections |
+
+Sections are named after the program, so there's nothing to name: `[bash]`,
+`[nvim]`, `[wezterm]`, `[dev]`. The `Makefile` reads them from the manifest —
+**adding a program is a new section plus its config file, and no other edits.**
+
+### Installing a subset
+
+The real constraint at work usually isn't "no neovim," it's "not *that*
+dependency." So granularity goes down to the individual tool:
+
+- **Skip one tool** — comment its line.
+- **Skip a whole program** — `make install bash` instead of `make install`.
+- **Install nothing at all** — `make link` gives you every config with no sudo
+  and no network.
 
 Scope the one-liner the same way: `DOTFILES_TARGET=bash curl ... | bash`.
 
-**Tools by area** — `fd` and `rg` are wanted by both; the installers short-circuit on `command -v`, so they're installed once.
+**The node case is worth knowing before you need it.** Commenting out the node
+block in `[nvim]` leaves a working editor — `lsp.lua` drops the JS-based
+language servers when `node` is absent, so you keep clangd (C/C++), lua_ls and
+lemminx, and lose ts/css/html/json/yaml/bash plus prettier and eslint_d. Those
+six *are* JavaScript programs and Mason shells out to `npm` specifically, so no
+packaging trick and no bun substitution avoids it. Good subset for C++/Lua work;
+not a subset for web work. CI exercises this path on every push.
 
-| Area | Tools |
-| ---- | ----- |
-| bash | zoxide, fzf, bat, eza, fd, ripgrep, gh, jq (+ bash 5 on macOS, which ships 3.2) |
-| nvim | neovim, node, npm, python3, tree-sitter, stylua, prettier, prettierd, ruff, eslint_d |
-| dev  | bun |
+### Providers
 
-**Verify:** `make check` (or `check-bash` / `check-nvim` / `check-dev`).
+Each `tool` line names how to install it. `||` declares a fallback chain:
 
-**Other targets:** `make shell` (set default shell to bash), `make update` (git pull + re-link), `make sync` (nvim plugins + parsers).
+| Provider | Use |
+| -------- | --- |
+| `pkg`    | system package manager (brew / apt / dnf) |
+| `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
+| `npm`    | `npm -g` (needs node) |
+| `uv`     | Python tools (replaces pip; same vendor as ruff) |
+| `cargo`  | compiles from source — slow, prefer `mise` |
+
+```conf
+tool  pkg||cargo  eza     # distro package if it exists, else compile
+```
+
+`[bash]` is deliberately pure `pkg`, so a locked-down machine can install the
+whole shell without mise, node, or any curl-piped installer.
 
 ## Layout
 
 | Path | What |
 | ---- | ---- |
+| `deps.conf` | **the manifest** — links and dependencies, one file |
 | `bootstrap.sh` | Curl-able entry point for a fresh machine |
-| `install.sh`   | Symlinks only; takes area args (`bash`, `nvim`) |
-| `lib/pkg.sh`   | The single implementation of "install a tool", shared by all areas |
-| `bash/`        | Shell config + `deps.sh` |
-| `nvim/`        | Neovim config + `deps.sh` (self-contained; has its own Makefile and README) |
-| `dev/`         | `deps.sh` for project runtimes |
+| `install.sh`   | Symlinks only; walks the manifest's `link` lines |
+| `lib/manifest.sh` | Parses `deps.conf` |
+| `lib/providers.sh` | Maps a provider name to an installer; handles `\|\|` chains |
+| `lib/pkg.sh`   | The single implementation of "install a tool" |
+| `lib/run.sh`   | Installs a section's tools, runs `post` steps and platform fixups |
+| `bash/`, `nvim/`, `wezterm/` | Config, plus an optional `deps.sh` for platform-conditional fixups |
+
+`nvim/` is self-contained — its own Makefile and README — so it still stands
+alone despite living here.
+
+## Portability is tested, not claimed
+
+`.github/workflows/ci.yml` runs on every push: `make link` on Ubuntu and macOS,
+full installs across apt / brew / dnf, shellcheck, manifest validation, and a
+job that comments out the node block and asserts nvim still starts clean.
+
+This exists because the previous Makefile promised WSL support in this README
+while `make deps` hard-exited on apt. Nothing ever ran it on Ubuntu, so nobody
+noticed.
 
 ## GitHub Terminal Tools
 
@@ -74,8 +126,18 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 
 ```
 ~/dotfiles/
-├── Makefile                              Orchestrator: deps, install, shell, check, update
+├── deps.conf                             THE MANIFEST — links + dependencies
+├── Makefile                              Reads sections from deps.conf
+├── bootstrap.sh                          Curl-able fresh-machine entry point
 ├── install.sh                            Symlink engine (backs up existing files)
+├── lib/
+│   ├── manifest.sh                       deps.conf parser
+│   ├── providers.sh                      provider dispatch + || chains
+│   ├── pkg.sh                            the installers
+│   └── run.sh                            section runner
+├── nvim/                                 Neovim config (own Makefile + README)
+├── wezterm/
+│   └── wezterm.lua                     → ~/.config/wezterm/wezterm.lua
 ├── bash/
 │   ├── bashrc                          → ~/.bashrc
 │   ├── bash_roest_theme                → ~/.bash_roest_theme

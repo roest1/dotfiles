@@ -11,21 +11,19 @@ set -euo pipefail
 # machine has no SSH key yet), then hands off to make.
 #
 # Pick a scope with DOTFILES_TARGET:
-#   DOTFILES_TARGET=all   ... | bash    # default — everything
-#   DOTFILES_TARGET=bash  ... | bash    # shell only, no editor
-#   DOTFILES_TARGET=link  ... | bash    # symlinks only, no sudo/network
+#   DOTFILES_TARGET=install ... | bash   # default — everything in deps.conf
+#   DOTFILES_TARGET=bash    ... | bash   # one section (any [name] in deps.conf)
+#   DOTFILES_TARGET=link    ... | bash   # symlinks only, no sudo/network
 #
 # Already cloned? Just use make directly — see `make help`.
 #####################################################################
 
 REPO_URL="${DOTFILES_REPO:-https://github.com/roest1/dotfiles.git}"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
-TARGET="${DOTFILES_TARGET:-all}"
+TARGET="${DOTFILES_TARGET:-install}"
 
-case "$TARGET" in
-  all|bash|nvim|dev|link|link-bash|link-nvim) ;;
-  *) echo "Unknown DOTFILES_TARGET: $TARGET"; exit 1 ;;
-esac
+# TARGET is validated AFTER cloning, not here: on the fresh machine this script
+# exists for, deps.conf doesn't exist yet, so a section name couldn't be checked.
 
 echo ""
 echo "dotfiles bootstrap"
@@ -75,7 +73,24 @@ if ! command -v make >/dev/null 2>&1; then
 fi
 
 cd "$DOTFILES_DIR"
-make "$TARGET"
+
+# Now that deps.conf exists, TARGET can be validated. It's either a make target
+# we know, or the name of a section in the manifest.
+case "$TARGET" in
+  install|link)
+    make "$TARGET"
+    ;;
+  *)
+    if ! grep -qE "^\[$TARGET\]" deps.conf; then
+      echo ""
+      echo "Unknown DOTFILES_TARGET: $TARGET"
+      echo "Expected 'install', 'link', or a section in deps.conf:"
+      sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/  \1/p' deps.conf
+      exit 1
+    fi
+    make install "$TARGET"
+    ;;
+esac
 
 echo ""
 echo "-------------------------------------------"

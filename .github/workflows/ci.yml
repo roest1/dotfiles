@@ -1,0 +1,181 @@
+name: portability
+
+# The point of this workflow is to make "clone and get running on any platform"
+# provable rather than claimed. The previous Makefile promised WSL support in its
+# README while `make deps` hard-exited on apt — a bug that survived because
+# nothing ever ran it on Ubuntu.
+#
+# Every job is a fresh machine, which is the only honest test of a bootstrap.
+
+on:
+  push:
+    branches: [main, merge-nvim]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── Lint ───────────────────────────────────────────────────────────────────
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint shell sources
+        run: |
+          shellcheck --severity=warning \
+            bootstrap.sh install.sh \
+            lib/*.sh \
+            bash/deps.sh nvim/deps.sh
+
+  # ── Manifest sanity ────────────────────────────────────────────────────────
+  # Cheap guard against a typo in deps.conf taking down every other job.
+  manifest:
+    name: manifest parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sections are discoverable
+        run: |
+          source lib/manifest.sh
+          sections=$(manifest_sections | tr '\n' ' ')
+          echo "sections: $sections"
+          for want in bash nvim wezterm dev; do
+            echo "$sections" | grep -qw "$want" || { echo "missing section: $want"; exit 1; }
+          done
+      - name: Every tool line has a known provider
+        run: |
+          source lib/manifest.sh
+          bad=0
+          while IFS=$'\t' read -r section provider cmd pkg; do
+            for p in ${provider//||/ }; do
+              case "$p" in
+                pkg|npm|uv|cargo|mise) ;;
+                *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
+              esac
+            done
+          done < <(manifest_lines tool)
+          exit $bad
+      - name: Every link source exists in the repo
+        run: |
+          source lib/manifest.sh
+          bad=0
+          while IFS=$'\t' read -r section src dest; do
+            [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
+          done < <(manifest_lines link)
+          exit $bad
+
+  # ── Links only: the locked-down-machine path ───────────────────────────────
+  # No sudo, no network, nothing installed. Must work everywhere.
+  link-only:
+    name: link only (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: make link
+        run: make link
+      - name: Config is symlinked into the repo
+        run: |
+          test -L "$HOME/.bashrc"
+          test -L "$HOME/.config/nvim"
+          test -L "$HOME/.config/wezterm/wezterm.lua"
+      - name: Idempotent — second run changes nothing
+        run: |
+          make link | tee /tmp/second.txt
+          if grep -qE "linked |backed up " /tmp/second.txt; then
+            echo "second run was not idempotent"; exit 1
+          fi
+
+  # ── Full install per platform ──────────────────────────────────────────────
+  install:
+    name: install (${{ matrix.name }})
+    runs-on: ${{ matrix.runs-on }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu / apt
+            runs-on: ubuntu-latest
+            container: ''
+          - name: macos / brew
+            runs-on: macos-latest
+            container: ''
+          - name: fedora / dnf
+            runs-on: ubuntu-latest
+            container: fedora:latest
+    steps:
+      - name: Bootstrap container prerequisites
+        if: matrix.container != ''
+        run: dnf install -y git make sudo findutils
+
+      - uses: actions/checkout@v4
+
+      - name: Install the bash section
+        run: make install bash
+
+      - name: Verify the bash section
+        run: |
+          # `make check` exits 0 even when tools are missing, so the summary
+          # always prints for a human. Assert on the output instead.
+          make check bash | tee /tmp/check.txt
+          if grep -q MISSING /tmp/check.txt; then
+            echo "bash section incomplete"; exit 1
+          fi
+
+  # ── The node toggle, actually exercised ────────────────────────────────────
+  # Commenting out the node block is the documented escape hatch for a machine
+  # that disallows node. If that produces a broken editor, the toggle is
+  # decorative — so prove it produces a working one.
+  no-node:
+    name: nvim without node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comment out the node block in deps.conf
+        run: |
+          sed -i -E 's/^(tool[[:space:]]+pkg[[:space:]]+node[[:space:]].*)/# \1/' deps.conf
+          sed -i -E 's/^(tool[[:space:]]+npm[[:space:]].*)/# \1/' deps.conf
+          echo "--- remaining nvim tools ---"
+          source lib/manifest.sh && manifest_lines tool nvim
+
+      - name: No npm-provided tool survives the toggle
+        run: |
+          source lib/manifest.sh
+          if manifest_lines tool nvim | grep -qP '\tnpm\t'; then
+            echo "npm tools still enabled after commenting them out"; exit 1
+          fi
+
+      - name: check reports no false MISSING for disabled tools
+        run: |
+          make check nvim | tee /tmp/check.txt
+          for t in prettierd prettier eslint_d; do
+            if grep -qw "$t" /tmp/check.txt; then
+              echo "disabled tool '$t' still reported by check"; exit 1
+            fi
+          done
+
+      - name: Install neovim and start it with node hidden
+        run: |
+          sudo apt-get update && sudo apt-get install -y neovim
+          make link nvim
+          # Hide node the way a machine that never installed it would.
+          mkdir -p /tmp/nonode
+          for b in nvim git sh bash env grep sed awk cat ls mkdir rm ln readlink dirname basename uname find timeout tr head tail sort; do
+            p=$(command -v $b 2>/dev/null) && ln -sf "$p" "/tmp/nonode/$b"
+          done
+          ! PATH=/tmp/nonode command -v node
+          PATH=/tmp/nonode timeout 300 nvim --headless \
+            "+lua print('node=' .. vim.fn.executable('node'))" +qa 2>&1 | tee /tmp/nvim.txt
+          grep -q "node=0" /tmp/nvim.txt
+          grep -qi "skipping JS-based language servers" /tmp/nvim.txt
+          # A Lua error would mean the gating itself broke.
+          if grep -qiE "^E[0-9]+:|stack traceback" /tmp/nvim.txt; then
+            echo "nvim errored without node"; cat /tmp/nvim.txt; exit 1
+          fi
