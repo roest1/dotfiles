@@ -292,25 +292,11 @@ return {
       }
 
       -- ── Degrade gracefully without node ──────────────────────────────────
-      --
-      -- These servers are JavaScript programs that Mason installs with npm.
-      -- No packaging trick avoids that: they need a JS runtime to *execute*,
-      -- and Mason shells out to `npm` specifically, so bun can't substitute.
-      --
-      -- On a machine where node isn't allowed (see the node block in the repo's
-      -- deps.conf, which you comment out to opt out), leaving these in
-      -- ensure_installed makes Mason fail loudly on every startup. Dropping
-      -- them instead leaves a working editor: clangd, lua_ls, lemminx, stylua.
-      local needs_node = { 'ts_ls', 'cssls', 'html', 'jsonls', 'yamlls', 'bashls' }
-      if vim.fn.executable 'node' ~= 1 then
-        for _, name in ipairs(needs_node) do
-          servers[name] = nil
-        end
-        vim.notify(
-          'node not found — skipping JS-based language servers (' .. table.concat(needs_node, ', ') .. ').\n'
-            .. 'clangd, lua_ls and lemminx are unaffected.',
-          vim.log.levels.WARN
-        )
+      -- See lua/external/node_gate.lua for why, and for the unit-testable logic.
+      local node_gate = require 'external.node_gate'
+      local _, dropped = node_gate.apply(servers, vim.fn.executable 'node' == 1)
+      if #dropped > 0 then
+        vim.notify(node_gate.message(dropped), vim.log.levels.WARN)
       end
 
       -- Ensure the servers and tools above are installed

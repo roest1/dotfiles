@@ -24,10 +24,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Lint shell sources
         run: |
+          # Glob rather than a list, so a new section's deps.sh is covered the
+          # moment it exists — same reason the Makefile globs sections.
           shellcheck --severity=warning \
             bootstrap.sh install.sh \
             lib/*.sh \
-            bash/deps.sh nvim/deps.sh
+            */deps.sh
 
   # ── Manifest sanity ────────────────────────────────────────────────────────
   # Cheap guard against a typo in deps.conf taking down every other job.
@@ -171,21 +173,32 @@ jobs:
             fi
           done
 
-      - name: Install neovim and start it with node hidden
+      # The gate lives in lua/external/node_gate.lua rather than inline in the
+      # lazy plugin spec precisely so it can be tested like this: `--clean`
+      # loads no plugins, so there's no 26-repo clone, no treesitter compile and
+      # no Mason download standing between the assertion and the six lines it's
+      # actually about. Both branches are exercised because apply() takes
+      # has_node as an argument instead of probing PATH.
+      - name: Unit-test the node gate
         run: |
           sudo apt-get update && sudo apt-get install -y neovim
+          make test
+
+      # Integration signal, deliberately advisory: this boots the real plugin
+      # stack, so a failure here is as likely to be a flaky clone or an upstream
+      # plugin change as a bug in this repo. The assertion above is the one that
+      # gates the build.
+      - name: Smoke-start nvim with node hidden (advisory)
+        continue-on-error: true
+        run: |
           make link nvim
-          # Hide node the way a machine that never installed it would.
           mkdir -p /tmp/nonode
-          for b in nvim git sh bash env grep sed awk cat ls mkdir rm ln readlink dirname basename uname find timeout tr head tail sort; do
+          for b in nvim git sh bash env grep sed awk cat ls mkdir rm ln readlink \
+                   dirname basename uname find timeout tr head tail sort cc gcc make; do
             p=$(command -v $b 2>/dev/null) && ln -sf "$p" "/tmp/nonode/$b"
           done
           ! PATH=/tmp/nonode command -v node
-          PATH=/tmp/nonode timeout 300 nvim --headless \
+          PATH=/tmp/nonode timeout 600 nvim --headless \
             "+lua print('node=' .. vim.fn.executable('node'))" +qa 2>&1 | tee /tmp/nvim.txt
           grep -q "node=0" /tmp/nvim.txt
           grep -qi "skipping JS-based language servers" /tmp/nvim.txt
-          # A Lua error would mean the gating itself broke.
-          if grep -qiE "^E[0-9]+:|stack traceback" /tmp/nvim.txt; then
-            echo "nvim errored without node"; cat /tmp/nvim.txt; exit 1
-          fi

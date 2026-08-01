@@ -31,14 +31,14 @@ SECTIONS := $(shell sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/\1/p' $(DOTFILES_DIR)/dep
 
 # Anything after the goal on the command line is treated as section names
 # (`make install nvim`) rather than as targets to build.
-ARGS := $(filter-out install link check status,$(MAKECMDGOALS))
+ARGS := $(filter-out install link check status test,$(MAKECMDGOALS))
 $(eval $(ARGS):;@:)
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status sync shell update sections $(SECTIONS)
+.PHONY: help install link check status sync test shell update sections $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -74,6 +74,13 @@ status: ## Sync status: is the machine what deps.conf says? (declared vs. actual
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
+
+test: ## Run the Lua unit tests (no plugins, no network)
+	@command -v nvim >/dev/null 2>&1 || { echo "nvim not installed — skipping"; exit 0; }
+	@nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+		-c "luafile $(DOTFILES_DIR)/nvim/tests/node_gate_spec.lua" -c "qa!" 2>&1 \
+		| tee /tmp/dotfiles-test.txt
+	@grep -q "ALL PASS" /tmp/dotfiles-test.txt || { echo "tests failed"; exit 1; }
 
 # --------------------------------------------------------------------------- #
 #  Misc                                                                        #

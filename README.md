@@ -34,6 +34,7 @@ post  make -C nvim sync
 | `make link` | symlinks only — no sudo, no network, nothing downloaded |
 | `make check` | verify what's enabled is actually present |
 | `make status` | **sync status** — is the machine what `deps.conf` says? |
+| `make test` | Lua unit tests (no plugins, no network) |
 | `make sections` | list sections |
 
 Sections are named after the program, so there's nothing to name: `[bash]`,
@@ -134,6 +135,12 @@ job that comments out the node block and asserts nvim still starts clean.
 This exists because the previous Makefile promised WSL support in this README
 while `make deps` hard-exited on apt. Nothing ever ran it on Ubuntu, so nobody
 noticed.
+
+## Contributing
+
+Portability fixes and machinery bugs are welcome; personal-preference changes
+aren't (fork instead — the layout is built for it). See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## GitHub Terminal Tools
 
