@@ -31,14 +31,14 @@ SECTIONS := $(shell sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/\1/p' $(DOTFILES_DIR)/dep
 
 # Anything after the goal on the command line is treated as section names
 # (`make install nvim`) rather than as targets to build.
-ARGS := $(filter-out install link check status test,$(MAKECMDGOALS))
+ARGS := $(filter-out install link check status test adopt,$(MAKECMDGOALS))
 $(eval $(ARGS):;@:)
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status sync test shell update sections $(SECTIONS)
+.PHONY: help install link check status adopt sync test shell update sections $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -71,6 +71,10 @@ check: ## Verify enabled tools are present (optionally: make check <section>...)
 
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
+
+adopt: ## Print deps.conf lines for a command (or, with no args, for orphans)
+	@source "$(DOTFILES_DIR)/lib/adopt.sh" && \
+		if [ -n "$(ARGS)" ]; then adopt_tool $(ARGS); else adopt_orphans; fi
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync

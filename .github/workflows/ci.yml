@@ -68,6 +68,20 @@ jobs:
           done < <(manifest_lines link)
           exit $bad
 
+      # A generator whose output the parser rejects is worse than no generator,
+      # so assert the round trip rather than just that it runs.
+      - name: "`make adopt` emits lines the parser accepts"
+        run: |
+          make adopt git make tar > /tmp/adopt.txt
+          grep -q '^tool ' /tmp/adopt.txt || { echo "adopt emitted no tool lines"; cat /tmp/adopt.txt; exit 1; }
+          mkdir -p /tmp/rt
+          { echo "[roundtrip]"; grep '^tool ' /tmp/adopt.txt; } > /tmp/rt/deps.conf
+          source lib/manifest.sh
+          n_in=$(grep -c '^tool ' /tmp/rt/deps.conf)
+          n_out=$(MANIFEST_FILE=/tmp/rt/deps.conf manifest_lines tool | wc -l)
+          echo "generated $n_in line(s), parsed back $n_out"
+          [ "$n_in" -eq "$n_out" ] || { echo "round trip lost lines"; exit 1; }
+
       - name: Links report in sync right after `make link`
         run: |
           make link

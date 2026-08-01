@@ -34,6 +34,8 @@ make install nvim       # one section
 make link               # symlinks only: no sudo, no network
 make check              # verify enabled tools are present
 make status             # sync status: declared vs. actual (drift detection)
+make adopt <cmd>        # print a deps.conf line, provider + package resolved
+make test               # Lua unit tests (no plugins, no network)
 ```
 
 `make check` asks "does this command exist." `make status` asks "is this machine

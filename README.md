@@ -35,6 +35,7 @@ post  make -C nvim sync
 | `make check` | verify what's enabled is actually present |
 | `make status` | **sync status** — is the machine what `deps.conf` says? |
 | `make test` | Lua unit tests (no plugins, no network) |
+| `make adopt <cmd>` | print a ready-to-paste `deps.conf` line for a command |
 | `make sections` | list sections |
 
 Sections are named after the program, so there's nothing to name: `[bash]`,
@@ -109,6 +110,31 @@ It checks three things:
 Drift matters because a manifest that describes a machine you don't have
 produces a *different* machine when you clone it somewhere fresh — which is the
 one thing this repo exists to get right.
+
+### Writing a manifest line
+
+`make adopt <command>` figures out the parts that are easy to get wrong — which
+provider owns it, and the package name when it differs from the command:
+
+```
+$ make adopt rg fd prettierd stylua wezterm
+tool  pkg          rg           ripgrep
+tool  pkg          fd           fd-find
+tool  npm          prettierd    @fsouza/prettierd
+tool  cargo        stylua
+tool  pkg||manual  wezterm      # installed outside any manager (~/.local/bin/wezterm)
+```
+
+With no arguments it lists **orphans** — anything a tool manager installed that
+`deps.conf` doesn't declare, i.e. what you'd lose rebuilding from the manifest
+alone.
+
+It prints; it never edits `deps.conf`. Which section a tool belongs in is a
+judgement call, and silently appending to the file that defines every machine you
+own isn't a thing a script should do. Deliberately *not* a "scan the box and
+generate everything" tool either — there are 2203 packages installed here and
+dnf5 no longer reports which were explicitly requested, so that version would
+emit a firehose you'd have to hand-filter.
 
 ## Layout
 
