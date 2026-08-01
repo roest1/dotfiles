@@ -139,8 +139,12 @@ status_tools() {
 # not drift: plenty of legitimate things live outside this repo. It's here to
 # answer "what would I lose rebuilding this machine from deps.conf alone?"
 status_orphans() {
-  local declared
+  local declared ignored
   declared="$(manifest_lines tool | cut -f3 | sort -u)"
+  # Commands explicitly marked as not-ours. A tool manager can't tell a dotfiles
+  # dependency from a project-scoped one — only you can — so `ignore` lines in
+  # deps.conf record that judgement instead of re-reporting it every run.
+  ignored="$(manifest_lines ignore | cut -f2 | sort -u)"
 
   echo ""
   echo "[orphans] installed but not declared"
@@ -152,6 +156,7 @@ status_orphans() {
     for item in "$@"; do
       [[ -z "$item" ]] && continue
       grep -qxF "$item" <<<"$declared" && continue
+      grep -qxF "$item" <<<"$ignored" && continue
       printf "  ? %-14s via %s\n" "$item" "$label"
       found=1
     done

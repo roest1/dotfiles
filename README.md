@@ -125,16 +125,27 @@ tool  cargo        stylua
 tool  pkg||manual  wezterm      # installed outside any manager (~/.local/bin/wezterm)
 ```
 
-With no arguments it lists **orphans** — anything a tool manager installed that
-`deps.conf` doesn't declare, i.e. what you'd lose rebuilding from the manifest
-alone.
+You name the commands. There's **no bulk mode on purpose**: a package manager
+can't tell a dotfiles dependency from a project-scoped one — a `uv` tool
+belonging to one project looks identical to a tool you want on every machine —
+so "adopt everything installed" would just be a list to vet by hand while
+nudging you to declare things you don't want rebuilt.
 
-It prints; it never edits `deps.conf`. Which section a tool belongs in is a
-judgement call, and silently appending to the file that defines every machine you
-own isn't a thing a script should do. Deliberately *not* a "scan the box and
-generate everything" tool either — there are 2203 packages installed here and
-dnf5 no longer reports which were explicitly requested, so that version would
-emit a firehose you'd have to hand-filter.
+It prints; it never edits `deps.conf`.
+
+### Orphans, and saying "not ours"
+
+`make status` reports **orphans** — installed via a tool manager, absent from the
+manifest. That's the list of things you'd lose rebuilding from `deps.conf` alone.
+Each one is a decision: adopt it, or record that it isn't ours:
+
+```conf
+ignore  voicenote      # uv tool, scoped to the jarvis voice experiments
+```
+
+An `ignore` line keeps the judgement in the file rather than in your head, and
+stops `make status` re-reporting it every run. Rebuilding a machine from the
+manifest won't install ignored tools.
 
 ## Layout
 

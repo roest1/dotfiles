@@ -13,12 +13,13 @@
 #       rg -> ripgrep   fd -> fd-find   nvim -> neovim
 #       prettierd -> @fsouza/prettierd  (scoped npm packages)
 #
-# Two entry points:
-#
 #   adopt_tool <cmd>...   emit a line for each named command
-#   adopt_orphans         emit lines for everything installed via a tool manager
-#                         but missing from the manifest (the `make status`
-#                         orphans list, turned into pasteable config)
+#
+# You name the commands. There is no bulk mode on purpose: a tool manager can't
+# tell a dotfiles dependency from a project-scoped one, so "adopt everything
+# installed" would just be a list to vet by hand — while nudging you to declare
+# things you don't want rebuilt everywhere. `make status` reports orphans; the
+# decision (adopt, or record an `ignore` line) stays yours.
 #
 # Output goes to stdout as pasteable manifest lines. It never edits deps.conf —
 # where a tool belongs is a judgement call, and silently appending to the file
@@ -100,49 +101,24 @@ _adopt_line() {
 }
 
 adopt_tool() {
-  [[ $# -gt 0 ]] || { echo "usage: make adopt <command>..." >&2; return 1; }
+  if [[ $# -eq 0 ]]; then
+    cat >&2 <<'EOF'
+usage: make adopt <command>...
+
+Name the commands you want declared. There is deliberately no "adopt everything
+installed" mode: a tool manager can't tell a dotfiles dependency from a
+project-scoped one, so bulk output would be a list you'd have to vet by hand
+anyway — and it would nudge you toward declaring things you don't want rebuilt
+on every machine.
+
+`make status` reports orphans (installed, not declared). Decide per tool:
+adopt it here, or record the decision with an `ignore` line in deps.conf.
+EOF
+    return 1
+  fi
   echo "# paste into the right section of deps.conf:"
   echo ""
   local c
   for c in "$@"; do _adopt_line "$c" || true; done
-  echo ""
-}
-
-# Everything a tool manager installed that the manifest doesn't declare.
-adopt_orphans() {
-  local declared
-  declared="$(manifest_lines tool | cut -f3 | sort -u)"
-
-  local -a candidates=()
-  if command -v cargo >/dev/null 2>&1; then
-    mapfile -t -O "${#candidates[@]}" candidates < <(cargo install --list 2>/dev/null | grep -E '^[a-zA-Z]' | awk '{print $1}')
-  fi
-  if command -v uv >/dev/null 2>&1; then
-    mapfile -t -O "${#candidates[@]}" candidates < <(uv tool list 2>/dev/null | grep -E '^[a-zA-Z]' | awk '{print $1}')
-  fi
-  if command -v mise >/dev/null 2>&1; then
-    mapfile -t -O "${#candidates[@]}" candidates < <(mise ls --installed 2>/dev/null | awk '{print $1}' | grep -E '^[a-zA-Z]')
-  fi
-  if command -v npm >/dev/null 2>&1; then
-    mapfile -t -O "${#candidates[@]}" candidates < <(npm ls -g --depth=0 --parseable 2>/dev/null | tail -n +2 | xargs -r -n1 basename)
-  fi
-
-  local found=0 c
-  for c in "${candidates[@]}"; do
-    [[ -z "$c" ]] && continue
-    grep -qxF "$c" <<<"$declared" && continue
-    command -v "$c" >/dev/null 2>&1 || continue
-    if [[ $found -eq 0 ]]; then
-      echo "# installed via a tool manager but not in deps.conf —"
-      echo "# paste whichever of these you want rebuilt on a fresh machine:"
-      echo ""
-      found=1
-    fi
-    _adopt_line "$c" || true
-  done
-
-  if [[ $found -eq 0 ]]; then
-    echo "# no orphans — everything installed via a tool manager is declared"
-  fi
   echo ""
 }

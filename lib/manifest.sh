@@ -81,6 +81,11 @@ manifest_lines() {
         # everything after `post` is the command line
         printf '%s\t%s\n' "$section" "$(echo "$a $b $c $rest" | sed 's/[[:space:]]*$//')"
         ;;
+      ignore)
+        # a command deliberately NOT managed here — project-scoped tools, one-offs.
+        # Records the decision so `make status` stops reporting it as an orphan.
+        printf '%s\t%s\n' "$section" "$a"
+        ;;
     esac
   done < "$MANIFEST_FILE"
 }

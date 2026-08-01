@@ -70,7 +70,11 @@ Providers: `pkg` (system package manager), `mise`, `npm`, `uv`, `cargo`, and
 `make adopt <command>` writes the line for you — it resolves the provider and the
 package name, which is the part that's easy to get wrong (`rg` is `ripgrep`, `fd`
 is `fd-find`, `prettierd` is `@fsouza/prettierd`). It prints rather than edits;
-choosing the section is yours.
+choosing the section is yours. There's no bulk mode: nothing can tell a dotfiles
+dependency from a project-scoped tool except you.
+
+A tool that's installed but deliberately not managed here gets an `ignore` line,
+which keeps `make status` from reporting it as an orphan forever.
 
 Three rules, each of which exists because breaking it caused a real bug here:
 

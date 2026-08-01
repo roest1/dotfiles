@@ -38,6 +38,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Regression guard: ARGS was once a blocklist, so any goal not in it got a
+      # stub rule that silently overrode the real target — `make help` printed
+      # "overriding recipe for target 'help'" and ran the wrong recipe.
+      - name: No target overrides its own recipe
+        run: |
+          fail=0
+          for t in help sections status check test sync link adopt; do
+            if make $t 2>&1 | grep -qE "warning: (overriding|ignoring old) recipe"; then
+              echo "make $t triggers a recipe override"; fail=1
+            fi
+          done
+          # section args must still be accepted, and still not warn
+          if make check nvim 2>&1 | grep -qE "warning:"; then
+            echo "make check nvim warns"; fail=1
+          fi
+          exit $fail
+
       - name: Sections are discoverable
         run: |
           source lib/manifest.sh

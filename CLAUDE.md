@@ -35,6 +35,7 @@ make link               # symlinks only: no sudo, no network
 make check              # verify enabled tools are present
 make status             # sync status: declared vs. actual (drift detection)
 make adopt <cmd>        # print a deps.conf line, provider + package resolved
+                        # (no bulk mode: only you can vet what belongs here)
 make test               # Lua unit tests (no plugins, no network)
 ```
 

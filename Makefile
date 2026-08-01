@@ -29,10 +29,23 @@ DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && p
 # Sections come from the manifest, not from this file.
 SECTIONS := $(shell sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/\1/p' $(DOTFILES_DIR)/deps.conf)
 
-# Anything after the goal on the command line is treated as section names
-# (`make install nvim`) rather than as targets to build.
-ARGS := $(filter-out install link check status test adopt,$(MAKECMDGOALS))
+# Section names passed on the command line (`make install nvim`) are arguments,
+# not targets, so they get a no-op rule to stop make complaining.
+#
+# This MUST be an allowlist of real section names, not a blocklist of known
+# targets: with filter-out, every goal that wasn't listed — help, sync, shell,
+# update, sections — got a stub rule that silently overrode the real one, which
+# is why `make help` printed "overriding recipe for target 'help'".
+ARGS := $(filter $(SECTIONS),$(MAKECMDGOALS))
 $(eval $(ARGS):;@:)
+
+# `adopt` is the exception: its arguments are command names, not sections, so
+# they can't come from the allowlist above. Scope the catch-all to the case
+# where adopt is the goal, so arbitrary words can never stub a real target.
+ifeq (adopt,$(firstword $(MAKECMDGOALS)))
+  ADOPT_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(ADOPT_ARGS):;@:)
+endif
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
@@ -72,9 +85,9 @@ check: ## Verify enabled tools are present (optionally: make check <section>...)
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
 
-adopt: ## Print deps.conf lines for a command (or, with no args, for orphans)
+adopt: ## Print a deps.conf line for a command — provider + package resolved
 	@source "$(DOTFILES_DIR)/lib/adopt.sh" && \
-		if [ -n "$(ARGS)" ]; then adopt_tool $(ARGS); else adopt_orphans; fi
+		adopt_tool $(ADOPT_ARGS)
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
