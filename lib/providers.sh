@@ -58,6 +58,15 @@ _provider_try() {
     uv)    uv_install    "$cmd" "$pkg" ;;
     cargo) cargo_install "$cmd" "$pkg" ;;
     mise)  mise_install  "$cmd" "$pkg" ;;
+    manual)
+      # Not installable from here — it means "an official installer or a
+      # hand-extracted build is an acceptable source for this tool". Declaring
+      # it keeps `make status` honest: zoxide from its curl installer and
+      # wezterm extracted into ~/.local are correct states, not drift. The
+      # actual install lives in the section's deps.sh escape hatch.
+      echo "  ↷  $cmd is provided manually — see the section's deps.sh"
+      return 1
+      ;;
     *)
       echo "  ❌ unknown provider '$provider' for $cmd (check deps.conf)"
       return 1

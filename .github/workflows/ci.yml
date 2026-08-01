@@ -51,7 +51,7 @@ jobs:
           while IFS=$'\t' read -r section provider cmd pkg; do
             for p in ${provider//||/ }; do
               case "$p" in
-                pkg|npm|uv|cargo|mise) ;;
+                pkg|npm|uv|cargo|mise|manual) ;;
                 *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
               esac
             done
@@ -65,6 +65,16 @@ jobs:
             [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
           done < <(manifest_lines link)
           exit $bad
+
+      - name: Links report in sync right after `make link`
+        run: |
+          make link
+          source lib/status.sh
+          # Only the link half — tools legitimately aren't installed in this job.
+          status_links
+          if [ "$STATUS_DRIFT" -ne 0 ]; then
+            echo "links drifted immediately after make link"; exit 1
+          fi
 
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.

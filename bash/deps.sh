@@ -30,3 +30,11 @@ fi
 if command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
   ensure_symlink "batcat" "bat"
 fi
+
+# zoxide: Fedora packages it, base RHEL does not. The manifest declares `pkg`
+# because that's right nearly everywhere; this catches the case where the
+# package genuinely doesn't exist. Runs only if the providers already failed.
+if ! command -v zoxide >/dev/null 2>&1; then
+  echo "  ➡️  zoxide not packaged here — using the official installer..."
+  curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+fi

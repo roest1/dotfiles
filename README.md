@@ -33,6 +33,7 @@ post  make -C nvim sync
 | `make install nvim` | one section (repeatable: `make install bash nvim`) |
 | `make link` | symlinks only — no sudo, no network, nothing downloaded |
 | `make check` | verify what's enabled is actually present |
+| `make status` | **sync status** — is the machine what `deps.conf` says? |
 | `make sections` | list sections |
 
 Sections are named after the program, so there's nothing to name: `[bash]`,
@@ -70,13 +71,43 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 | `npm`    | `npm -g` (needs node) |
 | `uv`     | Python tools (replaces pip; same vendor as ruff) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
+| `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
 
 ```conf
 tool  pkg||cargo  eza     # distro package if it exists, else compile
 ```
 
-`[bash]` is deliberately pure `pkg`, so a locked-down machine can install the
-whole shell without mise, node, or any curl-piped installer.
+`[bash]` is near-pure `pkg`, so a locked-down machine can install the whole shell
+without mise, node, or a curl-piped installer.
+
+### Drift
+
+`make check` only asks "does this command exist," which turns out to be a weak
+question — it happily reports ok for a tool installed by a completely different
+provider than the manifest declares. `make status` asks the stronger one, in the
+shape ArgoCD uses: **declared state vs. live machine.**
+
+```
+[nvim] tools
+  ✓ tree-sitter    pkg
+  ✗ stylua         declared mise   actual cargo   ~/.cargo/bin/stylua
+```
+
+It checks three things:
+
+- **links** — is `~/.bashrc` a symlink into *this* repo, or a stale backup or a
+  hand-edited file?
+- **tools** — was this installed by the provider the manifest declares?
+  Provenance comes from asking `rpm`/`dpkg`/`brew`/`mise`/`uv` directly, not
+  from guessing at the path — `~/.local/bin` is genuinely ambiguous between a uv
+  shim, an apt rename symlink, and a hand-dropped binary.
+- **orphans** — installed via a tool manager but absent from the manifest.
+  Informational: it answers "what would I lose rebuilding this machine from
+  `deps.conf` alone?"
+
+Drift matters because a manifest that describes a machine you don't have
+produces a *different* machine when you clone it somewhere fresh — which is the
+one thing this repo exists to get right.
 
 ## Layout
 

@@ -33,13 +33,23 @@ make install            # everything enabled
 make install nvim       # one section
 make link               # symlinks only: no sudo, no network
 make check              # verify enabled tools are present
+make status             # sync status: declared vs. actual (drift detection)
 ```
+
+`make check` asks "does this command exist." `make status` asks "is this machine
+what the manifest says" — link targets, per-tool provenance, and orphans. Prefer
+`status` when the question is whether the repo is still telling the truth.
 
 When adding a tool, add a `tool` line to the right section. **Don't add install logic** —
 `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`,
 `npm_install`, `uv_install`, `mise_install`, `cargo_install`, `ensure_symlink`), and
 `lib/providers.sh` dispatches to it. Every helper short-circuits on `command -v`, which is
 what makes overlapping tools (`rg`, `fd` appear in both `[bash]` and `[nvim]`) safe.
+
+There's also a `manual` provider. It installs nothing — it declares that an official
+installer or an extracted build is an acceptable source, so `make status` doesn't flag a
+correct state as drift (zoxide's curl installer, wezterm extracted into `~/.local`, bun's
+own installer). The actual install goes in the section's `deps.sh`.
 
 Prefer `pkg` for anything the distro ships; `mise` for tools distros don't reliably carry;
 `||` chains rather than conditionals. **Never key provider choice on `$PM`** — that's a
