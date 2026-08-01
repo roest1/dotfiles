@@ -39,19 +39,11 @@ SECTIONS := $(shell sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/\1/p' $(DOTFILES_DIR)/dep
 ARGS := $(filter $(SECTIONS),$(MAKECMDGOALS))
 $(eval $(ARGS):;@:)
 
-# `adopt` is the exception: its arguments are command names, not sections, so
-# they can't come from the allowlist above. Scope the catch-all to the case
-# where adopt is the goal, so arbitrary words can never stub a real target.
-ifeq (adopt,$(firstword $(MAKECMDGOALS)))
-  ADOPT_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
-  $(eval $(ADOPT_ARGS):;@:)
-endif
-
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status adopt sync test shell update sections $(SECTIONS)
+.PHONY: help install link check status sync test shell update sections $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -84,10 +76,6 @@ check: ## Verify enabled tools are present (optionally: make check <section>...)
 
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
-
-adopt: ## Print a deps.conf line for a command — provider + package resolved
-	@source "$(DOTFILES_DIR)/lib/adopt.sh" && \
-		adopt_tool $(ADOPT_ARGS)
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync

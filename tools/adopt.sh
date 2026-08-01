@@ -1,33 +1,37 @@
 #!/usr/bin/env bash
-# ─── Manifest line generator ─────────────────────────────────────────────────
+# ─── Authoring aid: print a deps.conf line for a command ─────────────────────
 #
-# Writes deps.conf lines for you. Deliberately NOT a "scan the machine and
-# generate everything" tool: this box has 2203 installed packages and dnf5 no
-# longer exposes which were explicitly asked for, so that flavour would emit a
-# firehose you'd have to hand-filter — worse than typing the line yourself.
+#   ./tools/adopt.sh rg fd prettierd
 #
-# It does the parts that are actually fiddly and error-prone:
+#   tool  pkg          rg           ripgrep
+#   tool  pkg          fd           fd-find
+#   tool  npm          prettierd    @fsouza/prettierd
 #
-#   * which provider owns this command (asks rpm/dpkg/brew/mise/uv, not the path)
+# Deliberately NOT a make target. Everything in the Makefile is about
+# *operating* the repo — install, link, check, status, test. This is about
+# *editing* it: an occasional aid for writing a manifest line, not part of any
+# lifecycle. It was also the only target whose arguments weren't section names,
+# which forced a special case in the Makefile for no real benefit.
+#
+# What it's for: the two parts of a manifest line that are easy to get wrong.
+#
+#   * which provider owns a command (asks rpm/dpkg/brew/mise/uv, not the path)
 #   * the package name, which often differs from the command:
 #       rg -> ripgrep   fd -> fd-find   nvim -> neovim
 #       prettierd -> @fsouza/prettierd  (scoped npm packages)
 #
-#   adopt_tool <cmd>...   emit a line for each named command
+# You name the commands. There is no "adopt everything installed" mode: nothing
+# here can tell a dotfiles dependency from a project-scoped tool, so bulk output
+# would be a list to vet by hand while nudging you to declare things you don't
+# want rebuilt on every machine.
 #
-# You name the commands. There is no bulk mode on purpose: a tool manager can't
-# tell a dotfiles dependency from a project-scoped one, so "adopt everything
-# installed" would just be a list to vet by hand — while nudging you to declare
-# things you don't want rebuilt everywhere. `make status` reports orphans; the
-# decision (adopt, or record an `ignore` line) stays yours.
-#
-# Output goes to stdout as pasteable manifest lines. It never edits deps.conf —
-# where a tool belongs is a judgement call, and silently appending to the file
-# that defines every machine you own is not a thing a script should do.
+# Prints to stdout; never edits deps.conf. Which section a tool belongs in is a
+# judgement call, and silently appending to the file that defines every machine
+# you own is not a thing a script should do.
 
 HERE_ADOPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=./status.sh
-source "$HERE_ADOPT/status.sh"
+# shellcheck source=../lib/status.sh
+source "$HERE_ADOPT/../lib/status.sh"
 
 # Package name for a command, given its provider. Falls back to the command
 # name, which is correct more often than not.
@@ -103,16 +107,14 @@ _adopt_line() {
 adopt_tool() {
   if [[ $# -eq 0 ]]; then
     cat >&2 <<'EOF'
-usage: make adopt <command>...
+usage: ./tools/adopt.sh <command>...
 
-Name the commands you want declared. There is deliberately no "adopt everything
-installed" mode: a tool manager can't tell a dotfiles dependency from a
-project-scoped one, so bulk output would be a list you'd have to vet by hand
-anyway — and it would nudge you toward declaring things you don't want rebuilt
-on every machine.
+Name the commands you want declared, then paste the output into the right
+section of deps.conf.
 
-`make status` reports orphans (installed, not declared). Decide per tool:
-adopt it here, or record the decision with an `ignore` line in deps.conf.
+There is no "adopt everything installed" mode: nothing here can tell a dotfiles
+dependency from a project-scoped tool, so bulk output would be a list to vet by
+hand — while nudging you to declare things you don't want rebuilt everywhere.
 EOF
     return 1
   fi
@@ -122,3 +124,8 @@ EOF
   for c in "$@"; do _adopt_line "$c" || true; done
   echo ""
 }
+
+# Runnable directly; still sourceable if you want the functions.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  adopt_tool "$@"
+fi

@@ -50,7 +50,7 @@ Toggling is commenting. There's no flag, no profile, no `WITHOUT=`.
 | `lib/pkg.sh` | the only implementation of "install a tool" |
 | `lib/run.sh` | runs a section's tools, `post` steps, and platform fixups |
 | `lib/status.sh` | drift detection — declared vs. actual |
-| `lib/adopt.sh` | generates manifest lines (`make adopt`) |
+| `tools/adopt.sh` | authoring aid: prints a manifest line for a command |
 | `<section>/deps.sh` | optional escape hatch for genuinely conditional platform logic |
 
 `nvim/` came from a separate repo (merged with full history) and keeps its own
@@ -67,14 +67,10 @@ tool  <provider>  <command>  [package]     # package defaults to command
 Providers: `pkg` (system package manager), `mise`, `npm`, `uv`, `cargo`, and
 `manual`. Use `||` for fallbacks: `pkg||cargo eza`.
 
-`make adopt <command>` writes the line for you — it resolves the provider and the
-package name, which is the part that's easy to get wrong (`rg` is `ripgrep`, `fd`
-is `fd-find`, `prettierd` is `@fsouza/prettierd`). It prints rather than edits;
-choosing the section is yours. There's no bulk mode: nothing can tell a dotfiles
-dependency from a project-scoped tool except you.
-
-A tool that's installed but deliberately not managed here gets an `ignore` line,
-which keeps `make status` from reporting it as an orphan forever.
+`./tools/adopt.sh <command>` writes the line for you — it resolves the provider
+and the package name, which is the part that's easy to get wrong (`rg` is
+`ripgrep`, `fd` is `fd-find`, `prettierd` is `@fsouza/prettierd`). It prints
+rather than edits; choosing the section is yours.
 
 Three rules, each of which exists because breaking it caused a real bug here:
 
@@ -110,10 +106,10 @@ make status    # declared state vs. actual machine
 And lint, which CI enforces:
 
 ```sh
-shellcheck --severity=warning bootstrap.sh install.sh lib/*.sh */deps.sh
+shellcheck --severity=warning bootstrap.sh install.sh lib/*.sh */deps.sh tools/*.sh
 # no shellcheck? use the container:
 podman run --rm -v "$PWD":/mnt:Z -w /mnt docker.io/koalaman/shellcheck:stable \
-  --severity=warning bootstrap.sh install.sh lib/*.sh */deps.sh
+  --severity=warning bootstrap.sh install.sh lib/*.sh */deps.sh tools/*.sh
 ```
 
 CI additionally runs `make link` on Ubuntu and macOS, full installs across

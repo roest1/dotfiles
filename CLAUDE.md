@@ -34,14 +34,18 @@ make install nvim       # one section
 make link               # symlinks only: no sudo, no network
 make check              # verify enabled tools are present
 make status             # sync status: declared vs. actual (drift detection)
-make adopt <cmd>        # print a deps.conf line, provider + package resolved
-                        # (no bulk mode: only you can vet what belongs here)
+./tools/adopt.sh <cmd>  # print a deps.conf line, provider + package resolved
 make test               # Lua unit tests (no plugins, no network)
 ```
 
 `make check` asks "does this command exist." `make status` asks "is this machine
-what the manifest says" — link targets, per-tool provenance, and orphans. Prefer
-`status` when the question is whether the repo is still telling the truth.
+what the manifest says" — link targets and per-tool provenance. Prefer `status`
+when the question is whether the repo is still telling the truth.
+
+It does not report "installed but not declared". That list can't be computed
+correctly — nothing distinguishes a dotfiles dependency from a project-scoped
+tool — and suppressing it required naming unrelated projects in `deps.conf`.
+The repo describes itself and nothing else; don't reintroduce an ignore list.
 
 When adding a tool, add a `tool` line to the right section. **Don't add install logic** —
 `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`,

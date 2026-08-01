@@ -11,7 +11,13 @@
 #
 #   links     is ~/.bashrc a symlink into THIS repo, or something else?
 #   tools     was this installed by the provider the manifest declares?
-#   orphans   is something installed that the manifest doesn't know about?
+#
+# Deliberately does NOT report "installed but not declared". Nothing here can
+# tell a dotfiles dependency from a project-scoped tool, so that list is mostly
+# noise — and suppressing the noise meant naming unrelated projects inside the
+# file that defines every machine you own. This repo describes itself, nothing
+# else. Ask `uv tool list` / `cargo install --list` directly on the rare
+# occasions you want that inventory.
 #
 # Provenance is answered by asking each package manager rather than guessing from
 # the path, because $HOME/.local/bin is genuinely ambiguous — a uv shim, an apt
@@ -133,56 +139,6 @@ status_tools() {
   done < <(manifest_lines tool "$@")
 }
 
-# ── Orphans ──────────────────────────────────────────────────────────────────
-#
-# Installed through a tool manager but absent from the manifest. Informational,
-# not drift: plenty of legitimate things live outside this repo. It's here to
-# answer "what would I lose rebuilding this machine from deps.conf alone?"
-status_orphans() {
-  local declared ignored
-  declared="$(manifest_lines tool | cut -f3 | sort -u)"
-  # Commands explicitly marked as not-ours. A tool manager can't tell a dotfiles
-  # dependency from a project-scoped one — only you can — so `ignore` lines in
-  # deps.conf record that judgement instead of re-reporting it every run.
-  ignored="$(manifest_lines ignore | cut -f2 | sort -u)"
-
-  echo ""
-  echo "[orphans] installed but not declared"
-
-  local found=0
-  _orphan_report() {
-    local label="$1"; shift
-    local item
-    for item in "$@"; do
-      [[ -z "$item" ]] && continue
-      grep -qxF "$item" <<<"$declared" && continue
-      grep -qxF "$item" <<<"$ignored" && continue
-      printf "  ? %-14s via %s\n" "$item" "$label"
-      found=1
-    done
-  }
-
-  if command -v cargo >/dev/null 2>&1; then
-    mapfile -t c < <(cargo install --list 2>/dev/null | grep -E '^[a-zA-Z]' | awk '{print $1}')
-    _orphan_report cargo "${c[@]}"
-  fi
-  if command -v uv >/dev/null 2>&1; then
-    mapfile -t u < <(uv tool list 2>/dev/null | grep -E '^[a-zA-Z]' | awk '{print $1}')
-    _orphan_report uv "${u[@]}"
-  fi
-  if command -v mise >/dev/null 2>&1; then
-    mapfile -t m < <(mise ls --installed 2>/dev/null | awk '{print $1}' | grep -E '^[a-zA-Z]')
-    _orphan_report mise "${m[@]}"
-  fi
-  if command -v npm >/dev/null 2>&1; then
-    mapfile -t n < <(npm ls -g --depth=0 --parseable 2>/dev/null | tail -n +2 | xargs -r -n1 basename)
-    _orphan_report "npm -g" "${n[@]}"
-  fi
-
-  [[ $found -eq 0 ]] && echo "  none"
-  return 0
-}
-
 # ── Everything ───────────────────────────────────────────────────────────────
 status_all() {
   STATUS_DRIFT=0
@@ -191,7 +147,6 @@ status_all() {
   echo "==========================================="
   status_links "$@"
   status_tools "$@"
-  status_orphans
 
   echo ""
   echo "==========================================="

@@ -35,7 +35,6 @@ post  make -C nvim sync
 | `make check` | verify what's enabled is actually present |
 | `make status` | **sync status** — is the machine what `deps.conf` says? |
 | `make test` | Lua unit tests (no plugins, no network) |
-| `make adopt <cmd>` | print a ready-to-paste `deps.conf` line for a command |
 | `make sections` | list sections |
 
 Sections are named after the program, so there's nothing to name: `[bash]`,
@@ -103,9 +102,11 @@ It checks three things:
   Provenance comes from asking `rpm`/`dpkg`/`brew`/`mise`/`uv` directly, not
   from guessing at the path — `~/.local/bin` is genuinely ambiguous between a uv
   shim, an apt rename symlink, and a hand-dropped binary.
-- **orphans** — installed via a tool manager but absent from the manifest.
-  Informational: it answers "what would I lose rebuilding this machine from
-  `deps.conf` alone?"
+
+It deliberately does **not** report "installed but not declared." Nothing here
+can tell a dotfiles dependency from a project-scoped tool, so that list is mostly
+noise — and silencing the noise meant naming unrelated projects inside the file
+that defines every machine you own. This repo describes itself, nothing else.
 
 Drift matters because a manifest that describes a machine you don't have
 produces a *different* machine when you clone it somewhere fresh — which is the
@@ -113,11 +114,11 @@ one thing this repo exists to get right.
 
 ### Writing a manifest line
 
-`make adopt <command>` figures out the parts that are easy to get wrong — which
-provider owns it, and the package name when it differs from the command:
+`./tools/adopt.sh <command>` figures out the parts that are easy to get wrong —
+which provider owns it, and the package name when it differs from the command:
 
 ```
-$ make adopt rg fd prettierd stylua wezterm
+$ ./tools/adopt.sh rg fd prettierd stylua wezterm
 tool  pkg          rg           ripgrep
 tool  pkg          fd           fd-find
 tool  npm          prettierd    @fsouza/prettierd
@@ -125,27 +126,13 @@ tool  cargo        stylua
 tool  pkg||manual  wezterm      # installed outside any manager (~/.local/bin/wezterm)
 ```
 
-You name the commands. There's **no bulk mode on purpose**: a package manager
-can't tell a dotfiles dependency from a project-scoped one — a `uv` tool
-belonging to one project looks identical to a tool you want on every machine —
-so "adopt everything installed" would just be a list to vet by hand while
-nudging you to declare things you don't want rebuilt.
+You name the commands. There's **no bulk mode on purpose**: nothing can tell a
+dotfiles dependency from a project-scoped tool — a `uv` tool belonging to one
+project looks identical to one you want on every machine. It prints; it never
+edits `deps.conf`.
 
-It prints; it never edits `deps.conf`.
-
-### Orphans, and saying "not ours"
-
-`make status` reports **orphans** — installed via a tool manager, absent from the
-manifest. That's the list of things you'd lose rebuilding from `deps.conf` alone.
-Each one is a decision: adopt it, or record that it isn't ours:
-
-```conf
-ignore  voicenote      # uv tool, scoped to the jarvis voice experiments
-```
-
-An `ignore` line keeps the judgement in the file rather than in your head, and
-stops `make status` re-reporting it every run. Rebuilding a machine from the
-manifest won't install ignored tools.
+It's a script rather than a make target on purpose too: every `make` target is
+about *operating* this repo, and this is about *editing* it.
 
 ## Layout
 

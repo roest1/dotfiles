@@ -29,7 +29,7 @@ jobs:
           shellcheck --severity=warning \
             bootstrap.sh install.sh \
             lib/*.sh \
-            */deps.sh
+            */deps.sh tools/*.sh
 
   # ── Manifest sanity ────────────────────────────────────────────────────────
   # Cheap guard against a typo in deps.conf taking down every other job.
@@ -44,7 +44,7 @@ jobs:
       - name: No target overrides its own recipe
         run: |
           fail=0
-          for t in help sections status check test sync link adopt; do
+          for t in help sections status check test sync link; do
             if make $t 2>&1 | grep -qE "warning: (overriding|ignoring old) recipe"; then
               echo "make $t triggers a recipe override"; fail=1
             fi
@@ -87,9 +87,9 @@ jobs:
 
       # A generator whose output the parser rejects is worse than no generator,
       # so assert the round trip rather than just that it runs.
-      - name: "`make adopt` emits lines the parser accepts"
+      - name: "tools/adopt.sh emits lines the parser accepts"
         run: |
-          make adopt git make tar > /tmp/adopt.txt
+          ./tools/adopt.sh git make tar > /tmp/adopt.txt
           grep -q '^tool ' /tmp/adopt.txt || { echo "adopt emitted no tool lines"; cat /tmp/adopt.txt; exit 1; }
           mkdir -p /tmp/rt
           { echo "[roundtrip]"; grep '^tool ' /tmp/adopt.txt; } > /tmp/rt/deps.conf
