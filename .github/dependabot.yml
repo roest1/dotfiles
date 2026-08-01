@@ -1,0 +1,26 @@
+version: 2
+
+# Only one ecosystem is listed because only one is visible to Dependabot.
+#
+# This repo has no package.json, Cargo.toml, requirements.txt or go.mod — its
+# real dependency surface is deps.conf (a custom format) and nvim/lazy-lock.json
+# (lazy.nvim's lockfile), and Dependabot understands neither. Nothing here will
+# ever warn you that a CLI tool or a neovim plugin has a CVE. That's a known,
+# accepted cost of the manifest design, not an oversight.
+#
+# What IS worth automating: the GitHub Actions versions. They rot on their own
+# schedule — actions/checkout@v4 started emitting a Node.js 20 deprecation
+# warning on every run and had to be bumped by hand. This catches the next one.
+#
+# Monthly, not weekly: there are two actions in one workflow. Weekly would be
+# noise for a repo this size.
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
