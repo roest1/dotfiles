@@ -112,12 +112,21 @@ jobs:
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
   link-only:
-    name: link only (${{ matrix.os }})
+    # The name is a stable literal, NOT ${{ matrix.os }}. Required status checks
+    # match by exact name: if the name embedded the runner label and that label
+    # ever changed (pinning to ubuntu-24.04, GitHub retiring a label), the
+    # required check would never report — and a check that never reports doesn't
+    # fail a PR, it blocks it indefinitely waiting for a status that won't come.
+    name: link only (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: macos
+            os: macos-latest
     steps:
       - uses: actions/checkout@v7
       - name: make link
