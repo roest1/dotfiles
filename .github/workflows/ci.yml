@@ -180,17 +180,13 @@ jobs:
             echo "bash section incomplete"; exit 1
           fi
 
-  # ── node and npm stay gone ─────────────────────────────────────────────────
-  # This job used to toggle a node block in deps.conf. That block no longer
-  # exists — node was removed entirely — so the old sed matched nothing and the
-  # job passed vacuously, which is worse than deleting it: a green check that
-  # asserts nothing.
-  #
-  # Its job now is to keep node out. The name is unchanged on purpose: it is a
-  # required status check, and renaming it would leave the ruleset waiting
-  # forever on a check that never reports.
-  no-node:
-    name: nvim without node
+  # ── the toolchain is bun and uv, and stays that way ────────────────────────
+  # Not "nvim without node" any more — nvim never wants node now, so there is no
+  # special mode to exercise. What needs guarding is the invariant: that nothing
+  # quietly reintroduces node, npm, pip or a shim, and that the servers really do
+  # run under bun.
+  toolchain:
+    name: bun-only toolchain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -250,20 +246,23 @@ jobs:
           grep -q "ALL PASS" /tmp/lsp.txt
 
       # Integration signal, deliberately advisory: this boots the real plugin
-      # stack, so a failure here is as likely to be a flaky clone or an upstream
-      # plugin change as a bug in this repo. The assertion above is the one that
-      # gates the build.
-      - name: Smoke-start nvim with node hidden (advisory)
+      # stack, so a failure is as likely to be a flaky clone or an upstream
+      # plugin change as a bug here. The steps above are what gate the build.
+      #
+      # No PATH stripping — that made sense when node-absent was a special case.
+      # It is now the only case, so this just checks the editor boots and every
+      # server is registered.
+      - name: nvim boots and registers its servers (advisory)
         continue-on-error: true
         run: |
           make link nvim
-          mkdir -p /tmp/nonode
-          for b in nvim git sh bash env grep sed awk cat ls mkdir rm ln readlink \
-                   dirname basename uname find timeout tr head tail sort cc gcc make; do
-            p=$(command -v $b 2>/dev/null) && ln -sf "$p" "/tmp/nonode/$b"
+          timeout 600 nvim --headless -c "lua
+            local names = vim.tbl_keys(require('external.lsp_servers').build())
+            table.sort(names)
+            print('configured: ' .. table.concat(names, ', '))
+            print('mason loaded: ' .. tostring(package.loaded['mason'] ~= nil))
+          " -c "qa!" 2>&1 | tee /tmp/nvim.txt
+          grep -q "mason loaded: false" /tmp/nvim.txt
+          for s in clangd lua_ls lemminx ts_ls cssls html jsonls yamlls bashls; do
+            grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
           done
-          ! PATH=/tmp/nonode command -v node
-          PATH=/tmp/nonode timeout 600 nvim --headless \
-            "+lua print('node=' .. vim.fn.executable('node'))" +qa 2>&1 | tee /tmp/nvim.txt
-          grep -q "node=0" /tmp/nvim.txt
-          grep -qi "skipping JS-based language servers" /tmp/nvim.txt
