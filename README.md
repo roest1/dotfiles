@@ -53,14 +53,14 @@ dependency." So granularity goes down to the individual tool:
 
 Scope the one-liner the same way: `DOTFILES_TARGET=bash curl ... | bash`.
 
-**The node case is worth knowing before you need it.** Commenting out the node
-block in `[nvim]` leaves a working editor — `lsp.lua` drops the JS-based
-language servers when `node` is absent, so you keep clangd (C/C++), lua_ls and
-lemminx, and lose ts/css/html/json/yaml/bash plus prettier and eslint_d. Those
-six are JavaScript programs installed by Mason, which shells out to `npm`
-specifically. Bun *can* run them — that part is verified — but it can't install
-them, and Mason's shims invoke `node` by name. Good subset for C++/Lua work; not
-a subset for web work. CI exercises this path on every push.
+**No node, npm or pip anywhere.** The toolchain is bun and uv. The six
+JavaScript language servers are declared in `nvim/lsp-servers/package.json`,
+installed by `bun install`, and run as `bun <path>` — with no `node` shim, since
+aliasing node to bun would make any incompatibility surface as an error blaming
+the wrong tool. Mason was dropped because it installs npm packages by shelling
+out to the `npm` binary, which only exists if node does. CI asserts on every
+push that node, npm and pip stay out of the manifest, and that all six servers
+complete a real LSP handshake with node absent from `$PATH`.
 
 ### Providers
 

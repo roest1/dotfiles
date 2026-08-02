@@ -126,10 +126,14 @@ Please don't break these. Each is load-bearing:
   installer.** It's the section that has to work on a locked-down box.
 - **The bootstrap must work on a bare machine.** Nothing on the critical path may
   assume a runtime that `deps.conf` hasn't installed yet.
-- **`lsp.lua` must keep the node gate.** Six language servers are JavaScript and
-  can't run without a JS runtime; dropping them when `node` is absent is what
-  makes a node-free install produce a working editor instead of Mason failing on
-  every startup. `nvim/tests/node_gate_spec.lua` covers it.
+- **The JS language servers must keep their `bun` cmd prefix.** Six servers are
+  npm packages whose bin shims carry `#!/usr/bin/env node`. Running them as
+  `bun <path>` is the entire reason this repo never installs node. Lose that
+  prefix and they break only on machines without node — the exact machine the
+  design exists for. `nvim/tests/lsp_servers_spec.lua` asserts it, and
+  `nvim/lsp-servers/verify.ts` proves it with a real LSP handshake.
+- **No `node` shim, ever.** Aliasing `node` to bun would make any
+  incompatibility surface as an error blaming the wrong tool.
 - **`wezterm/wezterm.lua` declares a `mux` unix domain** that an external project
   connects to by name. Don't replace it with a stock config.
 

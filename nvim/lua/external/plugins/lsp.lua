@@ -14,23 +14,18 @@ return {
   },
   {
     -- Main LSP Configuration
+    --
+    -- nvim-lspconfig is kept for its per-server defaults (root markers,
+    -- filetypes, default cmd) which it ships under `lsp/` for Neovim's native
+    -- API. It is a config library here, not an installer.
+    --
+    -- Mason is deliberately absent. It installs npm packages by shelling out to
+    -- the `npm` binary, which only exists if node is installed — and node is the
+    -- one thing this repo refuses to install. Servers now come from deps.conf:
+    -- clangd via dnf, lua_ls via mise, lemminx fetched by nvim/deps.sh, and the
+    -- six JS servers from nvim/lsp-servers via bun. See lua/external/lsp_servers.lua.
     'neovim/nvim-lspconfig',
     dependencies = {
-      -- Automatically install LSPs and related tools to stdpath for Neovim
-      -- Mason must be loaded before its dependents so we need to set it up here.
-      -- NOTE: `opts = {}` is the same as calling `require('mason').setup({})`
-      {
-        'mason-org/mason.nvim',
-        opts = {
-          registries = {
-            'github:mason-org/mason-registry',
-            'github:Crashdummyy/mason-registry',
-          },
-        },
-      },
-      'mason-org/mason-lspconfig.nvim',
-      'WhoIsSethDaniel/mason-tool-installer.nvim',
-
       -- Useful status updates for LSP.
       { 'j-hui/fidget.nvim', opts = {} },
 
@@ -57,8 +52,9 @@ return {
       --  - Symbol Search
       --  - and more!
       --
-      -- Thus, Language Servers are external tools that must be installed separately from
-      -- Neovim. This is where `mason` and related plugins come into play.
+      -- Thus, Language Servers are external tools that must be installed separately
+      -- from Neovim. Here they come from deps.conf rather than from inside the
+      -- editor — see lua/external/lsp_servers.lua.
       --
       -- If you're wondering about lsp vs treesitter, you can check out the wonderfully
       -- and elegantly composed help section, `:help lsp-vs-treesitter`
@@ -198,140 +194,29 @@ return {
       local ok, blink = pcall(require, 'blink.cmp')
       local capabilities = ok and blink.get_lsp_capabilities() or vim.lsp.protocol.make_client_capabilities()
 
-      -- Enable the following language servers
-      --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
-      --
-      --  Add any additional override configuration in the following tables. Available keys are:
-      --  - cmd (table): Override the default command used to start the server
-      --  - filetypes (table): Override the default list of associated filetypes for the server
-      --  - capabilities (table): Override fields in capabilities. Can be used to disable certain LSP features.
-      --  - settings (table): Override the default settings passed when initializing the server.
-      --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
-      local servers = {
-        -- See `:help lspconfig-all` for a list of all the pre-configured LSPs
+      -- Server definitions live in lua/external/lsp_servers.lua so they can be
+      -- unit-tested with `nvim --clean` (no plugins, no network). That module
+      -- also builds the `cmd` for the bun-run servers.
+      local lsp_servers = require 'external.lsp_servers'
+      local servers = lsp_servers.build()
 
-        -- C/C++
-        clangd = {},
-
-        -- Python
-        -- pyright = {},
-
-        -- C# -- Using Roslyn plugin
-
-        -- TypeScript/JavaScript
-        ts_ls = {},
-
-        -- CSS
-        cssls = {},
-
-        -- HTML
-        html = {
-          filetypes = { 'html' },
-        },
-
-        -- XML
-        lemminx = {
-          filetypes = { 'xml', 'xsd', 'xsl', 'xslt', 'svg' },
-          settings = {
-            xml = {
-              server = {
-                workDir = '~/.cache/lemminx',
-              },
-              format = {
-                enabled = true,
-                splitAttributes = false,
-              },
-              validation = {
-                enabled = true,
-              },
-              completion = {
-                autoCloseTags = true,
-              },
-            },
-          },
-        },
-
-        -- Bash
-        bashls = {},
-
-        -- JSON
-        jsonls = {
-          settings = {
-            json = {
-              validate = { enable = true },
-            },
-          },
-        },
-
-        -- YAML
-        yamlls = {
-          settings = {
-            yaml = {
-              validate = true,
-            },
-          },
-        },
-
-        -- Markdown (optional but useful)
-        -- marksman = {},
-
-        lua_ls = {
-          -- cmd = { ... },
-          -- filetypes = { ... },
-          -- capabilities = {},
-          settings = {
-            Lua = {
-              completion = {
-                callSnippet = 'Replace',
-              },
-              -- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
-              -- diagnostics = { disable = { 'missing-fields' } },
-            },
-          },
-        },
-      }
-
-      -- ── Degrade gracefully without node ──────────────────────────────────
-      -- See lua/external/node_gate.lua for why, and for the unit-testable logic.
-      local node_gate = require 'external.node_gate'
-      local _, dropped = node_gate.apply(servers, vim.fn.executable 'node' == 1)
-      if #dropped > 0 then
-        vim.notify(node_gate.message(dropped), vim.log.levels.WARN)
+      -- Neovim 0.11+ native API: vim.lsp.config() merges over whatever
+      -- nvim-lspconfig ships in `lsp/<name>.lua`, and vim.lsp.enable() starts
+      -- them on the right filetypes. No mason-lspconfig handler indirection.
+      for name, cfg in pairs(servers) do
+        cfg.capabilities = vim.tbl_deep_extend('force', {}, capabilities, cfg.capabilities or {})
+        vim.lsp.config(name, cfg)
       end
+      vim.lsp.enable(vim.tbl_keys(servers))
 
-      -- Ensure the servers and tools above are installed
-      --
-      -- To check the current status of installed tools and/or manually install
-      -- other tools, you can run
-      --    :Mason
-      --
-      -- You can press `g?` for help in this menu.
-      --
-      -- `mason` had to be setup earlier: to configure its options see the
-      -- `dependencies` table for `nvim-lspconfig` above.
-      --
-      -- You can add other tools here that you want Mason to install
-      -- for you, so that they are available from within Neovim.
-      local ensure_installed = vim.tbl_keys(servers or {})
-      vim.list_extend(ensure_installed, {
-        'stylua', -- Used to format Lua code
-      })
-      require('mason-tool-installer').setup { ensure_installed = ensure_installed }
-
-      require('mason-lspconfig').setup {
-        ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
-        automatic_installation = false,
-        handlers = {
-          function(server_name)
-            local server = servers[server_name] or {}
-            -- This handles overriding only values explicitly passed
-            -- by the server configuration above. Useful when disabling
-            -- certain features of an LSP (for example, turning off formatting for ts_ls)
-            server.capabilities = vim.tbl_deep_extend('force', {}, capabilities, server.capabilities or {})
-            require('lspconfig')[server_name].setup(server)
-          end,
-        },
-      }
+      -- If the JS servers were never installed, say so once and usefully rather
+      -- than letting six servers fail to spawn with no explanation.
+      if vim.fn.isdirectory(lsp_servers.js_bin_dir()) == 0 then
+        vim.notify(
+          'JS language servers not installed.\nRun: bun install --cwd ' .. vim.fn.stdpath 'config' .. '/lsp-servers',
+          vim.log.levels.WARN
+        )
+      end
     end,
   },
 }

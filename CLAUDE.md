@@ -71,21 +71,31 @@ the rest — don't force an `if` into the manifest.
 
 ### Why not Nix
 
-Asked and answered — record, so it isn't relitigated by accident. Nix + home-manager
-genuinely solves provider resolution, pinning and provenance, and Fedora packages it with
-`nix-daemon` split out so single-user needs no daemon. It was deferred because:
+Nix + home-manager genuinely solves provider resolution, pinning and provenance, and
+Fedora packages it with `nix-daemon` split out so single-user needs no daemon. It was
+deferred — and one of the three original reasons has since expired, which is worth
+recording rather than leaving a stale justification standing.
 
-1. **Mason keeps the LSP layer imperative regardless.** Six of eight language servers are
-   installed by Mason at runtime via npm. Nix would give reproducible neovim/stylua/ripgrep
-   while the LSP layer stayed mutable and still needed node — most of the learning curve
-   for part of the benefit.
-2. Steep learning curve on the repo that bootstraps every other machine.
-3. `/nix` needs root — exactly the machine class the toggles exist for.
+**No longer true.** The strongest argument was that Mason kept the LSP layer imperative
+regardless, so Nix would buy a reproducible `neovim`/`stylua`/`ripgrep` while six language
+servers stayed mutable and still required node. **Mason is gone.** Every server is declared
+now — `deps.conf` for the native ones, `nvim/lsp-servers/package.json` pinned in `bun.lock`
+for the JS ones. That was the stated condition for revisiting, and it has been met.
 
-**What would change the answer:** dropping Mason for nix-managed LSPs. At that point full
-reproducibility is actually reachable. The hedge is already in place — dependencies are
-*data* in `deps.conf`, so adopting Nix means writing a `nix` provider in
-`lib/providers.sh`, not a rewrite.
+**Still true.**
+
+1. Steep learning curve on the repo that bootstraps every other machine. A half-understood
+   Nix config fails on a fresh machine, which is the worst possible moment to find out.
+2. `/nix` needs root — exactly the machine class `make link` exists for.
+
+**Current honest assessment:** the gap Nix would close is much narrower than it was.
+Versions are pinned in `bun.lock` and by mise, provenance is answerable through
+`make status`, and nothing installs itself imperatively at editor startup any more. Nix
+would still be stricter — a real closure rather than a manifest plus trust — but the
+remaining delta is now smaller than the cost of switching.
+
+The hedge stands: dependencies are *data*, so adopting Nix means writing a `nix` provider
+in `lib/providers.sh`, not a rewrite.
 
 ## Footguns
 
@@ -96,13 +106,15 @@ reproducibility is actually reachable. The hedge is already in place — depende
   cannot be `${EDITOR:-nvim}`: Fedora's `/etc/profile.d/nano-default-editor.sh` sets
   `EDITOR=/usr/bin/nano` first, so a `:-` default silently loses. Per-machine overrides go
   in `~/.bash_roest_local`, sourced immediately after, which wins.
-- **npm is the hard requirement, not node.** Two separable halves, and only one is a real
-  blocker. *Runtime:* bun runs all six JS language servers fine — verified, they start
-  under `bun <server> --stdio`. *Install:* Mason shells out to `npm` specifically with no
-  bun backend, and the shims it writes carry `#!/usr/bin/env node`, so invoking a server by
-  name resolves node regardless. `lsp.lua` drops those servers when `node` is absent so the
-  editor degrades instead of erroring — keep that gate if you touch the servers table; CI
-  asserts it.
+- **No node, npm or pip. Don't reintroduce them.** Mason was removed because it installs
+  npm packages by shelling out to the `npm` binary, which only exists if node does. The six
+  JS language servers now live in `nvim/lsp-servers/package.json`, installed by `bun` and
+  run as `bun <path>` via explicit `cmd` overrides in `lua/external/lsp_servers.lua`.
+  **Never add a `node` shim** — aliasing node to bun makes incompatibilities surface as
+  errors blaming the wrong tool. CI guards both: the manifest may not declare node/npm/pip,
+  and no shim may exist. The JS server args are not uniform (`bash-language-server` wants
+  `start`, not `--stdio`); `nvim/lsp-servers/verify.ts` proves each with a real LSP
+  handshake.
 - **`wezterm/wezterm.lua` is load-bearing beyond wezterm.** It declares the `mux` unix
   domain that the Jarvis sidecar connects to (`JARVIS_WEZTERM_DOMAIN` defaults to `'mux'`
   in `jarvis-ui/server/workerSession.ts`). Don't replace it with a stock config.

@@ -180,46 +180,54 @@ jobs:
             echo "bash section incomplete"; exit 1
           fi
 
-  # ── The node toggle, actually exercised ────────────────────────────────────
-  # Commenting out the node block is the documented escape hatch for a machine
-  # that disallows node. If that produces a broken editor, the toggle is
-  # decorative — so prove it produces a working one.
+  # ── node and npm stay gone ─────────────────────────────────────────────────
+  # This job used to toggle a node block in deps.conf. That block no longer
+  # exists — node was removed entirely — so the old sed matched nothing and the
+  # job passed vacuously, which is worse than deleting it: a green check that
+  # asserts nothing.
+  #
+  # Its job now is to keep node out. The name is unchanged on purpose: it is a
+  # required status check, and renaming it would leave the ruleset waiting
+  # forever on a check that never reports.
   no-node:
     name: nvim without node
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Comment out the node block in deps.conf
+      - name: deps.conf declares no node, npm or pip
         run: |
-          sed -i -E 's/^(tool[[:space:]]+pkg[[:space:]]+node[[:space:]].*)/# \1/' deps.conf
-          sed -i -E 's/^(tool[[:space:]]+npm[[:space:]].*)/# \1/' deps.conf
-          echo "--- remaining nvim tools ---"
-          source lib/manifest.sh && manifest_lines tool nvim
-
-      - name: No npm-provided tool survives the toggle
-        run: |
+          fail=0
           source lib/manifest.sh
-          if manifest_lines tool nvim | grep -qP '\tnpm\t'; then
-            echo "npm tools still enabled after commenting them out"; exit 1
+          # provider column
+          if manifest_lines tool | grep -qP '\tnpm\t'; then
+            echo "npm provider reintroduced in deps.conf"; fail=1
           fi
+          # command column — node itself, and pip under any provider
+          while IFS=$'\t' read -r section provider cmd pkg; do
+            case "$cmd" in
+              node|npm|npx|pip|pip3) echo "[$section] '$cmd' reintroduced"; fail=1 ;;
+            esac
+          done < <(manifest_lines tool)
+          [ $fail -eq 0 ] && echo "clean: no node, npm or pip in the manifest"
+          exit $fail
 
-      - name: check reports no false MISSING for disabled tools
+      - name: No node shim anywhere in the repo
         run: |
-          make check nvim | tee /tmp/check.txt
-          for t in prettierd prettier eslint_d; do
-            if grep -qw "$t" /tmp/check.txt; then
-              echo "disabled tool '$t' still reported by check"; exit 1
-            fi
-          done
+          # Aliasing node to bun would make incompatibilities surface as errors
+          # blaming the wrong tool. If someone adds one, this should fail.
+          if grep -rnE '(ln -s.*\bbun\b.*/node|exec bun "\$@")' \
+               --include='*.sh' --include='*.lua' --include='*.conf' . ; then
+            echo "a node->bun shim was introduced — see lsp_servers.lua for why not"
+            exit 1
+          fi
+          echo "clean: no node shim"
 
-      # The gate lives in lua/external/node_gate.lua rather than inline in the
-      # lazy plugin spec precisely so it can be tested like this: `--clean`
-      # loads no plugins, so there's no 26-repo clone, no treesitter compile and
-      # no Mason download standing between the assertion and the six lines it's
-      # actually about. Both branches are exercised because apply() takes
-      # has_node as an argument instead of probing PATH.
-      - name: Unit-test the node gate
+      # Server definitions live in lua/external/lsp_servers.lua rather than inline
+      # in the plugin spec precisely so they can be tested like this: `--clean`
+      # loads no plugins, so there's no 26-repo clone and no treesitter compile
+      # standing between the assertion and the cmd lines it's about.
+      - name: Unit-test the language server definitions
         run: |
           sudo apt-get update && sudo apt-get install -y neovim
           make test
