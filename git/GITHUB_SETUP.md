@@ -5,11 +5,11 @@ use the [verification commands](#verify-from-the-cli) to audit an existing one.
 
 **Legend**
 
-| Mark         | Meaning                                                          |
-| ------------ | ---------------------------------------------------------------- |
-| `(default)`  | GitHub's out-of-the-box value — nothing to do.                    |
-| **`CHANGE`** | Differs from the default. Requires action.                        |
-| `(depends)`  | Decide per repo.                                                  |
+| Mark         | Meaning                                        |
+| ------------ | ---------------------------------------------- |
+| `(default)`  | GitHub's out-of-the-box value — nothing to do. |
+| **`CHANGE`** | Differs from the default. Requires action.     |
+| `(depends)`  | Decide per repo.                               |
 
 **Public vs. private.** Secret scanning and push protection are free on public
 repos but require GitHub Advanced Security (paid) on private ones. Everything
@@ -36,16 +36,16 @@ Some steps depend on earlier ones, so the sequence matters:
 
 ## General settings — `/settings`
 
-| Setting                                    | Value  |                                                     |
-| ------------------------------------------ | ------ | --------------------------------------------------- |
-| Template repository                        | off    | `(default)`                                         |
-| Default branch                             | `main` | `(default)`                                         |
-| Wikis                                      | on     | `(default)` — turn off if docs live in the repo     |
-| Issues                                     | on     | `(default)`                                         |
-| Projects                                   | on     | `(default)`                                         |
-| Discussions                                | off    | `(default)`                                         |
-| Preserve this repository (Archive Program) | on     | `(default)`                                         |
-| Sponsorships                               | off    | `(default)`                                         |
+| Setting                                    | Value  |                                                 |
+| ------------------------------------------ | ------ | ----------------------------------------------- |
+| Template repository                        | off    | `(default)`                                     |
+| Default branch                             | `main` | `(default)`                                     |
+| Wikis                                      | on     | `(default)` — turn off if docs live in the repo |
+| Issues                                     | on     | `(default)`                                     |
+| Sponsorships                               | off    | `(default)`                                     |
+| Preserve this repository (Archive Program) | on     | `(default)`                                     |
+| Discussions                                | off    | `(default)`                                     |
+| Projects                                   | on     | `(default)`                                     |
 
 ### Pull requests
 
@@ -92,27 +92,31 @@ git checkout main && git merge --ff-only <branch> && git push origin main
 
 One ruleset targeting the default branch.
 
-| Setting                                | Value                  |                                            |
-| -------------------------------------- | ---------------------- | ------------------------------------------ |
-| Enforcement                            | Active                 | **`CHANGE`** — new rulesets start Disabled |
-| **Bypass list**                        | **Repository admin**   | **`CHANGE`** — required, see below         |
-| Target branches                        | Default branch         |                                            |
-| Restrict creations                     | off                    |                                            |
-| Restrict updates                       | off                    |                                            |
-| Restrict deletions                     | on                     | protects the default branch                |
-| Require linear history                 | **off**                | merge commits are allowed                  |
-| Require signed commits                 | `(depends)`            | see [Signed commits](#signed-commits-with-ssh-keys) |
-| Block force pushes                     | on                     |                                            |
-| Require PR before merging              | on                     |                                            |
-| → required approvals                   | 1                      |                                            |
-| → dismiss stale approvals on push      | on                     |                                            |
-| → require review from code owners      | on                     | needs `.github/CODEOWNERS`                 |
-| → require approval of most recent push | off                    |                                            |
-| → require conversation resolution      | off                    | `(depends)`                                |
-| **Require status checks to pass**      | **on**                 | **`CHANGE`** — once CI exists              |
-| Require deployments to succeed         | off                    |                                            |
-| Require code scanning results          | off                    | only meaningful if CodeQL is set up        |
-| Automatically request Copilot review   | off                    |                                            |
+| Setting                                            | Value                |                                                     |
+| -------------------------------------------------- | -------------------- | --------------------------------------------------- |
+| Enforcement                                        | Active               | **`CHANGE`** — new rulesets start Disabled          |
+| **Bypass list**                                    | **Repository admin** | **`CHANGE`** — required, see below                  |
+| Target branches                                    | Default branch       |                                                     |
+| Restrict creations                                 | off                  |                                                     |
+| Restrict updates                                   | off                  |                                                     |
+| Restrict deletions                                 | on                   | protects the default branch                         |
+| Require linear history                             | **off**              | merge commits are allowed                           |
+| Requre deployments to succeed                      | off                  |                                                     |
+| Require signed commits                             | `(depends)`          | see [Signed commits](#signed-commits-with-ssh-keys) |
+| Require PR before merging                          | on                   |                                                     |
+| → required approvals                               | 1                    |                                                     |
+| → dismiss stale approvals on push                  | on                   |                                                     |
+| → Require review from specific teams               | off                  |                                                     |
+| → require review from code owners                  | on                   | needs `.github/CODEOWNERS`                          |
+| → require approval of most recent push             | off                  |                                                     |
+| → require conversation resolution                  | off                  | `(depends)`                                         |
+| **Require status checks to pass**                  | **on**               | **`CHANGE`** — once CI exists                       |
+| → require branches to be up to date before merging | off                  | `(depends)` — on for concurrent PRs                 |
+| → do not require status checks on creation         | off                  | only matters for branch *patterns*                  |
+| Block force pushes                                 | on                   |                                                     |
+| Require code scanning results                      | off                  | only meaningful if CodeQL is set up                 |
+| Require code quality results                       | off                  |                                                     |
+| Automatically request Copilot review               | off                  |                                                     |
 
 ### Why the bypass list is mandatory here
 
@@ -163,6 +167,24 @@ strategy:
 Require every check that is fast and deterministic. Checks that hit third-party
 package mirrors are worth requiring too, but they're the first to demote if one
 starts failing for reasons outside the repo.
+
+**Require branches to be up to date before merging** — off by default, and off
+here. It forces a PR to contain the latest base commits before it can merge,
+which catches *semantic* conflicts: two PRs that each pass CI alone but break
+when combined, like one renaming a function while the other adds a caller. Both
+are green; main is broken.
+
+The cost is that every merge invalidates every other open PR — each needs an
+update and a fresh CI run. That's a fair trade on a busy repo and pure friction
+on one where PRs land days apart and rarely touch the same files. **Turn it on
+when concurrent PRs become normal**, not before.
+
+**Do not require status checks on creation** — off by default, and off here.
+It exempts *newly created* refs from the status-check requirement. Relevant only
+when a ruleset targets a branch **pattern**: with a ruleset on `release/*`,
+pushing a new `release/2.0` would otherwise be blocked for checks that haven't
+run yet. A ruleset targeting only the default branch never creates that branch,
+so the setting is inert — leave it alone unless you add pattern-based targets.
 
 ---
 
@@ -225,15 +247,15 @@ through GitHub's UI are signed by GitHub's own key and count as verified.
 
 ## Actions — `/settings/actions`
 
-| Setting                          | Value                                              |                                  |
-| -------------------------------- | -------------------------------------------------- | -------------------------------- |
-| Actions permissions              | Allow all                                          | `(default)` — tighten if sensitive |
-| Log retention                    | 90 days                                            | `(default)`, max for public repos |
-| **Fork PR approval**             | **Require approval for all outside collaborators** | **`CHANGE`** on public repos     |
-| Workflow permissions             | Read repository contents                           | `(default)` — keep               |
-| Actions can create/approve PRs   | off                                                | `(default)`                      |
+| Setting                        | Value                                              |                                    |
+| ------------------------------ | -------------------------------------------------- | ---------------------------------- |
+| Actions permissions            | Allow all                                          | `(default)` — tighten if sensitive |
+| Log retention                  | 90 days                                            | `(default)`, max for public repos  |
+| **Fork PR approval**           | **Require approval for all outside collaborators** | **`CHANGE`** on public repos       |
+| Workflow permissions           | Read repository contents                           | `(default)` — keep                 |
+| Actions can create/approve PRs | off                                                | `(default)`                        |
 
-**Fork PR approval.** The default only gates *first-time* contributors; after one
+**Fork PR approval.** The default only gates _first-time_ contributors; after one
 merged PR they can trigger workflows freely. Workflows run on your runners, so
 prefer requiring approval for all outside collaborators on public repos.
 
@@ -245,18 +267,18 @@ rather than buried in settings.
 
 ## Security — `/settings/security_analysis`
 
-| Setting                             | Value       |                                                          |
-| ----------------------------------- | ----------- | -------------------------------------------------------- |
+| Setting                             | Value       |                                                                  |
+| ----------------------------------- | ----------- | ---------------------------------------------------------------- |
 | **Private vulnerability reporting** | **on**      | **`CHANGE`** for public repos — free, private disclosure channel |
-| Dependency graph                    | on          | `(default)` on public repos                              |
-| Automatic dependency submission     | on          | `(depends)`                                              |
-| **Dependabot alerts**               | **on**      | **`CHANGE`** — verify, it isn't always on                |
-| Dependabot security updates         | `(depends)` | auto-PRs for vulnerable dependencies                     |
-| Grouped security updates            | on          | if using security updates — fewer PRs                    |
-| Dependabot version updates          | `(depends)` | needs `.github/dependabot.yml`                           |
-| Secret scanning                     | on          | `(default)` public; GHAS on private                      |
-| Push protection                     | on          | `(default)` public; GHAS on private                      |
-| Code scanning (CodeQL)              | `(depends)` | see below                                                |
+| Dependency graph                    | on          | `(default)` on public repos                                      |
+| Automatic dependency submission     | on          | `(depends)`                                                      |
+| **Dependabot alerts**               | **on**      | **`CHANGE`** — verify, it isn't always on                        |
+| Dependabot security updates         | `(depends)` | auto-PRs for vulnerable dependencies                             |
+| Grouped security updates            | on          | if using security updates — fewer PRs                            |
+| Dependabot version updates          | `(depends)` | needs `.github/dependabot.yml`                                   |
+| Secret scanning                     | on          | `(default)` public; GHAS on private                              |
+| Push protection                     | on          | `(default)` public; GHAS on private                              |
+| Code scanning (CodeQL)              | `(depends)` | see below                                                        |
 
 ### Dependabot only parses ecosystems it recognises
 
