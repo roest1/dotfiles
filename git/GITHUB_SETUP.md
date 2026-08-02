@@ -5,11 +5,11 @@ A checklist for configuring a new repo the way I want it. Verified against
 
 **Legend** — the thing the original draft was missing:
 
-| Mark | Meaning |
-| ---- | ------- |
-| `(default)` | GitHub's out-of-the-box value. Listed so you know you can skip it. |
-| **`CHANGE`** | Differs from the default. You have to actually do something. |
-| `(depends)` | Correct value depends on the repo — decide per project. |
+| Mark         | Meaning                                                            |
+| ------------ | ------------------------------------------------------------------ |
+| `(default)`  | GitHub's out-of-the-box value. Listed so you know you can skip it. |
+| **`CHANGE`** | Differs from the default. You have to actually do something.       |
+| `(depends)`  | Correct value depends on the repo — decide per project.            |
 
 > **Public vs. private matters.** Several security features are free on public
 > repos and require GitHub Advanced Security (paid) on private ones. Marked where
@@ -64,26 +64,26 @@ button never fast-forwards.
 
 ## General settings — `/settings`
 
-| Setting | Value | |
-| ------- | ----- | - |
-| Template repository | off | `(default)` |
-| Default branch | `main` | `(default)` |
-| Wikis | on | `(default)` — turn **off** if docs live in the repo |
-| Issues | on | `(default)` |
-| Projects | on | `(default)` |
-| Discussions | off | `(default)` |
-| Preserve this repository (Archive Program) | on | `(default)` |
-| Sponsorships | off | `(default)` |
+| Setting                                    | Value  |                                                     |
+| ------------------------------------------ | ------ | --------------------------------------------------- |
+| Template repository                        | off    | `(default)`                                         |
+| Default branch                             | `main` | `(default)`                                         |
+| Wikis                                      | on     | `(default)` — turn **off** if docs live in the repo |
+| Issues                                     | on     | `(default)`                                         |
+| Projects                                   | on     | `(default)`                                         |
+| Discussions                                | off    | `(default)`                                         |
+| Preserve this repository (Archive Program) | on     | `(default)`                                         |
+| Sponsorships                               | off    | `(default)`                                         |
 
 ### Pull requests
 
-| Setting | Value | |
-| ------- | ----- | - |
-| Allow merge commits | on | `(default)` |
-| Allow squash merging | on | `(default)` |
-| Allow rebase merging | on | `(default)` |
-| Always suggest updating PR branches | off | `(default)` |
-| Allow auto-merge | off | `(default)` |
+| Setting                                | Value  |                               |
+| -------------------------------------- | ------ | ----------------------------- |
+| Allow merge commits                    | on     | `(default)`                   |
+| Allow squash merging                   | on     | `(default)`                   |
+| Allow rebase merging                   | on     | `(default)`                   |
+| Always suggest updating PR branches    | off    | `(default)`                   |
+| Allow auto-merge                       | off    | `(default)`                   |
 | **Automatically delete head branches** | **on** | **`CHANGE`** — default is off |
 
 > If you enable `Require linear history` in the ruleset, allowing merge commits
@@ -93,12 +93,12 @@ button never fast-forwards.
 
 ### Commits / archives / issues
 
-| Setting | Value | |
-| ------- | ----- | - |
-| Require sign-off on web-based commits | off | `(default)` |
-| Allow comments on individual commits | on | `(default)` |
-| Include Git LFS objects in archives | off | `(default)` |
-| Auto-close issues from merged linked PRs | on | `(default)` |
+| Setting                                  | Value |             |
+| ---------------------------------------- | ----- | ----------- |
+| Require sign-off on web-based commits    | off   | `(default)` |
+| Allow comments on individual commits     | on    | `(default)` |
+| Include Git LFS objects in archives      | off   | `(default)` |
+| Auto-close issues from merged linked PRs | on    | `(default)` |
 
 ---
 
@@ -106,27 +106,27 @@ button never fast-forwards.
 
 Create one ruleset targeting the default branch.
 
-| Setting | Value | |
-| ------- | ----- | - |
-| Enforcement | Active | **`CHANGE`** — new rulesets start Disabled |
-| **Bypass list** | **Repository admin** | **`CHANGE`** — see trap 1 |
-| Target branches | Default branch | |
-| Restrict creations | off | |
-| Restrict updates | off | |
-| Restrict deletions | on | protects `main` from deletion |
-| Require linear history | on | `(depends)` — see trap 3 |
-| Require signed commits | off | `(depends)` — on if you sign |
-| Block force pushes | on | |
-| Require PR before merging | on | |
-| → required approvals | 1 | **only viable with a bypass actor** |
-| → dismiss stale approvals on push | on | |
-| → require review from code owners | on | needs `.github/CODEOWNERS` |
-| → require approval of most recent push | off | would re-block you |
-| → require conversation resolution | off | `(depends)` |
-| **Require status checks to pass** | **on, once CI exists** | **`CHANGE`** — see below |
-| Require deployments to succeed | off | |
-| Require code scanning results | off | only if CodeQL is set up |
-| Automatically request Copilot review | off | |
+| Setting                                | Value                  |                                            |
+| -------------------------------------- | ---------------------- | ------------------------------------------ |
+| Enforcement                            | Active                 | **`CHANGE`** — new rulesets start Disabled |
+| **Bypass list**                        | **Repository admin**   | **`CHANGE`** — see trap 1                  |
+| Target branches                        | Default branch         |                                            |
+| Restrict creations                     | off                    |                                            |
+| Restrict updates                       | off                    |                                            |
+| Restrict deletions                     | on                     | protects `main` from deletion              |
+| Require linear history                 | on                     | `(depends)` — see trap 3                   |
+| Require signed commits                 | off                    | `(depends)` — on if you sign               |
+| Block force pushes                     | on                     |                                            |
+| Require PR before merging              | on                     |                                            |
+| → required approvals                   | 1                      | **only viable with a bypass actor**        |
+| → dismiss stale approvals on push      | on                     |                                            |
+| → require review from code owners      | on                     | needs `.github/CODEOWNERS`                 |
+| → require approval of most recent push | off                    | would re-block you                         |
+| → require conversation resolution      | off                    | `(depends)`                                |
+| **Require status checks to pass**      | **on, once CI exists** | **`CHANGE`** — see below                   |
+| Require deployments to succeed         | off                    |                                            |
+| Require code scanning results          | off                    | only if CodeQL is set up                   |
+| Automatically request Copilot review   | off                    |                                            |
 
 ### Status checks are the rule that actually earns its keep
 
@@ -153,16 +153,16 @@ won't have an owner assigned — that's expected, not a misconfiguration.
 
 ## Actions — `/settings/actions`
 
-| Setting | Value | |
-| ------- | ----- | - |
-| Actions permissions | Allow all | `(default)` — tighten for anything sensitive |
-| Log retention | 90 days | `(default)`, and the max for public repos |
-| Fork PR approval | **Require approval for all outside collaborators** | **`CHANGE`** on public repos |
-| Workflow permissions | Read repository contents | `(default)` — keep it |
-| Actions can create/approve PRs | off | `(default)` |
+| Setting                        | Value                                              |                                              |
+| ------------------------------ | -------------------------------------------------- | -------------------------------------------- |
+| Actions permissions            | Allow all                                          | `(default)` — tighten for anything sensitive |
+| Log retention                  | 90 days                                            | `(default)`, and the max for public repos    |
+| Fork PR approval               | **Require approval for all outside collaborators** | **`CHANGE`** on public repos                 |
+| Workflow permissions           | Read repository contents                           | `(default)` — keep it                        |
+| Actions can create/approve PRs | off                                                | `(default)`                                  |
 
 > **Fork PR approval matters on public repos.** The default only gates
-> *first-time* contributors; after one merged PR they can trigger workflows
+> _first-time_ contributors; after one merged PR they can trigger workflows
 > freely. Since workflows run on your runners with your secrets, prefer
 > requiring approval for all outside collaborators.
 
@@ -173,18 +173,18 @@ won't have an owner assigned — that's expected, not a misconfiguration.
 
 ## Security — `/settings/security_analysis`
 
-| Setting | Value | |
-| ------- | ----- | - |
-| **Private vulnerability reporting** | **on** | **`CHANGE`** for public repos — free, gives researchers a private channel instead of a public issue |
-| Dependency graph | on | `(default)` on public repos |
-| Automatic dependency submission | on | `(depends)` |
-| Dependabot alerts | **on** | **`CHANGE`** — was off on this repo |
-| Dependabot security updates | `(depends)` | auto-PRs for vulnerable deps |
-| Dependabot version updates | `(depends)` | needs `.github/dependabot.yml` |
-| Grouped security updates | on if using security updates | fewer PRs |
-| Secret scanning | on | `(default)` on **public**; needs GHAS on private |
-| Push protection | on | `(default)` on **public**; needs GHAS on private |
-| Code scanning (CodeQL) | `(depends)` | see below |
+| Setting                             | Value                        |                                                                                                     |
+| ----------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Private vulnerability reporting** | **on**                       | **`CHANGE`** for public repos — free, gives researchers a private channel instead of a public issue |
+| Dependency graph                    | on                           | `(default)` on public repos                                                                         |
+| Automatic dependency submission     | on                           | `(depends)`                                                                                         |
+| Dependabot alerts                   | **on**                       | **`CHANGE`** — was off on this repo                                                                 |
+| Dependabot security updates         | `(depends)`                  | auto-PRs for vulnerable deps                                                                        |
+| Dependabot version updates          | `(depends)`                  | needs `.github/dependabot.yml`                                                                      |
+| Grouped security updates            | on if using security updates | fewer PRs                                                                                           |
+| Secret scanning                     | on                           | `(default)` on **public**; needs GHAS on private                                                    |
+| Push protection                     | on                           | `(default)` on **public**; needs GHAS on private                                                    |
+| Code scanning (CodeQL)              | `(depends)`                  | see below                                                                                           |
 
 ### Dependabot only sees ecosystems it can parse
 
@@ -228,4 +228,4 @@ gh api repos/<user>/<repo>/vulnerability-alerts   # 204 = on, 404 = off
 ```
 
 That last step is how the mistakes above were found: the UI showed what was
-*intended*, the API showed what was actually stored.
+_intended_, the API showed what was actually stored.
