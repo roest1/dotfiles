@@ -224,6 +224,23 @@ jobs:
           sudo apt-get update && sudo apt-get install -y neovim
           make test
 
+      # The language servers must work with no node and no npm anywhere — that
+      # is the entire point of moving them out of Mason. Asserted with a real
+      # LSP initialize handshake, because weaker checks (--version, exit codes)
+      # give false readings on several of these servers.
+      - name: LSP servers handshake under bun, with node/npm absent
+        run: |
+          curl -fsSL https://bun.com/install | bash
+          export PATH="$HOME/.bun/bin:$PATH"
+          bun install --cwd nvim/lsp-servers
+          MIN=$(mktemp -d)
+          for b in sh bash env timeout; do ln -sf "$(command -v $b)" "$MIN/$b"; done
+          ln -sf "$HOME/.bun/bin/bun" "$MIN/bun"
+          ! PATH=$MIN command -v node
+          ! PATH=$MIN command -v npm
+          PATH=$MIN bun nvim/lsp-servers/verify.ts | tee /tmp/lsp.txt
+          grep -q "ALL PASS" /tmp/lsp.txt
+
       # Integration signal, deliberately advisory: this boots the real plugin
       # stack, so a failure here is as likely to be a flaky clone or an upstream
       # plugin change as a bug in this repo. The assertion above is the one that

@@ -1,21 +1,35 @@
 version: 2
 
-# Only one ecosystem is listed because only one is visible to Dependabot.
+# Two ecosystems, because those are the two Dependabot can parse here.
 #
-# This repo has no package.json, Cargo.toml, requirements.txt or go.mod — its
-# real dependency surface is deps.conf (a custom format) and nvim/lazy-lock.json
-# (lazy.nvim's lockfile), and Dependabot understands neither. Nothing here will
-# ever warn you that a CLI tool or a neovim plugin has a CVE. That's a known,
-# accepted cost of the manifest design, not an oversight.
+#   nvim/lsp-servers  the JS language servers. Moving them out of Mason and into
+#                     a package.json is what made them visible at all — Mason's
+#                     copies live in ~/.local/share/nvim/mason, untracked and
+#                     unwatched. bun.lock is supported under npm_and_yarn.
+#   /                 GitHub Actions versions. They rot on their own schedule:
+#                     actions/checkout@v4 began emitting a Node.js 20
+#                     deprecation on every run and needed a manual bump.
 #
-# What IS worth automating: the GitHub Actions versions. They rot on their own
-# schedule — actions/checkout@v4 started emitting a Node.js 20 deprecation
-# warning on every run and had to be bumped by hand. This catches the next one.
+# Still invisible, and worth remembering: deps.conf (a custom format) and
+# nvim/lazy-lock.json (lazy.nvim's lockfile). Nothing here will warn that a CLI
+# tool or a neovim plugin has a CVE. That's an accepted cost of the manifest
+# design, not an oversight.
 #
-# Monthly, not weekly: there are two actions in one workflow. Weekly would be
-# noise for a repo this size.
+# Monthly, not weekly — this repo is small enough that weekly would be noise.
 
 updates:
+  # The JS language servers. bun.lock is supported under the npm_and_yarn
+  # ecosystem (bun >= 1.1.39), so these get version-bump PRs — which Mason's
+  # untracked installs never could.
+  - package-ecosystem: "npm"
+    directory: "/nvim/lsp-servers"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "nvim"
+    labels:
+      - "dependencies"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

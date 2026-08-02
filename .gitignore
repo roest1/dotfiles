@@ -1,2 +1,5 @@
 bash_roest_password_commands
 bash_roest_local
+
+# installed by `bun install --cwd nvim/lsp-servers`; bun.lock IS tracked
+nvim/lsp-servers/node_modules

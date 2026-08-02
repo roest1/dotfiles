@@ -86,6 +86,13 @@ test: ## Run the Lua unit tests (no plugins, no network)
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/node_gate_spec.lua" -c "qa!" 2>&1 \
 		| tee /tmp/dotfiles-test.txt
 	@grep -q "ALL PASS" /tmp/dotfiles-test.txt || { echo "tests failed"; exit 1; }
+	@# LSP servers: only meaningful once they're installed, so skip rather than fail
+	@if command -v bun >/dev/null 2>&1 && [ -d "$(DOTFILES_DIR)/nvim/lsp-servers/node_modules" ]; then \
+		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee /tmp/dotfiles-lsp.txt; \
+		grep -q "ALL PASS" /tmp/dotfiles-lsp.txt || { echo "lsp handshake failed"; exit 1; }; \
+	else \
+		echo "lsp servers not installed — skipping handshake test"; \
+	fi
 
 # --------------------------------------------------------------------------- #
 #  Misc                                                                        #
