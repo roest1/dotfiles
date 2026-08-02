@@ -57,9 +57,10 @@ Scope the one-liner the same way: `DOTFILES_TARGET=bash curl ... | bash`.
 block in `[nvim]` leaves a working editor — `lsp.lua` drops the JS-based
 language servers when `node` is absent, so you keep clangd (C/C++), lua_ls and
 lemminx, and lose ts/css/html/json/yaml/bash plus prettier and eslint_d. Those
-six *are* JavaScript programs and Mason shells out to `npm` specifically, so no
-packaging trick and no bun substitution avoids it. Good subset for C++/Lua work;
-not a subset for web work. CI exercises this path on every push.
+six are JavaScript programs installed by Mason, which shells out to `npm`
+specifically. Bun *can* run them — that part is verified — but it can't install
+them, and Mason's shims invoke `node` by name. Good subset for C++/Lua work; not
+a subset for web work. CI exercises this path on every push.
 
 ### Providers
 

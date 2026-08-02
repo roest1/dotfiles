@@ -96,10 +96,13 @@ reproducibility is actually reachable. The hedge is already in place — depende
   cannot be `${EDITOR:-nvim}`: Fedora's `/etc/profile.d/nano-default-editor.sh` sets
   `EDITOR=/usr/bin/nano` first, so a `:-` default silently loses. Per-machine overrides go
   in `~/.bash_roest_local`, sourced immediately after, which wins.
-- **node cannot be swapped for bun.** Mason shells out to `npm` specifically, and the six
-  JS language servers need a JS runtime to execute. `lsp.lua` drops them when `node` is
-  absent so the editor degrades instead of erroring — keep that gate if you touch the
-  servers table, and CI asserts it.
+- **npm is the hard requirement, not node.** Two separable halves, and only one is a real
+  blocker. *Runtime:* bun runs all six JS language servers fine — verified, they start
+  under `bun <server> --stdio`. *Install:* Mason shells out to `npm` specifically with no
+  bun backend, and the shims it writes carry `#!/usr/bin/env node`, so invoking a server by
+  name resolves node regardless. `lsp.lua` drops those servers when `node` is absent so the
+  editor degrades instead of erroring — keep that gate if you touch the servers table; CI
+  asserts it.
 - **`wezterm/wezterm.lua` is load-bearing beyond wezterm.** It declares the `mux` unix
   domain that the Jarvis sidecar connects to (`JARVIS_WEZTERM_DOMAIN` defaults to `'mux'`
   in `jarvis-ui/server/workerSession.ts`). Don't replace it with a stock config.

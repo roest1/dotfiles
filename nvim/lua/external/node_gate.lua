@@ -1,8 +1,18 @@
 -- ── Node gate: drop JS-based language servers when node is absent ───────────
 --
 -- Six of the configured language servers are JavaScript programs that Mason
--- installs with npm. No packaging trick avoids that — they need a JS runtime to
--- *execute*, and Mason shells out to `npm` specifically, so bun can't stand in.
+-- installs with npm. There are two separable requirements here, and only one is
+-- a genuine blocker:
+--
+--   RUNTIME  bun runs all six correctly — verified by launching each with
+--            `bun <server> --stdio`. node is not strictly needed to execute them.
+--   INSTALL  Mason shells out to `npm` specifically; there is no bun backend.
+--            The shims it writes also carry `#!/usr/bin/env node`, so invoking a
+--            server by name resolves node even where bun would have worked.
+--
+-- So this gate keys on `node` because that's what the shims actually invoke, not
+-- because bun is incapable. Rerouting to bun would mean overriding each server's
+-- `cmd` — possible, but a separate feature.
 --
 -- On a machine where node isn't allowed (comment out the node block in the
 -- repo's deps.conf), leaving these in `ensure_installed` makes Mason fail
