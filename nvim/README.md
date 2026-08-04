@@ -22,7 +22,7 @@ delegating upward.
 
 `make all` runs two idempotent steps: `make deps` → `make sync` (lazy.nvim plugin install + tree-sitter parsers, headless). `make deps` delegates to the parent repo's manifest (`../deps.conf`, the `[nvim]` section) so there's one source of truth for the toolchain. Verify the install with `:checkhealth external` inside nvim.
 
-**Installs:** neovim, git, make, unzip, ripgrep, fd, stylua, tree-sitter, ruff, plus the language servers — clangd, lua-language-server and lemminx as native binaries, and six JavaScript-based servers from `lsp-servers/package.json` installed with `bun`.
+**Installs:** neovim, git, make, unzip, ripgrep, fd, stylua, tree-sitter, ruff, plus the language servers — clangd, lua-language-server and lemminx as native binaries, and six JavaScript-based servers from `lsp-servers/package.json` installed with `bun`. `prettier` comes from that same manifest and is run the same way.
 
 There is no Mason, and no node, npm or pip anywhere in the toolchain. Every server is declared ahead of time rather than fetched at first launch — see the "No node, npm or pip" footgun in the parent repo's `CLAUDE.md` for why.
 

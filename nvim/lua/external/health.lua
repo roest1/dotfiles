@@ -69,6 +69,16 @@ return {
       { name = 'ruff', desc = 'Python formatter + linter', required = true },
     })
 
+    -- prettier can't go in the list above: it is not on PATH and never will be.
+    -- It's an npm package run as `bun <path>`, so the meaningful check is
+    -- whether bun installed it, not whether the shell can find it.
+    local prettier = vim.fs.joinpath(require('external.lsp_servers').js_bin_dir(), 'prettier')
+    if vim.uv.fs_stat(prettier) then
+      vim.health.ok "Found: 'prettier' (JS/TS/JSON/HTML/CSS/YAML/Markdown, run via bun)"
+    else
+      vim.health.warn "Missing: 'prettier' — run: bun install --cwd nvim/lsp-servers"
+    end
+
     check_tools('Linters (nvim-lint)', {
       { name = 'ruff', desc = 'Python linter', required = true },
     })

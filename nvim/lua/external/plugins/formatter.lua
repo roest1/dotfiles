@@ -37,20 +37,24 @@ return {
         -- cs = { 'csharpier', 'dotnet-format' }, -- maybe cshapier as a backup?
         lua = { 'stylua' },
 
-        -- Question:
-        -- do I need nested braces { { "a", "b" } }
-        -- to signify: "Try A, if not found, use B"
-        typescript = { 'prettierd', 'prettier' },
-        typescriptreact = { 'prettierd', 'prettier' },
-        javascript = { 'prettierd', 'prettier' },
-        javascriptreact = { 'prettierd', 'prettier' },
-        json = { 'prettierd', 'prettier' },
-        markdown = { 'prettierd', 'prettier' },
-        html = { 'prettierd', 'prettier' },
-        bash = { 'prettierd', 'prettier' },
-        yaml = { 'prettierd', 'prettier' },
-        toml = { 'prettierd', 'prettier' },
-        css = { 'prettierd', 'prettier' },
+        -- prettierd is gone with node — it was an npm global. prettier itself is
+        -- declared in nvim/lsp-servers/package.json and run through bun, the
+        -- same way the language servers are. See the `prettier` entry below.
+        --
+        -- `bash` and `toml` are deliberately absent: prettier has no parser for
+        -- either, so those mappings only ever produced "No parser could be
+        -- inferred". They were dead when they were written, not broken by the
+        -- node removal. Every filetype listed here was checked against the
+        -- pinned prettier build.
+        typescript = { 'prettier' },
+        typescriptreact = { 'prettier' },
+        javascript = { 'prettier' },
+        javascriptreact = { 'prettier' },
+        json = { 'prettier' },
+        markdown = { 'prettier' },
+        html = { 'prettier' },
+        yaml = { 'prettier' },
+        css = { 'prettier' },
         -- python = { 'isort', 'black' },
         -- black and ruff are similar
         -- but ruff is significantly faster and handles both linting and formatting in one go
@@ -58,6 +62,25 @@ return {
       },
       -- Define the unknown formatter here
       formatters = {
+        -- prettier under bun, matching how the JS language servers are invoked.
+        -- js_bin_dir() lives in external/lsp_servers.lua and is the one place
+        -- that knows where `bun install --cwd nvim/lsp-servers` puts binaries —
+        -- duplicating that path here is how the two drift apart.
+        ['prettier'] = {
+          command = 'bun',
+          args = {
+            vim.fs.joinpath(require('external.lsp_servers').js_bin_dir(), 'prettier'),
+            '--write',
+            '$FILENAME',
+          },
+          -- NOT stdin, and this is load-bearing. prettier's --stdin-filepath
+          -- exits 0 and writes NOTHING under bun, while working correctly under
+          -- node — a genuine bun/prettier incompatibility. This is exactly why
+          -- the repo refuses to alias node to bun: behind a shim it would have
+          -- surfaced as "formatting silently does nothing" with no hint where to
+          -- look. --write on conform's temp file works for every filetype above.
+          stdin = false,
+        },
         ['csharpier'] = {
           command = 'dotnet-csharpier',
           args = { '--write-stdout' },

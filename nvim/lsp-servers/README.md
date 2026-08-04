@@ -22,6 +22,17 @@ Tracking them in a `package.json` instead buys three things Mason couldn't:
 - **One package manager.** `deps.conf` already declares every other dependency;
   language servers were the exception.
 
+## Not only servers: prettier too
+
+`prettier` is declared here for the same reason the servers are — it's an npm
+package with no distro equivalent, and bun can run it without node. conform.nvim
+invokes it as `bun <path> --write $FILENAME`.
+
+**It must not use `--stdin-filepath`.** Under bun that exits 0 and writes
+nothing, while working correctly under node. That is a real incompatibility, and
+it is the concrete argument against ever aliasing `node` to `bun`: behind a shim
+this surfaces as "formatting silently does nothing" with no clue where to look.
+
 ## Four packages, six servers
 
 | Package                        | Provides                                        |
