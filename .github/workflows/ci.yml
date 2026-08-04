@@ -323,9 +323,30 @@ jobs:
       # in the plugin spec precisely so they can be tested like this: `--clean`
       # loads no plugins, so there's no 26-repo clone and no treesitter compile
       # standing between the assertion and the cmd lines it's about.
+      # NOT `apt-get install neovim`. Ubuntu 24.04 ships 0.9.5, and this config
+      # documents 0.10+ — lsp_servers.lua uses vim.fs.joinpath, added in 0.10.
+      # So the apt version failed every run with "attempt to call field
+      # 'joinpath' (a nil value)", which read as a broken config rather than as
+      # CI testing against a version the config never claimed to support.
+      #
+      # Pinned and sha256-verified, the same treatment lemminx gets in
+      # nvim/deps.sh. Bump both the version and the hash together; a mismatch
+      # should stop the job, not be worked around.
+      - name: Install neovim (pinned)
+        env:
+          NVIM_VERSION: v0.12.4
+          NVIM_SHA256: 012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
+        run: |
+          set -euo pipefail
+          url="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
+          curl -fsSL -o /tmp/nvim.tar.gz "$url"
+          echo "${NVIM_SHA256}  /tmp/nvim.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/nvim.tar.gz -C /opt
+          echo "/opt/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+
       - name: Unit-test the language server definitions
         run: |
-          sudo apt-get update && sudo apt-get install -y neovim
+          nvim --version | head -1
           make test
 
       # The language servers must work with no node and no npm anywhere — that
