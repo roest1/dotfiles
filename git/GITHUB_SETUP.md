@@ -54,7 +54,7 @@ Some steps depend on earlier ones, so the sequence matters:
 | Allow merge commits                    | on     | `(default)`                   |
 | Allow squash merging                   | on     | `(default)`                   |
 | Allow rebase merging                   | on     | `(default)`                   |
-| Always suggest updating PR branches    | off    | `(default)`                   |
+| **Always suggest updating PR branches** | **on** | **`CHANGE`** — default is off |
 | Allow auto-merge                       | off    | `(default)`                   |
 | **Automatically delete head branches** | **on** | **`CHANGE`** — default is off |
 
@@ -111,7 +111,7 @@ One ruleset targeting the default branch.
 | → require approval of most recent push             | off                  |                                                     |
 | → require conversation resolution                  | off                  | `(depends)`                                         |
 | **Require status checks to pass**                  | **on**               | **`CHANGE`** — once CI exists                       |
-| → require branches to be up to date before merging | off                  | `(depends)` — on for concurrent PRs                 |
+| → require branches to be up to date before merging | **on**               | **`CHANGE`** — cheap when CI is fast; see below     |
 | → do not require status checks on creation         | off                  | only matters for branch *patterns*                  |
 | Block force pushes                                 | on                   |                                                     |
 | Require code scanning results                      | off                  | only meaningful if CodeQL is set up                 |
@@ -135,7 +135,16 @@ The rule stays fully enforced for them.
 - **`pull_request`** — bypass only within a PR, so you still open one.
 
 Pick `pull_request` to keep yourself inside the PR flow; `always` if direct
-pushes to the default branch should stay available.
+pushes to the default branch should stay available. **`pull_request` here** — a
+repo whose whole point is bootstrapping other machines should not be reachable by
+`git push main` at 1am.
+
+Be clear-eyed about what the bypass still means: inside a PR you can merge with
+checks red and the branch stale. `current_user_can_bypass` reports
+`pull_requests_only`. Required checks and the up-to-date requirement are
+therefore *guidance you have to actively override*, not a wall — which is the
+right trade for a solo repo, but it is not the same as being unable to merge a
+broken branch. The gate is real for anyone who isn't an admin.
 
 ### Status checks
 
@@ -168,16 +177,38 @@ Require every check that is fast and deterministic. Checks that hit third-party
 package mirrors are worth requiring too, but they're the first to demote if one
 starts failing for reasons outside the repo.
 
-**Require branches to be up to date before merging** — off by default, and off
-here. It forces a PR to contain the latest base commits before it can merge,
+**Require branches to be up to date before merging** — off by default, **on
+here**. It forces a PR to contain the latest base commits before it can merge,
 which catches *semantic* conflicts: two PRs that each pass CI alone but break
 when combined, like one renaming a function while the other adds a caller. Both
 are green; main is broken.
 
 The cost is that every merge invalidates every other open PR — each needs an
-update and a fresh CI run. That's a fair trade on a busy repo and pure friction
-on one where PRs land days apart and rarely touch the same files. **Turn it on
-when concurrent PRs become normal**, not before.
+update and a fresh CI run. Whether that's worth paying is a function of two
+numbers, so measure rather than guess: **how long CI takes** and **how many PRs
+are open at once**. Here it's ~36s across ten jobs, on a public repo where
+Actions minutes are free, with a single maintainer and monthly grouped Dependabot
+batches. The friction is a button click; the protection is real. On a repo with a
+20-minute pipeline and a dozen contributors the arithmetic reverses.
+
+It is not what gives you the **Update branch** button — see below.
+
+**Always suggest updating pull request branches** — a *repository* setting
+(`/settings` → Pull Requests, or `allow_update_branch` via the API), not a
+ruleset rule. This is the one that puts the **Update branch** button on every
+out-of-date PR, with a dropdown offering *update with merge commit* or *update
+with rebase*. **On here.**
+
+The two are easy to conflate. Requiring up-to-date branches also surfaces the
+button, but only as a side effect of making the update compulsory — before
+GitHub added this setting, that was the *only* way to get it. If you want the
+convenience without the enforcement, this is the setting; if you want the
+enforcement, turn on both, because the button is what makes the requirement
+cheap to satisfy.
+
+The button appears when the branch is **behind**, not when a rebase would be
+clean. If updating would conflict, GitHub reports the conflict instead of
+offering a one-click update.
 
 **Do not require status checks on creation** — off by default, and off here.
 It exempts *newly created* refs from the status-check requirement. Relevant only
@@ -322,7 +353,8 @@ R=<user>/<repo>
 
 # merge behaviour, features, visibility
 gh api repos/$R --jq '{visibility, delete_branch_on_merge, allow_auto_merge,
-                       allow_merge_commit, allow_squash_merge, allow_rebase_merge}'
+                       allow_merge_commit, allow_squash_merge, allow_rebase_merge,
+                       allow_update_branch}'
 
 # secret scanning, push protection, dependabot
 gh api repos/$R --jq '.security_and_analysis'
@@ -335,13 +367,35 @@ gh api repos/$R/rulesets
 gh api repos/$R/rulesets/<id> --jq '{rules: [.rules[].type], bypass: .bypass_actors,
                                      can_bypass: .current_user_can_bypass}'
 
+# required checks + the strict (up-to-date) sub-setting
+gh api repos/$R/rulesets/<id> --jq '.rules[] | select(.type=="required_status_checks")
+    | {strict: .parameters.strict_required_status_checks_policy,
+       checks: [.parameters.required_status_checks[].context]}'
+
 # which checks a workflow reports, to match required-check names exactly
 gh run view <run-id> --repo $R --json jobs --jq '.jobs[].name'
 ```
 
-Enabling the two Dependabot toggles from the CLI:
+The single most useful audit is diffing those two lists against each other. A
+check CI reports but the ruleset doesn't require is an ungated gap; a check the
+ruleset requires but CI no longer reports blocks every PR forever, waiting on a
+status that will never arrive.
+
+Enabling the toggles from the CLI:
 
 ```sh
 gh api -X PUT repos/$R/vulnerability-alerts
 gh api -X PUT repos/$R/automated-security-fixes
+gh api -X PATCH repos/$R -F allow_update_branch=true
+```
+
+Rulesets are the exception to the usual verb: updating one is **`PUT`**, not
+`PATCH`. `PATCH` returns a bare `404` that reads like a permissions problem and
+isn't. `PUT` replaces the fields you send, so read the ruleset first, edit that
+JSON, and send it back rather than composing a payload from scratch:
+
+```sh
+gh api repos/$R/rulesets/<id> > ruleset.json     # keep this; it's your rollback
+# edit ruleset.json, then:
+gh api -X PUT repos/$R/rulesets/<id> --input ruleset.json
 ```
