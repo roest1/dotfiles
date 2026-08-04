@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # ─── Shared package-install helpers ──────────────────────────────────────────
 #
-# Sourced by every area installer (bash/deps.sh, nvim/deps.sh, dev/deps.sh)
-# so there is exactly ONE implementation of "install a tool" in this repo.
+# Sourced by lib/run.sh and by each section's optional deps.sh (bash/, nvim/,
+# wezterm/) so there is exactly ONE implementation of "install a tool" here.
 #
 # Idempotency is structural, not incidental: every *_install helper short-circuits
-# on `command -v`. That is what makes it safe for `make all` to run several area
-# installers in a row when they share tools (fd and rg are wanted by both bash
-# and nvim) — the second one prints ✅ and does no work.
+# on `command -v`. That is what makes it safe for `make install` to run several
+# sections in a row when they share tools (fd and rg are wanted by both bash and
+# nvim) — the second one prints ✅ and does no work.
+#
+# The exception is mise_install_forced, which skips that short-circuit on
+# purpose: `command -v` answers "does this exist", which is the wrong question
+# when a distro ships a version too old to run. See nvim/deps.sh.
 #
 # Usage:
 #   source "$(dirname "${BASH_SOURCE[0]}")/../lib/pkg.sh"

@@ -77,20 +77,3 @@ _provider_try() {
   # report success while installing a differently-named binary.
   command -v "$cmd" >/dev/null 2>&1
 }
-
-# Which providers a section needs — used to warn early rather than failing
-# halfway through an install.
-provider_prereqs() {
-  local spec p seen=""
-  for spec in "$@"; do
-    local IFS='|'
-    read -ra chain <<<"${spec//||/|}"
-    unset IFS
-    for p in "${chain[@]}"; do
-      [[ -z "$p" ]] && continue
-      [[ "$seen" == *" $p "* ]] && continue
-      seen="$seen $p "
-    done
-  done
-  echo "$seen"
-}
