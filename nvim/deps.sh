@@ -16,6 +16,62 @@ source "$HERE/../lib/pkg.sh"
 pkg_detect
 ensure_local_bin_on_path
 
+# ── neovim version floor ─────────────────────────────────────────────────────
+#
+# This config needs 0.10+ — lua/external/lsp_servers.lua calls vim.fs.joinpath,
+# added in 0.10. Ubuntu 24.04's apt ships 0.9.5, and `pkg` legitimately succeeds
+# there, so provider_install's `command -v` short-circuit sees a working nvim and
+# stops. The result was a config that installed fine and then failed at startup
+# with "attempt to call field 'joinpath' (a nil value)", which reads as a broken
+# config rather than as too old a neovim. CI hit exactly this.
+#
+# deps.conf cannot express "at least 0.10": the manifest carries providers, not
+# version constraints, and adding a version column would be inventing the `if`
+# DSL that file exists to avoid. So the floor is enforced here, after the
+# section's tools have run — which is what deps.sh is for.
+#
+# deps.conf declares `pkg||mise` so a mise-provided nvim is not reported as drift
+# by `make status`.
+
+NVIM_MIN_MAJOR=0
+NVIM_MIN_MINOR=10
+
+# Prints the running nvim's version, or nothing if absent/unparseable.
+nvim_version() {
+  command -v nvim >/dev/null 2>&1 || return 0
+  nvim --version 2>/dev/null | awk 'NR==1 { sub(/^v/, "", $2); print $2 }'
+}
+
+# True when $1 is below the floor. Deliberately not `sort -V`: macOS ships BSD
+# sort, and only major/minor matter here anyway.
+nvim_below_floor() {
+  local v="$1" maj min rest
+  [ -n "$v" ] || return 1
+  maj="${v%%.*}"; rest="${v#*.}"; min="${rest%%.*}"
+  maj="${maj//[!0-9]/}"; min="${min//[!0-9]/}"
+  [ -n "$maj" ] || return 1
+  [ -n "$min" ] || min=0
+  if [ "$maj" -lt "$NVIM_MIN_MAJOR" ]; then return 0; fi
+  if [ "$maj" -eq "$NVIM_MIN_MAJOR" ] && [ "$min" -lt "$NVIM_MIN_MINOR" ]; then return 0; fi
+  return 1
+}
+
+echo ""
+echo "  neovim (need >= $NVIM_MIN_MAJOR.$NVIM_MIN_MINOR):"
+_nvim_v="$(nvim_version)"
+if [ -z "$_nvim_v" ]; then
+  echo "  ⚠️  nvim not installed — the [nvim] tools should have provided it"
+elif nvim_below_floor "$_nvim_v"; then
+  echo "  ↩︎  found $_nvim_v, below the floor — installing a current one via mise"
+  mise_install_forced nvim neovim || {
+    echo "  ❌ could not upgrade nvim. This config will fail to start on $_nvim_v."
+    echo "     Install neovim >= $NVIM_MIN_MAJOR.$NVIM_MIN_MINOR by hand, or run:"
+    echo "       mise use -g neovim@latest"
+  }
+else
+  echo "  ✅ nvim $_nvim_v"
+fi
+
 # clang/libclang: needed by cargo's bindgen, which a from-source tree-sitter
 # build pulls in. Only install it when we'd actually compile — i.e. when
 # tree-sitter is still missing after the manifest's providers have run.

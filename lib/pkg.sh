@@ -213,12 +213,25 @@ uv_install() {
 # pinned versions across machines and downloads binaries instead of compiling.
 mise_install() {
   local cmd="$1"
-  local tool="${2:-$1}"
 
   if command -v "$cmd" >/dev/null 2>&1; then
     echo "  ✅ $cmd"
     return 0
   fi
+
+  mise_install_forced "$@"
+}
+
+# mise_install_forced <cmd> [tool]
+#
+# mise_install without the `command -v` short-circuit, for when the command is
+# present but not usable. `command -v` answers "does this exist", which is the
+# right question almost everywhere and the wrong one when a distro ships a
+# version too old to run the config — Ubuntu 24.04's neovim 0.9.5 against a
+# config that needs 0.10+. The caller decides it's unusable; this just installs
+# over it. See the version floor in nvim/deps.sh for the only current use.
+mise_install_forced() {
+  local tool="${2:-$1}"
 
   if ! command -v mise >/dev/null 2>&1; then
     echo "  ➡️  Installing mise..."
