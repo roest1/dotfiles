@@ -204,17 +204,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # If this ever fails, Ubuntu started shipping something current and the
-      # whole mise-first argument in deps.conf deserves rereading.
-      - name: apt's neovim really is below the floor
+      # Reports what apt offers; deliberately does NOT fail when that improves.
+      # This job is a required check, and Ubuntu shipping a newer neovim is good
+      # news — blocking every PR on it would mean an upstream improvement stops
+      # unrelated work until someone edits CI. The assertion that matters is the
+      # one below: one nvim, at or above the floor. That holds either way.
+      - name: What apt offers (informational)
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           cand=$(apt-cache policy neovim | awk '/Candidate:/ {print $2}')
           echo "apt candidate: $cand"
           case "$cand" in
-            0.9.*|0.1[01].*) echo "below 0.12, as expected — the fallback is live" ;;
-            *) echo "apt now offers $cand; revisit the mise||pkg ordering"; exit 1 ;;
+            0.9.*|0.1[01].*)
+              echo "below 0.12 — the mise fallback is doing real work here" ;;
+            *)
+              echo "::notice::apt now offers neovim $cand. If that is >= 0.12 the"
+              echo "::notice::mise||pkg ordering in deps.conf may no longer be needed." ;;
           esac
 
       - name: Resolve nvim through the real provider chain
