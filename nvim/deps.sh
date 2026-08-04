@@ -33,8 +33,15 @@ ensure_local_bin_on_path
 # deps.conf declares `pkg||mise` so a mise-provided nvim is not reported as drift
 # by `make status`.
 
+# 0.12, not 0.10. Two different floors got conflated: lsp_servers.lua needs
+# vim.fs.joinpath (0.10), but roslyn.nvim refuses to load below 0.12 and says so
+# on every startup. The plugin set is the real constraint, so it sets the floor.
+#
+# This is not as aggressive as it sounds — Fedora 44 ships 0.12.4 in `updates`
+# and Fedora 45 has 0.12.4 too, so `pkg` still satisfies it there. Ubuntu 24.04's
+# 0.9.5 is what actually needs the mise fallback.
 NVIM_MIN_MAJOR=0
-NVIM_MIN_MINOR=10
+NVIM_MIN_MINOR=12
 
 # Prints the running nvim's version, or nothing if absent/unparseable.
 nvim_version() {
@@ -62,7 +69,16 @@ _nvim_v="$(nvim_version)"
 if [ -z "$_nvim_v" ]; then
   echo "  ⚠️  nvim not installed — the [nvim] tools should have provided it"
 elif nvim_below_floor "$_nvim_v"; then
-  echo "  ↩︎  found $_nvim_v, below the floor — installing a current one via mise"
+  echo "  ↩︎  found $_nvim_v, below the floor"
+  # Worth saying before we install a second copy: if the distro package is
+  # merely out of date rather than too old to exist, upgrading it is the better
+  # fix and leaves one nvim on the machine instead of two. Fedora 44 shipping
+  # 0.12.4 while a stale system sat on 0.11.6 is exactly this case.
+  if command -v "$PM" >/dev/null 2>&1; then
+    echo "     (if your distro already packages a newer one, '$PM upgrade neovim'"
+    echo "      is the tidier fix — this falls back to mise only if it has to)"
+  fi
+  echo "  ➡️  installing a current neovim via mise"
   mise_install_forced nvim neovim || {
     echo "  ❌ could not upgrade nvim. This config will fail to start on $_nvim_v."
     echo "     Install neovim >= $NVIM_MIN_MAJOR.$NVIM_MIN_MINOR by hand, or run:"

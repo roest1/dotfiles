@@ -1,11 +1,8 @@
 -- :checkhealth integration
 --
 -- Checks:
---   1. Neovim version (0.10+)
---   2. Core tools (git, make, rg, fd, stylua, prettierd, prettier)
---   3. Formatters (ruff, etc.)
---   4. Linters (eslint_d, etc.)
---   5. Productivity tools (zoxide, fzf, bat, eza)
+--   1. Neovim version (0.12+, see below)
+--   2. External tools — the list lives in external/reqs.lua
 
 local check_version = function()
   local verstr = tostring(vim.version())
@@ -14,7 +11,9 @@ local check_version = function()
     return
   end
 
-  if vim.version.ge(vim.version(), '0.10-dev') then
+  -- 0.12, matching the floor enforced by nvim/deps.sh. Set by roslyn.nvim,
+  -- which refuses to load below it; the config's own code only needs 0.10.
+  if vim.version.ge(vim.version(), '0.12') then
     vim.health.ok(string.format("Neovim version is: '%s'", verstr))
   else
     vim.health.error(string.format("Neovim out of date: '%s'. Upgrade to latest stable or nightly", verstr))

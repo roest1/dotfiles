@@ -4,7 +4,7 @@ Personal Neovim configuration. Modular, documented, and designed to be understoo
 
 ## Install
 
-Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](https://github.com/ryanoasis/nerd-fonts/releases)) set as your terminal font.
+Requires Neovim 0.12+ (installed automatically) and a Nerd Font (e.g. [0xProto](https://github.com/ryanoasis/nerd-fonts/releases)) set as your terminal font.
 
 This config lives in the [dotfiles](https://github.com/roest1/dotfiles) monorepo,
 not in a standalone repo. `~/.config/nvim` is a **symlink** into `dotfiles/nvim`,
