@@ -9,5 +9,11 @@
     "typescript-language-server": "^5.1.0",
     "vscode-langservers-extracted": "^4.10.0",
     "yaml-language-server": "^1.15.0"
+  },
+  "overrides": {
+    "minimatch": ">=10.2.1"
+  },
+  "devDependencies": {
+    "@socketsecurity/bun-security-scanner": "^1.1.2"
   }
 }

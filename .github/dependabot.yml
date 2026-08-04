@@ -5,23 +5,75 @@ version: 2
 #   nvim/lsp-servers  the JS language servers. Moving them out of Mason and into
 #                     a package.json is what made them visible at all — Mason's
 #                     copies live in ~/.local/share/nvim/mason, untracked and
-#                     unwatched. bun.lock is supported under npm_and_yarn.
+#                     unwatched.
 #   /                 GitHub Actions versions. They rot on their own schedule:
 #                     actions/checkout@v4 began emitting a Node.js 20
 #                     deprecation on every run and needed a manual bump.
 #
-# Still invisible, and worth remembering: deps.conf (a custom format) and
-# nvim/lazy-lock.json (lazy.nvim's lockfile). Nothing here will warn that a CLI
-# tool or a neovim plugin has a CVE. That's an accepted cost of the manifest
+# ── What `bun` actually buys, and what it doesn't ───────────────────────────
+#
+# The ecosystem value is "bun", not "npm". Both of the following are documented
+# limitations, not configuration mistakes, and together they are why the
+# `bun audit` job in ci.yml exists:
+#
+#   1. Version updates only. GitHub's ecosystem table marks bun ✓ version
+#      updates / ✗ SECURITY updates, and the Feb-2025 GA changelog says
+#      "support for bun security updates will be added in the future". So
+#      Dependabot will open routine bump PRs here but will never open a PR to
+#      fix an advisory.
+#
+#   2. bun.lock is not read by the dependency graph at all. The supported-
+#      formats table lists package-lock.json, yarn.lock and pnpm-lock.yaml —
+#      there is no bun row. Left alone, the graph parses package.json, sees the
+#      5 direct servers below, and is blind to the ~80 packages beneath them —
+#      so no alert (vulnerability OR malware) could fire on a transitive dep.
+#
+#      WORKED AROUND. nvim/lsp-servers/yarn.lock is a generated yarn v1
+#      lockfile, produced by `bun install --yarn` — bun's own resolution, no
+#      npm and no node involved. yarn.lock IS a format the graph parses, with
+#      transitive support, so the full tree is visible and alerts fire on all of
+#      it. bun.lock remains the source of truth; ci.yml asserts the two agree,
+#      because a stale yarn.lock would have the graph describing a tree that no
+#      longer exists, which is worse than no file at all.
+#
+#      Consequence to expect: Dependabot security updates may open PRs editing
+#      yarn.lock, a generated file. Treat those as notifications — apply the fix
+#      through bun (an `overrides` entry or a version bump), then regenerate.
+#      Do not merge them as-is; they would not update bun.lock.
+#
+# That second point is not theoretical. Verified against a bun-only sibling repo
+# (codegig-br/kinesics): its SBOM contains exactly 27 npm packages — precisely
+# its two package.json files' direct deps, each recorded as an unresolved range
+# ("react@^18.3.1") rather than a resolved version — while its uv backend
+# contributes 87 fully-resolved transitive pypi packages from uv.lock. When that
+# repo deleted package-lock.json during its npm→bun migration on 2026-07-28, 62
+# npm alerts closed the same day. Nothing was fixed; the file the graph could
+# read went away, and so did the coverage.
+#
+# `bun audit` in CI (scheduled + on PR) is kept regardless. It reads the same
+# advisory database Dependabot does — it POSTs the installed tree to npm's
+# /-/npm/v1/security/advisories/bulk, the endpoint `npm audit` uses — but it
+# gates the build rather than filing a notification, and it does not depend on
+# the yarn.lock workaround above continuing to be honoured.
+#
+# Neither layer can act on malware nobody has reported yet. That is what the
+# Socket scanner step in ci.yml is for: it runs during install and aborts on a
+# malicious or typosquatted package. Detection, detection, prevention.
+#
+# ── Still invisible, and worth remembering ──────────────────────────────────
+#
+# deps.conf (a custom format; ~17 tools from dnf/apt/brew/mise/cargo) and
+# nvim/lazy-lock.json (26 neovim plugins — arbitrary Lua from 26 GitHub repos,
+# realistically the largest attack surface here, with no advisory database that
+# covers it; pinned commits are the mitigation). Nothing here will warn that a
+# CLI tool or a neovim plugin has a CVE. That's an accepted cost of the manifest
 # design, not an oversight.
 #
 # Monthly, not weekly — this repo is small enough that weekly would be noise.
 
 updates:
-  # The JS language servers. bun.lock is supported under the npm_and_yarn
-  # ecosystem (bun >= 1.1.39), so these get version-bump PRs — which Mason's
-  # untracked installs never could.
-  - package-ecosystem: "npm"
+  # The JS language servers.
+  - package-ecosystem: "bun"
     directory: "/nvim/lsp-servers"
     schedule:
       interval: "monthly"
@@ -29,6 +81,20 @@ updates:
       prefix: "nvim"
     labels:
       - "dependencies"
+    groups:
+      # Five servers that all move independently would be five PRs a month for
+      # a config nobody is paging on. One batched PR is the reviewable unit.
+      lsp-servers:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Majors stay ungrouped so each arrives as its own PR. A language-server
+      # major can change the cmd/args contract — bash-language-server already
+      # wants `start` rather than `--stdio` — and nvim/lsp-servers/verify.ts
+      # proves the handshake, so a major is exactly the case worth seeing alone.
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -38,3 +104,7 @@ updates:
       prefix: "ci"
     labels:
       - "dependencies"
+    groups:
+      actions-all:
+        patterns:
+          - "*"

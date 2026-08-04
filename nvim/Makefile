@@ -26,7 +26,16 @@ CLEAN_PATHS := $(HOME)/.local/share/nvim $(HOME)/.cache/nvim
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help all deps sync update clean
+.PHONY: help all deps sync servers update clean
+
+# How long a package version must have existed before we'll resolve to it.
+# Malicious releases are typically detected and unpublished within hours, so
+# refusing brand-new versions sidesteps the window where a compromised release
+# is live but not yet caught. 7 days.
+#
+# This only affects RESOLUTION, which is why it lives on `servers` and not on
+# the install steps: those all run --frozen-lockfile and resolve nothing.
+SERVER_COOLDOWN := 604800
 
 help: ## Show this help
 	@echo ""
@@ -54,6 +63,26 @@ sync: ## Install/update plugins + compile TS parsers (headless)
 	@nvim --headless "+TSUpdate" +qa 2>&1 | tail -5
 	@echo ""
 	@echo "Done."
+
+# Note: `bun update` also rewrites the declared ranges in package.json to match
+# what it resolved (^5.7.0 becomes ^5.9.3). That is bun's behaviour, not a bug
+# here, but it means this target always dirties package.json even when no
+# resolved version moved — so read the diff before committing rather than
+# assuming an empty run left nothing behind.
+servers: ## Update the JS language servers (cooldown applied, regenerates yarn.lock)
+	@command -v bun >/dev/null 2>&1 || { echo "bun not found — run 'make deps' first"; exit 1; }
+	@echo ""
+	@echo "Updating language servers (ignoring releases newer than $$(( $(SERVER_COOLDOWN) / 86400 )) days)..."
+	@cd "$(NVIM_DIR)/lsp-servers" && bun update --minimum-release-age=$(SERVER_COOLDOWN)
+	@# yarn.lock is generated output that exists only so GitHub's dependency
+	@# graph can read the tree. Regenerate it in the same breath, because CI
+	@# fails if the two disagree and forgetting is the obvious way to trip it.
+	@cd "$(NVIM_DIR)/lsp-servers" && bun install --yarn
+	@echo ""
+	@echo "Checking for advisories..."
+	@cd "$(NVIM_DIR)/lsp-servers" && bun audit || true
+	@echo ""
+	@echo "Review the bun.lock / yarn.lock diff, then commit both."
 
 update: ## Pull latest changes and re-run deps + sync
 	@if [ -n "$$(git -C "$(NVIM_DIR)" status --porcelain)" ]; then \

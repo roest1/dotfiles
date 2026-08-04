@@ -12,6 +12,13 @@ on:
     branches: [main, merge-nvim]
   pull_request:
   workflow_dispatch:
+  # For the `audit` job below: an advisory published on a Tuesday is not
+  # discovered by a workflow that only runs when someone pushes. A dotfiles repo
+  # can sit untouched for a month, which is exactly how long the gap would be.
+  # GitHub only runs schedules on the default branch, so this starts working
+  # once this lands on main.
+  schedule:
+    - cron: '0 6 * * 1'
 
 jobs:
   # ── Lint ───────────────────────────────────────────────────────────────────
@@ -180,6 +187,91 @@ jobs:
             echo "bash section incomplete"; exit 1
           fi
 
+  # ── transitive advisories: the coverage Dependabot cannot give us ──────────
+  # This job is not redundant with Dependabot, and deleting it would silently
+  # remove the only transitive coverage in the repo. The full reasoning is in
+  # .github/dependabot.yml; the short version is that the dependency graph has
+  # no bun.lock parser, so it reads package.json, sees the 5 declared servers,
+  # and is blind to the ~70 packages underneath — which is where advisories
+  # actually land. `bun audit` resolves the installed tree instead, and it found
+  # three high-severity minimatch ReDoS advisories (GHSA-3ppc-4f35-3m26,
+  # -7r86-cg39-jmmj, -23c5-xmqv-rm74) reached via
+  # bash-language-server › editorconfig › minimatch, none of which GitHub
+  # reported. That is what the `overrides` block in package.json pins past.
+  audit:
+    name: bun audit (transitive advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-bun rather than `curl https://bun.com/install | bash`. This job's
+      # whole purpose is objecting to unreviewed code entering the build, so
+      # piping an unpinned remote script into bash to bootstrap it was the one
+      # inconsistency worth removing. The action is pinned and watched by the
+      # github-actions ecosystem in dependabot.yml; the curl script is neither.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # --frozen-lockfile so the audit describes the committed tree rather than
+      # whatever resolves today. An audit of a lockfile CI just rewrote is an
+      # audit of something that was never reviewed.
+      - name: Install the language servers
+        run: bun install --cwd nvim/lsp-servers --frozen-lockfile
+
+      # Fails the build on any advisory. When one turns out to be unfixable —
+      # a transitive exact-pin with no upstream release, which is precisely the
+      # minimatch situation — the escape hatch is `--ignore=<GHSA-id>` with a
+      # comment saying why, not deleting this step. An accepted risk should be
+      # written down in the same place the repo writes down its other accepted
+      # costs.
+      - name: No known advisories in the language server tree
+        run: bun audit --cwd nvim/lsp-servers
+
+      # yarn.lock is a GENERATED artifact whose only job is to be readable by
+      # GitHub's dependency graph, which has no bun.lock parser. bun.lock stays
+      # the source of truth; this proves the two agree. `bun install --yarn` is
+      # deterministic, so a diff here means someone changed deps without
+      # regenerating, and the dependency graph would be describing a tree that
+      # no longer exists — which is worse than not having the file at all.
+      - name: yarn.lock matches bun.lock
+        run: |
+          set -euo pipefail
+          bun install --cwd nvim/lsp-servers --yarn --frozen-lockfile
+          if ! git diff --exit-code -- nvim/lsp-servers/yarn.lock; then
+            echo
+            echo "yarn.lock is stale. Regenerate it:"
+            echo "    bun install --cwd nvim/lsp-servers --yarn"
+            exit 1
+          fi
+
+      # Socket's scanner runs DURING install and can abort it on a malicious or
+      # typosquatted package — prevention, where bun audit and Dependabot are
+      # both detection-after-disclosure. It is the only layer here that can act
+      # on a package no advisory database has heard of yet.
+      #
+      # bunfig.toml is written here rather than committed, and that is the whole
+      # design. The scanner fails CLOSED: with Socket's API unreachable,
+      # `bun install` exits 1 even with a frozen lockfile and a warm cache
+      # (verified). Committing bunfig.toml would put Socket's availability on the
+      # critical path of `make install`, and this repo's entire premise is
+      # bootstrapping locked-down and offline machines — `make link` exists
+      # precisely for machines with no network. So the scan lives where a new
+      # dependency actually enters the repo: CI. A fresh machine installing an
+      # already-pinned lockfile with integrity hashes is fetching bytes that were
+      # scanned when they were introduced.
+      - name: Scan for malicious packages (Socket, CI only)
+        run: |
+          set -euo pipefail
+          cat > nvim/lsp-servers/bunfig.toml <<'TOML'
+          [install.security]
+          scanner = "@socketsecurity/bun-security-scanner"
+          TOML
+          # Free mode — no SOCKET_API_KEY, no account, no secret to leak.
+          rm -rf nvim/lsp-servers/node_modules
+          bun install --cwd nvim/lsp-servers --frozen-lockfile
+          rm -f nvim/lsp-servers/bunfig.toml
+
   # ── the toolchain is bun and uv, and stays that way ────────────────────────
   # Not "nvim without node" any more — nvim never wants node now, so there is no
   # special mode to exercise. What needs guarding is the invariant: that nothing
@@ -190,6 +282,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # Pinned and Dependabot-watched, rather than piping an unpinned installer
+      # script into bash. Note this puts bun somewhere other than ~/.bun/bin, so
+      # the handshake step below resolves it with `command -v` rather than
+      # assuming a path.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: deps.conf declares no node, npm or pip
         run: |
@@ -234,12 +334,9 @@ jobs:
       # give false readings on several of these servers.
       - name: LSP servers handshake under bun, with node/npm absent
         run: |
-          curl -fsSL https://bun.com/install | bash
-          export PATH="$HOME/.bun/bin:$PATH"
-          bun install --cwd nvim/lsp-servers
+          bun install --cwd nvim/lsp-servers --frozen-lockfile
           MIN=$(mktemp -d)
-          for b in sh bash env timeout; do ln -sf "$(command -v $b)" "$MIN/$b"; done
-          ln -sf "$HOME/.bun/bin/bun" "$MIN/bun"
+          for b in sh bash env timeout bun; do ln -sf "$(command -v $b)" "$MIN/$b"; done
           ! PATH=$MIN command -v node
           ! PATH=$MIN command -v npm
           PATH=$MIN bun nvim/lsp-servers/verify.ts | tee /tmp/lsp.txt
