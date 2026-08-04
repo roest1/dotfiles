@@ -175,11 +175,13 @@ FORMATTING                                          *roest-keymaps-formatting*
 Auto-formats on save via conform.nvim.
 
 Formatters by filetype:
-    Lua         → stylua
-    JS/TS/JSON  → prettierd (falls back to prettier)
-    Python      → black
-    HTML/CSS    → prettierd
-    Markdown    → prettierd
+    Lua                        → stylua
+    JS/TS/JSON/HTML/CSS/YAML   → prettier (run via bun)
+    Markdown                   → prettier (run via bun)
+    Python                     → ruff
+
+See |roest-plugins-formatter| for why prettier rather than prettierd, and why
+bash and toml aren't in the list.
 
 ==============================================================================
 EDITING                                                *roest-keymaps-editing*
@@ -202,7 +204,10 @@ CUSTOM COMMANDS                                        *roest-keymaps-commands*
     :ResetNvim                      Wipe plugin cache (nuclear option)
     :ResetNvim!                     Force reset without confirmation
     :Glow                           Render markdown preview
-    :Mason                          Manage LSP servers
+
+Language servers are not managed from inside the editor — there is no :Mason.
+Native ones are declared in ../deps.conf; the JavaScript ones live in
+nvim/lsp-servers/package.json. See |roest-commands-servers|.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

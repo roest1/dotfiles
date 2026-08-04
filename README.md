@@ -20,11 +20,11 @@ commenting** — there's no flag to remember and no profile vocabulary to learn.
 ```conf
 [nvim]
 link  nvim                    ~/.config/nvim
-tool  pkg   nvim        neovim
-tool  mise  stylua
-tool  uv    ruff
-# tool  npm   prettierd   @fsouza/prettierd    ← disabled: no node on this box
-post  make -C nvim sync
+tool  mise||pkg    nvim       neovim     # mise first: apt's is too old
+tool  mise||cargo  stylua
+tool  uv||pkg      ruff
+# tool  pkg        shfmt                 ← commented out = skipped
+post  bun install --cwd nvim/lsp-servers --frozen-lockfile
 ```
 
 | Command | What |
@@ -119,10 +119,10 @@ one thing this repo exists to get right.
 which provider owns it, and the package name when it differs from the command:
 
 ```
-$ ./tools/adopt.sh rg fd prettierd stylua wezterm
+$ ./tools/adopt.sh rg fd clangd stylua wezterm
 tool  pkg          rg           ripgrep
 tool  pkg          fd           fd-find
-tool  npm          prettierd    @fsouza/prettierd
+tool  pkg          clangd       clang-tools-extra
 tool  cargo        stylua
 tool  pkg||manual  wezterm      # installed outside any manager (~/.local/bin/wezterm)
 ```
@@ -193,12 +193,21 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ├── Makefile                              Reads sections from deps.conf
 ├── bootstrap.sh                          Curl-able fresh-machine entry point
 ├── install.sh                            Symlink engine (backs up existing files)
+├── CONTRIBUTING.md                       How to add a tool without breaking the manifest
+├── .github/
+│   ├── workflows/ci.yml                  Portability + supply-chain checks
+│   ├── dependabot.yml                    bun + github-actions ecosystems
+│   └── CODEOWNERS                        Required for code-owner review
 ├── lib/
 │   ├── manifest.sh                       deps.conf parser
 │   ├── providers.sh                      provider dispatch + || chains
 │   ├── pkg.sh                            the installers
-│   └── run.sh                            section runner
+│   ├── run.sh                            section runner
+│   └── status.sh                         declared-vs-actual drift detection
+├── tools/
+│   └── adopt.sh                          Generates a deps.conf line for a command
 ├── nvim/                                 Neovim config (own Makefile + README)
+│   └── lsp-servers/                      JS language servers + prettier, run by bun
 ├── wezterm/
 │   └── wezterm.lua                     → ~/.config/wezterm/wezterm.lua
 ├── bash/
@@ -212,7 +221,8 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ├── git/
 │   ├── gitconfig                       → ~/.gitconfig
 │   ├── README.md                         GitHub tips and tricks
-│   └── GITHUB_TOOLS.md                   Interactive tools walkthrough
+│   ├── GITHUB_TOOLS.md                   Interactive tools walkthrough
+│   └── GITHUB_SETUP.md                   New-repo settings + ruleset reference
 ├── podman/
 │   └── README.md                         podman container-engine reference (Linux)
 └── systemd/

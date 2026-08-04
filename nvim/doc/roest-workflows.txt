@@ -249,7 +249,9 @@ Check plugin status:~
     :Lazy
 
 Install/update LSP servers:~
-    :Mason
+    Not from inside the editor — see |roest-commands-servers|.
+    Native:  make install nvim
+    JS ones: make -C nvim servers
 
 Check health:~
     :checkhealth

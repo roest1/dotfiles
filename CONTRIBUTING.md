@@ -64,12 +64,18 @@ Add a `tool` line to the right section:
 tool  <provider>  <command>  [package]     # package defaults to command
 ```
 
-Providers: `pkg` (system package manager), `mise`, `npm`, `uv`, `cargo`, and
+Providers: `pkg` (system package manager), `mise`, `uv`, `cargo`, and
 `manual`. Use `||` for fallbacks: `pkg||cargo eza`.
+
+`npm` is still in the dispatcher (`lib/providers.sh`) and still accepted by the
+manifest validator, but **the `bun-only toolchain` job rejects any `npm` line in
+`deps.conf`**, so it is unreachable by design — dead code kept only because
+removing it touches four files. Don't reach for it; JavaScript tools go in
+`nvim/lsp-servers/package.json` and run under `bun`.
 
 `./tools/adopt.sh <command>` writes the line for you — it resolves the provider
 and the package name, which is the part that's easy to get wrong (`rg` is
-`ripgrep`, `fd` is `fd-find`, `prettierd` is `@fsouza/prettierd`). It prints
+`ripgrep`, `fd` is `fd-find`, `clangd` is `clang-tools-extra`). It prints
 rather than edits; choosing the section is yours.
 
 Three rules, each of which exists because breaking it caused a real bug here:
@@ -112,9 +118,22 @@ podman run --rm -v "$PWD":/mnt:Z -w /mnt docker.io/koalaman/shellcheck:stable \
   --severity=warning bootstrap.sh install.sh lib/*.sh */deps.sh tools/*.sh
 ```
 
-CI additionally runs `make link` on Ubuntu and macOS, full installs across
-apt/brew/dnf, manifest validation, and a job that comments out the node block to
-prove the editor degrades rather than breaking.
+CI runs ten jobs on every push and PR; all ten are required to merge.
+
+| Job                                    | Proves                                              |
+| -------------------------------------- | --------------------------------------------------- |
+| `shellcheck`                           | Shell sources lint clean                            |
+| `manifest parses`                      | deps.conf parses; no Makefile target overrides its own recipe; every link source exists; `adopt.sh` output round-trips |
+| `link only (linux)` / `(macos)`        | The no-sudo, no-network path works and is idempotent |
+| `install (ubuntu / apt)` / `(macos / brew)` / `(fedora / dnf)` | `make install bash` completes with nothing MISSING |
+| `neovim floor (ubuntu, mise fallback)` | Exactly one nvim, at or above 0.12, on the one platform whose distro can't reach it |
+| `bun audit (transitive advisories)`    | No known advisories in the language-server tree, including transitively |
+| `bun-only toolchain`                   | No node/npm/pip in the manifest, no shim anywhere, and all six language servers complete a real LSP handshake with node absent from PATH |
+
+`bun audit` also runs weekly on a schedule, because an advisory published on a
+Tuesday shouldn't wait for someone to push. It is the only job that can go red
+with no change to the repo; when that happens the fix is a version bump or an
+`--ignore` entry with a comment on the `audit` target, not deleting the job.
 
 ## Invariants
 

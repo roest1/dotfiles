@@ -251,21 +251,26 @@ LAZY (Plugin Manager)                                  *roest-commands-lazy*
 Inside dashboard: press ? for help
 
 ==============================================================================
-MASON (Tool Installer)                                *roest-commands-mason*
+LANGUAGE SERVERS                                   *roest-commands-servers*
 
-    :Mason              Open UI
-    :MasonInstall X     Install tool
-    :MasonUninstall X   Remove tool
-    :MasonUpdate        Update all tools
-    :MasonLog           View logs
+There is no Mason and no :Mason command. Servers are declared ahead of time
+rather than installed from inside the editor, so there is nothing to open.
 
-Common tools:~
-    lua-language-server
-    pyright
-    typescript-language-server
-    stylua
-    prettierd
-    black
+Native binaries — clangd, lua-language-server, lemminx:~
+    Declared in ../deps.conf under [nvim].
+    Install:  make install nvim     (from the dotfiles root)
+
+JavaScript-based — ts_ls, bashls, yamlls, jsonls, cssls, html — and prettier:~
+    Declared in nvim/lsp-servers/package.json, run as `bun <path>`.
+    Install:  bun install --cwd nvim/lsp-servers
+    Update:   make -C nvim servers  (applies a 7-day release cooldown and
+                                     regenerates yarn.lock)
+    Verify:   bun nvim/lsp-servers/verify.ts
+              proves all six complete a real LSP handshake
+
+Why not Mason: it installs npm packages by shelling out to `npm`, which only
+exists if node does. Dropping it is what removed node from this config
+entirely. See the parent repo's CLAUDE.md.
 
 ==============================================================================
 LSP                                                         *roest-commands-lsp*

@@ -10,10 +10,10 @@ roest-commands-flow	roest-commands.txt	/*roest-commands-flow*
 roest-commands-glow	roest-commands.txt	/*roest-commands-glow*
 roest-commands-lazy	roest-commands.txt	/*roest-commands-lazy*
 roest-commands-lsp	roest-commands.txt	/*roest-commands-lsp*
-roest-commands-mason	roest-commands.txt	/*roest-commands-mason*
 roest-commands-pasteimage	roest-commands.txt	/*roest-commands-pasteimage*
 roest-commands-reset	roest-commands.txt	/*roest-commands-reset*
 roest-commands-roslyn	roest-commands.txt	/*roest-commands-roslyn*
+roest-commands-servers	roest-commands.txt	/*roest-commands-servers*
 roest-commands-telescope	roest-commands.txt	/*roest-commands-telescope*
 roest-commands-treesitter	roest-commands.txt	/*roest-commands-treesitter*
 roest-commands-trouble	roest-commands.txt	/*roest-commands-trouble*

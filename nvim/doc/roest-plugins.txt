@@ -190,16 +190,25 @@ Keymaps:
 
 Formatters by filetype:
     lua                 stylua
-    javascript          prettierd → prettier
-    typescript          prettierd → prettier
-    typescriptreact     prettierd → prettier
-    javascriptreact     prettierd → prettier
-    json                prettierd → prettier
-    markdown            prettierd → prettier
-    html                prettierd → prettier
-    css                 prettierd → prettier
-    yaml                prettierd → prettier
+    javascript          prettier
+    typescript          prettier
+    typescriptreact     prettier
+    javascriptreact     prettier
+    json                prettier
+    markdown            prettier
+    html                prettier
+    css                 prettier
+    yaml                prettier
     python              ruff
+
+prettierd is gone — it was an npm global and left with node. prettier itself is
+declared in nvim/lsp-servers/package.json and run as `bun <path> --write`, the
+same way the language servers are.
+
+Not listed, and deliberately: bash and toml. prettier has no parser for either
+("No parser could be inferred"), so those mappings never worked. shfmt and taplo
+are the usual answers if you want them — both native binaries, a deps.conf line
+each, no JavaScript involved.
 
 ==============================================================================
 NVIM-LINT (LINTER)                                      *roest-plugins-lint*
@@ -210,8 +219,13 @@ Location: lua/external/plugins/lint.lua
 
 Linters by filetype:
     python              ruff
-    javascript          eslint_d
-    typescript          eslint_d
+    javascript          eslint_d   (not installed — see below)
+    typescript          eslint_d   (not installed — see below)
+
+eslint_d was an npm global and left with node. The mapping is kept because
+nvim-lint only runs linters whose executable is on PATH, so a missing one costs
+nothing. To make JS/TS linting real again, add it to
+nvim/lsp-servers/package.json and run it through bun, the way prettier is.
 
 Runs on: save, insert-leave, buffer read.
 Diagnostics appear alongside LSP errors in the gutter.
