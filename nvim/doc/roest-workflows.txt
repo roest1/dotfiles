@@ -215,7 +215,6 @@ Exit terminal mode:~
     <C-\><C-n>
 
 For persistent terminals, use tmux instead.
-See: doc/roest-tmux.md
 
 ==============================================================================
 CLIPBOARD                                            *roest-workflows-clipboard*
@@ -238,7 +237,7 @@ Your Harpoon list persists across sessions.
 
 To save session state, consider adding:
     - persistence.nvim (auto-save/restore)
-    - Or use tmux (see doc/roest-tmux.md)
+    - Or use tmux
 
 ==============================================================================
 MAINTENANCE                                        *roest-workflows-maintenance*

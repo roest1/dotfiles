@@ -57,15 +57,16 @@ DOCUMENTATION INDEX                                              *roest-index*
 |roest-keymaps|     Every keymap, organized by category
 |roest-plugins|     What each plugin does and how to use it
 |roest-workflows|   "How do I..." recipes for common tasks
-|roest-motions|     Vim motions reference (w/W/b/B/e/E and more)
 |roest-commands|    Custom commands you've created
 |roest-options|     Editor settings and what they do
-|roest-bash|        Bash productivity commands (h, findword, etc.)
+|roest-harpoon|     Harpoon workflow
 
-External guides (markdown in doc/):
-    doc/roest-vim.md            Vim grammar and commands
-    doc/roest-tmux.md           tmux cheatsheet
-    doc/roest-terminal-setup.md Terminal configuration
+These docs cover THIS config. For Vim itself — motions, operators, text
+objects, registers — use the built-in help, which is authoritative and never
+goes stale: |motion.txt|, |operator|, |text-objects|, |registers|.
+
+For the shell, run `h` in a terminal (`h <command>` for detail). The shell
+documents the shell; this documents the editor.
 
 ==============================================================================
 LEADER KEY                                                      *roest-leader*
@@ -119,7 +120,6 @@ GETTING HELP                                                    *roest-help*
     :help roest-plugins     Plugin reference
     :help roest-workflows   Common tasks
     :help roest-commands    Custom commands
-    :help roest-bash        Bash productivity tools
 
     :Telescope help_tags    Search all help (or <leader>sh)
     :Telescope keymaps      Search keymaps (or <leader>sk)

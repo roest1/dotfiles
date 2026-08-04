@@ -74,7 +74,8 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 
 ## Keymaps
 
-Leader key is `Space`. New to vim motions? See `:help roest-motions`.
+Leader key is `Space`. New to vim motions? See `:help motion.txt` — the built-in
+docs are authoritative and always match your version.
 
 | Keys              | Action                    |
 | ----------------- | ------------------------- |
@@ -101,8 +102,6 @@ Full reference: `:help roest-keymaps`
 | `:help roest-plugins`   | Plugin reference           |
 | `:help roest-workflows` | "How do I..." recipes      |
 | `:help roest-commands`  | Custom commands            |
-| `:help roest-motions`   | Vim motions cheatsheet     |
-| `:help roest-bash`      | Bash productivity commands |
 
 ## Maintenance
 

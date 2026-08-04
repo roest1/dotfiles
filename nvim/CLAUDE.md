@@ -39,9 +39,16 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 
 ## Help Documentation
 
-Custom help files live in `doc/` (`:help roest-*`): keymaps, plugins, workflows, options, motions, commands, bash. After editing any doc file, regenerate tags with `:helptags ~/.config/nvim/doc`.
+Custom help files live in `doc/` (`:help roest-*`): keymaps, plugins, workflows, options, commands, harpoon. After editing any doc file, regenerate tags with `:helptags ~/.config/nvim/doc`.
 
-The README is a short orientation page (install + keymap quick-reference + pointers into `:help`). Vim-generic material (motions, operators, macros) belongs in `doc/`, not the README.
+**These docs cover this config only.** Two things they deliberately do not cover:
+
+- **Vim itself** — motions, operators, text objects, registers. `:help motion.txt` is authoritative and always matches the installed version; a local copy can only drift. `doc/roest-motions.txt` was exactly that and was removed (258 lines, of which 10 mentioned this config at all).
+- **The shell** — that's `h` in a terminal. `doc/roest-bash.txt` put bash docs in the editor's help and had already gone stale, still telling you to run `./bootstrap.sh` from the nvim config and `brew install` the tools that `deps.conf` now owns.
+
+The rule: the shell documents the shell, the editor documents the editor, and neither documents vim or git themselves. Don't reintroduce a doc that crosses those lines.
+
+The README is a short orientation page (install + keymap quick-reference + pointers into `:help`).
 
 ## Maintenance & Audit
 
