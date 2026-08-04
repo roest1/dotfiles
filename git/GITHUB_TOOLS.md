@@ -10,7 +10,7 @@ Interactive GitHub management from the terminal — no browser needed for most w
 | `gpr`       | PR lifecycle — filter, create, review, merge       |
 | `gha-ui`    | CI/CD workflows → logs → rerun (HEAD or recent)   |
 | `ghsecrets` | Repo + environment secrets                         |
-| `ghbranch`  | Branch management + protection rules               |
+| `ghbranch`  | Branches + rulesets (effective rules, required checks) |
 | `ghenv`     | Deployment environments                            |
 | `gha`       | Quick workflow status (non-interactive)             |
 
@@ -180,46 +180,93 @@ DATABASE_URL      Updated 2026-03-10
 
 ---
 
-## ghbranch — Branch Management + Protection
+## ghbranch — Branches + Rulesets
 
 <!-- [![ghbranch demo](https://asciinema.org/a/XXXXXX.svg)](https://asciinema.org/a/XXXXXX) -->
 
-### Listing branches
+**Rulesets, not classic branch protection.** This changed for a reason worth
+knowing: the old version drove `/repos/{o}/{r}/branches/{b}/protection`, and on
+a repo protected by a *ruleset* that endpoint returns `404 Branch not
+protected`. So it reported `main` as protected in the branch list — that field
+does account for rulesets — and unprotected on the very next screen. It would
+also write a classic rule *alongside* a ruleset, leaving two overlapping
+mechanisms and no clear answer to "which one blocked my push".
 
-Shows protection status at a glance:
+### Effective rules for a branch
 
-```
-━━━ Branches ━━━
-
-  🛡  main  (protected)
-     feature/new-login
-     fix/api-timeout
-```
-
-### Setting protection rules
-
-Interactive wizard — no JSON or API flags to remember:
+Answers what actually governs a branch, across every ruleset that targets it:
 
 ```
-━━━ Configure protection for 'main' ━━━
+━━━ Effective rules: main ━━━
 
-Required approving reviews (0-6, default 0): 1
-Dismiss stale reviews on new push? (Y/n): y
-Require status checks to pass before merging? (y/N): y
-Enforce rules for admins too? (y/N): n
-Require linear history? (y/N): y
+  from ruleset 20169814  (roest1/dotfiles)
+    • deletion
+    • non_fast_forward
+    • pull_request  approvals=1  codeowners=true
+    • required_status_checks  strict=true  checks=10
 
-✅ Protection rules applied to 'main'
+  ruleset 20169814 bypass: RepositoryRole/5:pull_request
 ```
+
+The bypass line is the point. "Protected" means little on its own — with a
+bypass you can merge red and stale, so the rules are guidance you override
+rather than a wall. Without one, and with required approvals on a solo repo,
+nothing can ever merge. Either way you want it on screen.
+
+### Managing a ruleset
+
+Pick a ruleset, then toggle the things worth toggling:
+
+| Action                        | Notes                                                  |
+| ----------------------------- | ------------------------------------------------------ |
+| View full ruleset             | Rules, conditions and bypass list as JSON               |
+| Enforcement                   | `active` / `evaluate` / `disabled` — evaluate reports without blocking |
+| Require branches up to date   | The `strict` flag. Turning it on means every merge invalidates every other open PR |
+| Required checks               | Add/remove, picking from names CI actually reported     |
+| Bypass mode                   | `pull_request` (no direct pushes) or `always`           |
+
+### Required checks are picked, not typed
+
+The add-a-check picker offers **only names the last CI run reported**, and the
+screen flags both directions of drift:
+
+```
+  ✅ shellcheck
+  ✅ manifest parses
+
+  Reported by CI but NOT required:
+    ○ bun audit (transitive advisories)
+
+  ⚠️  Required but NOT reported by the last run — these block PRs
+      indefinitely if the job was renamed or removed:
+    ✗ old job name
+```
+
+That second list is the dangerous one. A required check that never reports
+doesn't fail a PR — it blocks it forever, waiting on a status that will never
+arrive. Typing check names by hand is how that happens.
 
 ### Other actions
 
-| Action                | What it does                               |
-| --------------------- | ------------------------------------------ |
-| View protection rules | Structured view of what's enforced         |
-| Remove protection     | Strip all rules (with confirmation)        |
-| Delete remote branch  | Safety check — won't delete default branch |
-| Set default branch    | Change repo's default                      |
+| Action                     | What it does                                        |
+| -------------------------- | --------------------------------------------------- |
+| List branches              | 🛡 marks any branch covered by a rule                |
+| Delete remote branch       | Safety check — won't delete the default branch       |
+| Set default branch         | Change the repo's default                            |
+| Legacy classic protection  | Read + delete only, for migrating a repo off it      |
+
+Nothing in here *creates* a classic protection rule. Rulesets supersede them,
+and a branch carrying both is a branch where "why was this rejected" has two
+possible answers.
+
+### Under the hood
+
+Writes are read-modify-write through a single helper, because `PUT` replaces the
+fields it receives — every edit passes a `jq` filter over the current ruleset
+rather than assembling a payload, so no edit can silently drop a field.
+
+And rulesets update with **`PUT`, not `PATCH`**. `PATCH` returns a bare `404`
+that reads exactly like a permissions failure and isn't.
 
 ---
 
@@ -371,25 +418,30 @@ Script:
   9. q to exit
 ```
 
-#### 5. `ghbranch` — protection rules (~30s)
+#### 5. `ghbranch` — rulesets (~30s)
 
 ```
 Pre-setup:
-  Have at least 2 branches (main + one feature branch)
+  A repo with a ruleset on the default branch, and at least one CI run
+  (the required-checks picker reads job names from the last run)
 
 Script:
   1. ghbranch
   2. "List branches" — show 🛡 indicators
   3. - back
-  4. "Set protection rules"
-  5. Pick main
-  6. Set: 1 review, dismiss stale, require checks
-  7. Back to menu (auto-returns)
-  8. "View protection rules" → pick main → show the JSON
-  9. r to refresh → - back
-  10. "Remove protection" → pick main → confirm
-  11. q to exit
+  4. "View effective rules for a branch" → pick main
+     → shows the rules AND the bypass line
+  5. r to refresh → - back
+  6. "Manage rulesets" → pick the ruleset
+  7. "Required checks" — show the two drift lists
+     (reported-but-not-required, required-but-not-reported)
+  8. - back, - back
+  9. q to exit
 ```
+
+Don't record a write. Enforcement, strict and bypass all change real repo
+behaviour, and a demo is a bad place to discover you flipped one on the wrong
+repo.
 
 #### 6. `ghenv` — environment lifecycle (~30s)
 

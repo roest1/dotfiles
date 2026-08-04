@@ -11,7 +11,7 @@
 #   gpr create    Create a new PR from current branch
 #   gpr mine      Show only your PRs
 #   ghsecrets     Manage repo & environment secrets
-#   ghbranch      Branch management & protection rules
+#   ghbranch      Branches & rulesets (supersedes classic protection)
 #   ghenv         Environment management
 #
 # Navigation:
@@ -933,10 +933,33 @@ ghenv() {
   esac
 }
 
-
 # ─────────────────────────────────────────────────────────────────
-#  ghbranch — Branch Management & Protection
+#  ghbranch — Branches & Rulesets
 # ─────────────────────────────────────────────────────────────────
+#
+# Rulesets, not classic branch protection.
+#
+# This used to drive /repos/{o}/{r}/branches/{b}/protection, the classic API.
+# On a repo protected by a ruleset that endpoint returns 404 "Branch not
+# protected" — so the tool reported main as protected in the branch list (that
+# field does account for rulesets) and unprotected on the very next screen. It
+# would also happily write a classic rule *alongside* a ruleset, leaving two
+# overlapping mechanisms and no clear answer to "which one blocked my push".
+#
+# Rulesets supersede classic protection: they stack, they can target patterns,
+# they carry bypass lists, and they're what GitHub's UI now creates by default.
+# So reads go through /rules/branches/{b} — the *effective* rules for a branch
+# across every ruleset — and writes go through /rulesets/{id}.
+#
+# Two things about the write path, both learned the hard way:
+#   • It is PUT, not PATCH. PATCH returns a bare 404 that reads exactly like a
+#     permissions failure and isn't.
+#   • PUT replaces the fields you send, so every edit is read-modify-write.
+#     _ghbranch_ruleset_apply does that in one place rather than each caller
+#     hand-rolling a payload and dropping a field it forgot to carry over.
+#
+# Classic protection is still reachable under "Legacy" for migrating a repo off
+# it. It is deliberately read-and-delete only — nothing here creates one.
 
 ghbranch() {
   __gh_check || return 1
@@ -946,14 +969,14 @@ ghbranch() {
 
   local action
   action=$(printf '%s\n' \
-    "📋 List branches (with protection status)" \
-    "🛡  View protection rules" \
-    "🛡  Set protection rules" \
-    "🗑  Remove protection" \
+    "📋 List branches (with rule status)" \
+    "🛡  View effective rules for a branch" \
+    "📜 Manage rulesets" \
     "🗑  Delete remote branch" \
     "⭐ Set default branch" \
+    "⚠️  Legacy classic protection" \
     | fzf --disabled --bind 'q:abort,-:abort' \
-        --header="Branch Management — $repo  │  ↑↓ nav  enter select  -/q back" \
+        --header="Branches & Rulesets — $repo  │  ↑↓ nav  enter select  -/q back" \
         --height=9 --no-info)
 
   [[ -z "$action" ]] && return
@@ -964,71 +987,47 @@ ghbranch() {
         echo ""
         echo "━━━ Branches ━━━"
         echo ""
+        # `.protected` is true when ANY rule covers the branch — ruleset or
+        # classic. It doesn't say which, which is why the next screen exists.
         gh api "repos/$repo/branches" --paginate \
-          --jq '.[] | "  \(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
+          --jq '.[] | "  \(if .protected then "🛡 " else "   " end)\(.name)"' \
           2>/dev/null || echo "  Failed to fetch branches"
         echo ""
-        echo "  🛡  = branch protection rules enabled"
+        echo "  🛡  = covered by at least one rule (ruleset or classic)"
         local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
         [[ "$key" == "r" || "$key" == "R" ]] || break
       done
       ghbranch
       ;;
 
-    *"View protection"*)
+    *"View effective rules"*)
       local branch
-      branch=$(__gh_pick_branch "View protections for which branch?")
+      branch=$(__gh_pick_branch "Effective rules for which branch?")
       [[ -z "$branch" ]] && { ghbranch; return; }
       while true; do
         echo ""
-        echo "━━━ Protection rules: $branch ━━━"
+        echo "━━━ Effective rules: $branch ━━━"
         echo ""
-        gh api "repos/$repo/branches/$branch/protection" 2>/dev/null \
-          | jq '{
-            required_approving_reviews: (.required_pull_request_reviews.required_approving_review_count // "not set"),
-            dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
-            require_status_checks: (.required_status_checks.strict // false),
-            required_checks: [(.required_status_checks.contexts // [])[]],
-            enforce_admins: (.enforce_admins.enabled // false),
-            require_linear_history: (.required_linear_history.enabled // false),
-            allow_force_pushes: (.allow_force_pushes.enabled // false),
-            allow_deletions: (.allow_deletions.enabled // false)
-          }' 2>/dev/null || echo "  No protection rules set on '$branch'"
+        _ghbranch_effective "$repo" "$branch"
         local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
         [[ "$key" == "r" || "$key" == "R" ]] || break
       done
       ghbranch
       ;;
 
-    *"Set protection"*)
-      _ghbranch_protect "$repo"
-      ghbranch
-      ;;
-
-    *"Remove protection"*)
-      local branch
-      branch=$(__gh_pick_branch "Remove protection from which branch?")
-      [[ -z "$branch" ]] && { ghbranch; return; }
-      read -rp "⚠️  Remove ALL protection rules from '$branch'? (y/N): " confirm
-      if [[ "$confirm" =~ ^[yY]$ ]]; then
-        gh api -X DELETE "repos/$repo/branches/$branch/protection" --silent 2>/dev/null \
-          && echo "✅ Protection removed from '$branch'" \
-          || echo "❌ Failed — branch may not be protected, or check permissions"
-      fi
+    *"Manage rulesets"*)
+      _ghbranch_rulesets "$repo"
       ghbranch
       ;;
 
     *"Delete remote"*)
-      local default_branch
+      local default_branch branch
       default_branch=$(__gh_default_branch)
-      local branch
       branch=$(__gh_pick_branch "Delete which remote branch?")
       [[ -z "$branch" ]] && { ghbranch; return; }
       if [[ "$branch" == "$default_branch" ]]; then
         echo "❌ Cannot delete the default branch ('$default_branch')"
-        sleep 1
-        ghbranch
-        return
+        sleep 1; ghbranch; return
       fi
       read -rp "Delete remote branch '$branch'? (y/N): " confirm
       if [[ "$confirm" =~ ^[yY]$ ]]; then
@@ -1051,67 +1050,334 @@ ghbranch() {
       fi
       ghbranch
       ;;
+
+    *"Legacy"*)
+      _ghbranch_legacy "$repo"
+      ghbranch
+      ;;
   esac
 }
 
-# ─── Interactive branch protection setup ──────────────────────────
+# ─── Effective rules for a branch ─────────────────────────────────
+#
+# Answers "what actually governs this branch", which is the question the old
+# per-branch protection view was trying and failing to answer.
 
-_ghbranch_protect() {
+_ghbranch_effective() {
+  local repo="$1" branch="$2" rules
+  rules=$(gh api "repos/$repo/rules/branches/$branch" 2>/dev/null)
+  if [[ -z "$rules" || "$rules" == "[]" ]]; then
+    echo "  No rules apply to '$branch'."
+    echo "  (Not the same as unprotected-by-mistake — a ruleset may simply not target it.)"
+    return
+  fi
+
+  printf '%s' "$rules" | jq -r '
+    group_by(.ruleset_id)[]
+    | "  from ruleset \(.[0].ruleset_id)  (\(.[0].ruleset_source))",
+      (.[] |
+        "    • \(.type)" +
+        (if .parameters == null then ""
+         elif .type == "required_status_checks" then
+           "  strict=\(.parameters.strict_required_status_checks_policy)  checks=\(.parameters.required_status_checks | length)"
+         elif .type == "pull_request" then
+           "  approvals=\(.parameters.required_approving_review_count)  codeowners=\(.parameters.require_code_owner_review)"
+         else "" end)),
+      ""
+  ' 2>/dev/null || echo "  (could not parse rules)"
+
+  # A bypass turns every rule above into guidance you can override. Saying so
+  # here is the difference between "main is protected" and knowing what that
+  # actually buys you.
+  local ids
+  ids=$(printf '%s' "$rules" | jq -r '[.[].ruleset_id] | unique[]' 2>/dev/null)
+  local id
+  for id in $ids; do
+    local bypass
+    bypass=$(gh api "repos/$repo/rulesets/$id" \
+      --jq '[.bypass_actors[]? | "\(.actor_type)/\(.actor_id):\(.bypass_mode)"] | join(", ")' 2>/dev/null)
+    [[ -n "$bypass" && "$bypass" != "" ]] \
+      && echo "  ruleset $id bypass: $bypass" \
+      || echo "  ruleset $id bypass: none — rules are absolute"
+  done
+}
+
+# ─── Ruleset browser / editor ─────────────────────────────────────
+
+_ghbranch_rulesets() {
+  local repo="$1"
+
+  while true; do
+    local list
+    list=$(gh api "repos/$repo/rulesets" \
+      --jq '.[] | "\(.id)\t\(.enforcement)\t\(.name)"' 2>/dev/null)
+    if [[ -z "$list" ]]; then
+      echo ""
+      echo "  No rulesets on $repo."
+      echo "  Create one in the UI (/settings/rules) — authoring a ruleset from"
+      echo "  scratch needs more structure than a picker can offer honestly."
+      echo ""
+      read -rsn1 -p "  any key to go back " _; echo ""
+      return
+    fi
+
+    local pick
+    pick=$(printf '%s\n' "$list" \
+      | awk -F'\t' '{printf "%-10s %-9s %s\n", $1, $2, $3}' \
+      | fzf --disabled --bind 'q:abort,-:abort' \
+          --header="Rulesets — $repo  │  id  enforcement  name  │  enter select  -/q back" \
+          --height=12 --no-info)
+    [[ -z "$pick" ]] && return
+
+    local id
+    id=$(awk '{print $1}' <<<"$pick")
+    _ghbranch_ruleset_menu "$repo" "$id"
+  done
+}
+
+_ghbranch_ruleset_menu() {
+  local repo="$1" id="$2"
+
+  while true; do
+    local name enforcement strict nchecks bypass
+    name=$(gh api "repos/$repo/rulesets/$id" --jq '.name' 2>/dev/null) || return
+    enforcement=$(gh api "repos/$repo/rulesets/$id" --jq '.enforcement' 2>/dev/null)
+    strict=$(gh api "repos/$repo/rulesets/$id" \
+      --jq '(.rules[] | select(.type=="required_status_checks") | .parameters.strict_required_status_checks_policy) // "n/a"' 2>/dev/null)
+    nchecks=$(gh api "repos/$repo/rulesets/$id" \
+      --jq '[(.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[]?)] | length' 2>/dev/null)
+    bypass=$(gh api "repos/$repo/rulesets/$id" \
+      --jq '[.bypass_actors[]? | .bypass_mode] | join(",") | if . == "" then "none" else . end' 2>/dev/null)
+
+    local action
+    action=$(printf '%s\n' \
+      "👁  View full ruleset" \
+      "🔁 Enforcement: $enforcement" \
+      "🔀 Require branches up to date: $strict" \
+      "✅ Required checks: $nchecks" \
+      "🪪 Bypass mode: $bypass" \
+      | fzf --disabled --bind 'q:abort,-:abort' \
+          --header="$name (id $id) — $repo  │  ↑↓ nav  enter select  -/q back" \
+          --height=8 --no-info)
+    [[ -z "$action" ]] && return
+
+    case "$action" in
+      *"View full"*)
+        echo ""
+        gh api "repos/$repo/rulesets/$id" \
+          | jq '{name, enforcement, conditions, bypass_actors,
+                 rules: [.rules[] | {type, parameters}]}' 2>/dev/null
+        echo ""
+        read -rsn1 -p "  any key to go back " _; echo ""
+        ;;
+
+      *"Enforcement"*)
+        local mode
+        mode=$(printf '%s\n' active evaluate disabled \
+          | fzf --disabled --bind 'q:abort,-:abort' \
+              --header="Enforcement  │  evaluate = report without blocking  │  -/q back" \
+              --height=6 --no-info)
+        [[ -z "$mode" ]] && continue
+        _ghbranch_ruleset_apply "$repo" "$id" ".enforcement = \"$mode\"" "enforcement → $mode"
+        ;;
+
+      *"Require branches up to date"*)
+        if [[ "$strict" == "n/a" ]]; then
+          echo "  This ruleset has no required-status-checks rule to make strict."
+          sleep 2; continue
+        fi
+        local new="true"; [[ "$strict" == "true" ]] && new="false"
+        # Worth stating before flipping it on: every merge to the base then
+        # invalidates every other open PR, each needing an update and a fresh
+        # CI run. Cheap when CI is fast, painful when it isn't.
+        _ghbranch_ruleset_apply "$repo" "$id" \
+          "(.rules[] | select(.type==\"required_status_checks\") | .parameters.strict_required_status_checks_policy) |= $new" \
+          "require-up-to-date → $new"
+        ;;
+
+      *"Required checks"*)
+        _ghbranch_checks "$repo" "$id"
+        ;;
+
+      *"Bypass mode"*)
+        if [[ "$bypass" == "none" ]]; then
+          echo "  No bypass actors on this ruleset — nothing to change."
+          echo "  (With required approvals and a sole maintainer, that means no PR"
+          echo "   can ever be merged. Add a bypass actor in the UI if so.)"
+          sleep 3; continue
+        fi
+        local mode
+        mode=$(printf '%s\n' pull_request always \
+          | fzf --disabled --bind 'q:abort,-:abort' \
+              --header="Bypass mode  │  pull_request = no direct pushes  │  -/q back" \
+              --height=6 --no-info)
+        [[ -z "$mode" ]] && continue
+        _ghbranch_ruleset_apply "$repo" "$id" \
+          "(.bypass_actors[].bypass_mode) |= \"$mode\"" "bypass mode → $mode"
+        ;;
+    esac
+  done
+}
+
+# ─── Required status checks ───────────────────────────────────────
+#
+# The names offered come from what CI actually reported, because a required
+# check whose name no longer matches a job never reports — and a check that
+# never reports doesn't fail a PR, it blocks it forever waiting on a status that
+# will not arrive. Typing these by hand is how that happens.
+
+_ghbranch_checks() {
+  local repo="$1" id="$2"
+
+  while true; do
+    local current
+    current=$(gh api "repos/$repo/rulesets/$id" \
+      --jq '(.rules[] | select(.type=="required_status_checks") | .parameters.required_status_checks[]?.context)' 2>/dev/null)
+
+    echo ""
+    echo "━━━ Required checks (ruleset $id) ━━━"
+    echo ""
+    if [[ -z "$current" ]]; then
+      echo "  (none)"
+    else
+      # sed, not printf with word splitting — check names contain spaces and
+      # parentheses ("link only (linux)"), which is exactly what splitting eats.
+      printf '%s\n' "$current" | sed 's/^/  ✅ /'
+    fi
+
+    # Job names from the most recent completed run — the exact strings a
+    # required check must match.
+    local reported
+    reported=$(gh run list --repo "$repo" --limit 1 --json databaseId \
+                 --jq '.[0].databaseId' 2>/dev/null)
+    local available=""
+    [[ -n "$reported" ]] && available=$(gh run view "$reported" --repo "$repo" \
+                 --json jobs --jq '.jobs[].name' 2>/dev/null)
+
+    echo ""
+    if [[ -n "$available" ]]; then
+      local missing
+      missing=$(comm -23 <(printf '%s\n' "$available" | sort -u) \
+                        <(printf '%s\n' "$current" | sort -u) 2>/dev/null)
+      if [[ -n "$missing" ]]; then
+        echo "  Reported by CI but NOT required:"
+        printf '%s\n' "$missing" | sed 's/^/    ○ /'
+      else
+        echo "  Every check CI reports is required."
+      fi
+      local stale
+      stale=$(comm -13 <(printf '%s\n' "$available" | sort -u) \
+                      <(printf '%s\n' "$current" | sort -u) 2>/dev/null)
+      if [[ -n "$stale" ]]; then
+        echo ""
+        echo "  ⚠️  Required but NOT reported by the last run — these block PRs"
+        echo "      indefinitely if the job was renamed or removed:"
+        printf '%s\n' "$stale" | sed 's/^/    ✗ /'
+      fi
+    else
+      echo "  (no recent run to read job names from)"
+    fi
+
+    echo ""
+    local act
+    act=$(printf '%s\n' "➕ Require a check CI reports" "➖ Stop requiring a check" "↩  Back" \
+      | fzf --disabled --bind 'q:abort,-:abort' \
+          --header="Required checks — ruleset $id  │  -/q back" --height=6 --no-info)
+    case "$act" in
+      *"Require a check"*)
+        [[ -z "$available" ]] && { echo "  No run to pick from."; sleep 2; continue; }
+        local add
+        add=$(printf '%s\n' "$available" | sort -u \
+          | fzf --header="Add which check?  │  type to filter  esc back" --height=15)
+        [[ -z "$add" ]] && continue
+        _ghbranch_ruleset_apply "$repo" "$id" \
+          "(.rules[] | select(.type==\"required_status_checks\") | .parameters.required_status_checks) += [{\"context\": \"$add\"}]" \
+          "required: $add"
+        ;;
+      *"Stop requiring"*)
+        [[ -z "$current" ]] && { echo "  Nothing required."; sleep 2; continue; }
+        local del
+        del=$(printf '%s\n' "$current" \
+          | fzf --header="Remove which check?  │  type to filter  esc back" --height=15)
+        [[ -z "$del" ]] && continue
+        _ghbranch_ruleset_apply "$repo" "$id" \
+          "(.rules[] | select(.type==\"required_status_checks\") | .parameters.required_status_checks) |= map(select(.context != \"$del\"))" \
+          "no longer required: $del"
+        ;;
+      *) return ;;
+    esac
+  done
+}
+
+# ─── The one place that writes a ruleset ──────────────────────────
+#
+# Read-modify-write, because PUT replaces the fields it receives. Every caller
+# passes a jq filter over the current ruleset rather than assembling a payload,
+# so no edit can silently drop a field it forgot to carry across.
+
+_ghbranch_ruleset_apply() {
+  local repo="$1" id="$2" filter="$3" msg="$4"
+
+  local cur payload
+  cur=$(gh api "repos/$repo/rulesets/$id" 2>/dev/null) || {
+    echo "❌ Could not read ruleset $id"; return 1; }
+
+  payload=$(printf '%s' "$cur" | jq "$filter" \
+    | jq '{name, target, enforcement, conditions, bypass_actors, rules}' 2>/dev/null) || {
+    echo "❌ Could not build payload — ruleset left unchanged"; return 1; }
+
+  # PUT, not PATCH. PATCH answers 404 here, which looks like a permissions
+  # problem and isn't.
+  if printf '%s' "$payload" | gh api -X PUT "repos/$repo/rulesets/$id" \
+       --input - --silent 2>/dev/null; then
+    echo "✅ $msg"
+  else
+    echo "❌ Failed — needs admin on $repo"
+  fi
+  sleep 1
+}
+
+# ─── Legacy classic protection ────────────────────────────────────
+#
+# Read and delete only. Nothing here creates a classic rule: a repo with both a
+# ruleset and a classic rule on the same branch is a repo where "why was this
+# push rejected" has two possible answers, and rulesets are where GitHub is
+# taking this.
+
+_ghbranch_legacy() {
   local repo="$1"
 
   local branch
-  branch=$(__gh_pick_branch "Protect which branch?")
+  branch=$(__gh_pick_branch "Inspect classic protection on which branch?")
   [[ -z "$branch" ]] && return
 
   echo ""
-  echo "━━━ Configure protection for '$branch' ━━━"
+  echo "━━━ Classic protection: $branch ━━━"
   echo ""
-
-  local reviews=0
-  read -rp "Required approving reviews (0-6, default 0): " reviews
-  reviews=${reviews:-0}
-
-  local dismiss_stale="false"
-  if (( reviews > 0 )); then
-    read -rp "Dismiss stale reviews on new push? (Y/n): " ds
-    [[ ! "$ds" =~ ^[nN]$ ]] && dismiss_stale="true"
+  local prot
+  prot=$(gh api "repos/$repo/branches/$branch/protection" 2>/dev/null)
+  if [[ -z "$prot" ]]; then
+    echo "  None. (404 here is normal — it does NOT mean the branch is unprotected."
+    echo "   Use 'View effective rules' for the ruleset answer.)"
+    echo ""
+    read -rsn1 -p "  any key to go back " _; echo ""
+    return
   fi
 
-  local strict_checks="false"
-  read -rp "Require status checks to pass before merging? (y/N): " sc
-  [[ "$sc" =~ ^[yY]$ ]] && strict_checks="true"
-
-  local enforce_admins="false"
-  read -rp "Enforce rules for admins too? (y/N): " ea
-  [[ "$ea" =~ ^[yY]$ ]] && enforce_admins="true"
-
-  local linear="false"
-  read -rp "Require linear history? (y/N): " lh
-  [[ "$lh" =~ ^[yY]$ ]] && linear="true"
-
-  local payload
-  payload=$(jq -n \
-    --argjson reviews "$reviews" \
-    --argjson dismiss "$dismiss_stale" \
-    --argjson strict "$strict_checks" \
-    --argjson enforce "$enforce_admins" \
-    --argjson linear "$linear" \
-    '{
-      required_status_checks: (if $strict then {strict: true, contexts: []} else null end),
-      enforce_admins: $enforce,
-      required_pull_request_reviews: (if $reviews > 0 then {
-        required_approving_review_count: $reviews,
-        dismiss_stale_reviews: $dismiss
-      } else null end),
-      restrictions: null,
-      required_linear_history: $linear,
-      allow_force_pushes: false,
-      allow_deletions: false
-    }')
+  printf '%s' "$prot" | jq '{
+    required_approving_reviews: (.required_pull_request_reviews.required_approving_review_count // "not set"),
+    strict_status_checks: (.required_status_checks.strict // false),
+    required_checks: [(.required_status_checks.contexts // [])[]],
+    enforce_admins: (.enforce_admins.enabled // false),
+    allow_force_pushes: (.allow_force_pushes.enabled // false)
+  }' 2>/dev/null
 
   echo ""
-  gh api -X PUT "repos/$repo/branches/$branch/protection" \
-    --input <(echo "$payload") --silent 2>/dev/null \
-    && echo "✅ Protection rules applied to '$branch'" \
-    || echo "❌ Failed — check repo permissions (admin access required)"
+  echo "  This is a classic rule. Rulesets supersede it — migrate, then remove."
+  read -rp "  Remove classic protection from '$branch'? (y/N): " confirm
+  if [[ "$confirm" =~ ^[yY]$ ]]; then
+    gh api -X DELETE "repos/$repo/branches/$branch/protection" --silent 2>/dev/null \
+      && echo "  ✅ Classic protection removed from '$branch'" \
+      || echo "  ❌ Failed — check permissions"
+  fi
 }
