@@ -187,6 +187,69 @@ jobs:
             echo "bash section incomplete"; exit 1
           fi
 
+  # ── the neovim floor holds on the platform that can't meet it ──────────────
+  # Ubuntu is the only platform where the distro package cannot satisfy the 0.12
+  # floor (24.04 ships 0.9.5), so it is the only platform where the mise fallback
+  # actually runs — and until this job existed, nothing exercised it. The other
+  # install jobs run `make install bash`, which never touches neovim.
+  #
+  # This drives the real lib/ code rather than re-implementing the decision, but
+  # stops short of `make install nvim` on purpose: that would clone 26 plugins
+  # and compile tree-sitter parsers, minutes of work that proves nothing about
+  # provider selection. What's asserted is exactly the claim — one nvim, and it
+  # meets the floor.
+  nvim-floor:
+    name: neovim floor (ubuntu, mise fallback)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # If this ever fails, Ubuntu started shipping something current and the
+      # whole mise-first argument in deps.conf deserves rereading.
+      - name: apt's neovim really is below the floor
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          cand=$(apt-cache policy neovim | awk '/Candidate:/ {print $2}')
+          echo "apt candidate: $cand"
+          case "$cand" in
+            0.9.*|0.1[01].*) echo "below 0.12, as expected — the fallback is live" ;;
+            *) echo "apt now offers $cand; revisit the mise||pkg ordering"; exit 1 ;;
+          esac
+
+      - name: Resolve nvim through the real provider chain
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          source lib/providers.sh
+          pkg_detect
+          # Read the provider spec from the manifest rather than hardcoding it,
+          # so flipping deps.conf back to pkg||mise fails this job instead of
+          # silently passing against a stale copy of the intent.
+          spec=$(manifest_lines tool nvim | awk -F'\t' '$3=="nvim" {print $2}')
+          echo "declared provider chain: $spec"
+          [ "$spec" = "mise||pkg" ] || { echo "expected mise||pkg"; exit 1; }
+          provider_install "$spec" nvim neovim
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Exactly one nvim, and it meets the floor
+        run: |
+          set -euo pipefail
+          command -v nvim
+          nvim --version | head -1
+          v=$(nvim --version | awk 'NR==1 { sub(/^v/,"",$2); print $2 }')
+          maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
+          [ "$maj" -gt 0 ] || [ "$min" -ge 12 ] || { echo "nvim $v is below the 0.12 floor"; exit 1; }
+          # The point of mise-first: apt's 0.9.5 was never installed, so there is
+          # nothing to be second.
+          n=$(which -a nvim | sort -u | wc -l)
+          echo "nvim binaries on PATH: $n"
+          which -a nvim
+          [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
+          dpkg -s neovim >/dev/null 2>&1 && { echo "apt's neovim got installed after all"; exit 1; } || true
+          echo "one nvim, $v, no apt package — mise-first held"
+
   # ── transitive advisories: the coverage Dependabot cannot give us ──────────
   # This job is not redundant with Dependabot, and deleting it would silently
   # remove the only transitive coverage in the repo. The full reasoning is in
