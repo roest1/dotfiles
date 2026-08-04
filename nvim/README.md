@@ -6,15 +6,25 @@ Personal Neovim configuration. Modular, documented, and designed to be understoo
 
 Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](https://github.com/ryanoasis/nerd-fonts/releases)) set as your terminal font.
 
-| Step               | Command                                                             |
-| ------------------ | ------------------------------------------------------------------- |
-| 1. Clone config    | `git clone https://github.com/roest1/nvim.git ~/.config/nvim`       |
-| 2. Install + sync  | `cd ~/.config/nvim && make all`                                     |
-| 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`          |
+This config lives in the [dotfiles](https://github.com/roest1/dotfiles) monorepo,
+not in a standalone repo. `~/.config/nvim` is a **symlink** into `dotfiles/nvim`,
+so the config is version-controlled in place — don't clone into it.
+
+| Step               | Command                                                           |
+| ------------------ | ----------------------------------------------------------------- |
+| 1. Clone dotfiles  | `git clone https://github.com/roest1/dotfiles.git ~/dotfiles`      |
+| 2. Install + sync  | `cd ~/dotfiles && make install nvim`                               |
+| 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`         |
+
+`make install nvim` links the config and installs the `[nvim]` section of
+`../deps.conf`. From inside this directory, `make all` does the same thing by
+delegating upward.
 
 `make all` runs two idempotent steps: `make deps` → `make sync` (lazy.nvim plugin install + tree-sitter parsers, headless). `make deps` delegates to the parent repo's manifest (`../deps.conf`, the `[nvim]` section) so there's one source of truth for the toolchain. Verify the install with `:checkhealth external` inside nvim.
 
-**Installs:** neovim, ripgrep, fd, stylua, prettierd, ruff, eslint_d, zoxide, fzf, bat, eza, plus runtimes (node, python3, cargo). Mason handles LSP servers on first launch.
+**Installs:** neovim, git, make, unzip, ripgrep, fd, stylua, tree-sitter, ruff, plus the language servers — clangd, lua-language-server and lemminx as native binaries, and six JavaScript-based servers from `lsp-servers/package.json` installed with `bun`.
+
+There is no Mason, and no node, npm or pip anywhere in the toolchain. Every server is declared ahead of time rather than fetched at first launch — see the "No node, npm or pip" footgun in the parent repo's `CLAUDE.md` for why.
 
 **Other targets:** `make update` (git pull + reinstall), `make clean` (wipe plugin + cache state).
 
@@ -34,6 +44,7 @@ Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](
 │   ├── lazy-plugins.lua     Plugin loader
 │   └── external/
 │       ├── reqs.lua         Tool dependency list (used by deps + health)
+│       ├── lsp_servers.lua  Language server definitions (cmd/args/settings)
 │       ├── copy.lua         :Copy command (clipboard export for AI/docs)
 │       ├── findreplace.lua  :Find / :FindReplace commands
 │       ├── reset.lua        :ResetNvim command
@@ -45,7 +56,7 @@ Requires Neovim 0.10+ (installed automatically) and a Nerd Font (e.g. [0xProto](
 │           ├── glow.lua            Markdown preview
 │           ├── harpoon.lua         Working file set
 │           ├── lint.lua            Async linting (nvim-lint)
-│           ├── lsp.lua             Language servers + Mason
+│           ├── lsp.lua             Language server setup (no Mason)
 │           ├── mini.lua            Surround + autopairs
 │           ├── oil.lua             File browser
 │           ├── roslyn.lua          C# language server
@@ -98,9 +109,13 @@ Full reference: `:help roest-keymaps`
 | Command        | What                                 |
 | -------------- | ------------------------------------ |
 | `:Lazy update` | Update plugins                       |
-| `:Mason`       | Manage LSP servers                   |
 | `:checkhealth` | Verify tools + formatters            |
 | `:ResetNvim`   | Nuclear reset (reinstall everything) |
+
+Language servers aren't managed from inside the editor. Native ones are declared
+in `../deps.conf` (`make install nvim`); the JavaScript ones live in
+`lsp-servers/package.json` — `bun install --cwd nvim/lsp-servers` to update,
+`bun lsp-servers/verify.ts` to prove all six still complete an LSP handshake.
 
 ## License
 

@@ -27,7 +27,7 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 
 - Leader key MUST be set before any plugins load (done in `init.lua` before any `require`)
 - Plugin files return a table (or list of tables) consumable by lazy.nvim
-- LSP servers are configured in `lua/external/plugins/lsp.lua` via `mason-lspconfig` — add new servers to the `servers` table
+- LSP servers are defined in `lua/external/lsp_servers.lua` (a plain table, kept out of the plugin spec so `nvim/tests/lsp_servers_spec.lua` can assert on it under `--clean`) and wired up in `lua/external/plugins/lsp.lua`. There is no Mason: native servers are declared in `../deps.conf`, JS ones in `lsp-servers/package.json` and run as `bun <path>` via explicit `cmd` overrides
 - Formatters are configured in `lua/external/plugins/formatter.lua` (conform.nvim) by filetype
 - Linters are configured in `lua/external/plugins/lint.lua` (nvim-lint) by filetype
 - Completion is handled by `blink.cmp` (`lua/external/plugins/blink-cmp.lua`), which also provides LSP capabilities

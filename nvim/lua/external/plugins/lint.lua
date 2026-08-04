@@ -5,10 +5,14 @@
 -- Catches style issues, unused variables, complexity warnings.
 --
 -- Linters:
---   Python     → ruff (already installed for formatting)
---   JS/TS      → eslint_d (install: npm i -g eslint_d)
+--   Python     → ruff, declared in ../../../../deps.conf and installed by uv
+--   JS/TS      → eslint_d, NOT installed (see below)
 --
--- Install via Mason: :MasonInstall ruff eslint_d
+-- There is no Mason and no npm, so eslint_d has no installer any more. The
+-- filetype mapping below is left in place because `available_linters` skips
+-- anything not on PATH, so it costs nothing and documents the intent. To make
+-- JS/TS linting real again, add it to nvim/lsp-servers/package.json and run it
+-- through bun — the same way the language servers work.
 
 return {
   'mfussenegger/nvim-lint',
@@ -26,8 +30,8 @@ return {
 
     -- Only run linters whose executable is installed. eslint_d/ruff are
     -- optional (not in reqs.lua), so when missing we skip them instead of
-    -- erroring on every buffer read. Install eslint_d for JS/TS linting:
-    -- `npm i -g eslint_d` (or :MasonInstall eslint_d).
+    -- erroring on every buffer read. eslint_d is expected to be missing —
+    -- nothing installs it now that npm is gone.
     local function available_linters(ft)
       local found = {}
       for _, name in ipairs(lint.linters_by_ft[ft] or {}) do
