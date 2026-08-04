@@ -60,16 +60,17 @@ return {
     check_version()
     check_external_reqs()
 
+    -- prettierd, prettier and eslint_d used to be listed here. They were npm
+    -- globals, they left with node, and nothing installs them now — so checking
+    -- for them only produced warnings about tools this repo deliberately
+    -- removed. Anything added back must be installed by something first.
     check_tools('Formatters (conform.nvim)', {
       { name = 'stylua', desc = 'Lua formatter', required = true },
-      { name = 'prettierd', desc = 'JS/TS/JSON/HTML/CSS formatter', required = true },
       { name = 'ruff', desc = 'Python formatter + linter', required = true },
-      { name = 'prettier', desc = 'Prettier fallback', required = false },
     })
 
     check_tools('Linters (nvim-lint)', {
       { name = 'ruff', desc = 'Python linter', required = true },
-      { name = 'eslint_d', desc = 'JS/TS linter', required = false },
     })
 
     check_tools('Productivity (bash_roest_productivity)', {

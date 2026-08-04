@@ -211,6 +211,28 @@ uv_install() {
 #
 # For tools distros don't reliably carry (stylua, tree-sitter, bun). Gives
 # pinned versions across machines and downloads binaries instead of compiling.
+# pkg_upgrade <package>
+#
+# Upgrade a distro package that is installed but too old. Deliberately narrow:
+# there is no general "keep everything current" here, because that is the
+# system's job, not this repo's. It exists so a version floor can be satisfied
+# by the package already on the machine instead of installing a second copy
+# alongside it — Fedora 44 shipping neovim 0.12.4 while a stale box sat on
+# 0.11.6 is the case that motivated it.
+#
+# Returns non-zero if the upgrade didn't happen or didn't help; the caller is
+# expected to fall back.
+pkg_upgrade() {
+  local pkg="$1"
+
+  case "$PM" in
+    brew) brew upgrade "$pkg" >/dev/null 2>&1 || return 1 ;;
+    apt)  sudo apt install -y --only-upgrade "$pkg" >/dev/null 2>&1 || return 1 ;;
+    dnf)  sudo dnf upgrade -y "$pkg" >/dev/null 2>&1 || return 1 ;;
+    *)    return 1 ;;
+  esac
+}
+
 mise_install() {
   local cmd="$1"
 

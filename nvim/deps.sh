@@ -70,20 +70,29 @@ if [ -z "$_nvim_v" ]; then
   echo "  ⚠️  nvim not installed — the [nvim] tools should have provided it"
 elif nvim_below_floor "$_nvim_v"; then
   echo "  ↩︎  found $_nvim_v, below the floor"
-  # Worth saying before we install a second copy: if the distro package is
-  # merely out of date rather than too old to exist, upgrading it is the better
-  # fix and leaves one nvim on the machine instead of two. Fedora 44 shipping
-  # 0.12.4 while a stale system sat on 0.11.6 is exactly this case.
-  if command -v "$PM" >/dev/null 2>&1; then
-    echo "     (if your distro already packages a newer one, '$PM upgrade neovim'"
-    echo "      is the tidier fix — this falls back to mise only if it has to)"
+
+  # Try the distro package FIRST. If it's merely out of date rather than too old
+  # to exist, upgrading it satisfies the floor and leaves ONE nvim on the machine
+  # — which is the whole point. Fedora 44 shipping 0.12.4 while a stale box sat
+  # on 0.11.6 is exactly this case; Ubuntu 24.04, whose newest is 0.9.5, is the
+  # case where this can't help and mise has to.
+  if [ -n "${PM:-}" ] && pkg_upgrade neovim; then
+    _nvim_v="$(nvim_version)"
+    if ! nvim_below_floor "$_nvim_v"; then
+      echo "  ✅ $PM upgraded it to $_nvim_v — no second install needed"
+    fi
   fi
-  echo "  ➡️  installing a current neovim via mise"
-  mise_install_forced nvim neovim || {
-    echo "  ❌ could not upgrade nvim. This config will fail to start on $_nvim_v."
-    echo "     Install neovim >= $NVIM_MIN_MAJOR.$NVIM_MIN_MINOR by hand, or run:"
-    echo "       mise use -g neovim@latest"
-  }
+
+  if nvim_below_floor "$(nvim_version)"; then
+    echo "  ➡️  $PM can't reach the floor — installing a current neovim via mise"
+    echo "     (this leaves two nvim binaries: the distro's and mise's. The mise"
+    echo "      shim wins on PATH; the distro one is inert but still installed.)"
+    mise_install_forced nvim neovim || {
+      echo "  ❌ could not upgrade nvim. This config will fail to start on $_nvim_v."
+      echo "     Install neovim >= $NVIM_MIN_MAJOR.$NVIM_MIN_MINOR by hand, or run:"
+      echo "       mise use -g neovim@latest"
+    }
+  fi
 else
   echo "  ✅ nvim $_nvim_v"
 fi

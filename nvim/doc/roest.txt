@@ -58,7 +58,6 @@ DOCUMENTATION INDEX                                              *roest-index*
 |roest-plugins|     What each plugin does and how to use it
 |roest-workflows|   "How do I..." recipes for common tasks
 |roest-commands|    Custom commands you've created
-|roest-options|     Editor settings and what they do
 |roest-harpoon|     Harpoon workflow
 
 These docs cover THIS config. For Vim itself — motions, operators, text
@@ -78,39 +77,10 @@ Example: `<leader>sf` means press Space, then s, then f.
 ==============================================================================
 FILE STRUCTURE                                               *roest-structure*
 
-~/.config/nvim/
-├── init.lua                 Entry point (loads everything)
-├── bootstrap.sh             One-command dependency installer
-├── lua/
-│   ├── options.lua          Editor settings
-│   ├── keymaps.lua          Core keybindings
-│   ├── lazy-bootstrap.lua   Plugin manager setup
-│   ├── lazy-plugins.lua     Plugin loader
-│   └── external/
-│       ├── reqs.lua         Tool dependency list
-│       ├── plugins/         Individual plugin configs
-│       │   ├── blink-cmp.lua    Autocompletion
-│       │   ├── formatter.lua    Auto-format on save
-│       │   ├── gitsigns.lua     Git gutter + staging
-│       │   ├── glow.lua         Markdown preview
-│       │   ├── harpoon.lua      Working file set
-│       │   ├── lint.lua         Async linting
-│       │   ├── lsp.lua          Language servers
-│       │   ├── mini.lua         Surround + autopairs
-│       │   ├── oil.lua          File browser
-│       │   ├── roslyn.lua       C# language server
-│       │   ├── telescope.lua    Fuzzy finder
-│       │   ├── theme.lua        Colorscheme
-│       │   ├── todo-comments.lua  TODO highlighting
-│       │   ├── treesitter.lua   Syntax highlighting
-│       │   ├── trouble.lua      Diagnostics panel
-│       │   ├── undotree.lua     Undo history
-│       │   └── which-key.lua    Keymap discovery
-│       ├── copy.lua         :Copy command
-│       ├── findreplace.lua  :Find/:FindReplace commands
-│       ├── reset.lua        :ResetNvim command
-│       └── health.lua       :checkhealth integration
-└── doc/                     Help files (you are here)
+The directory tree lives in nvim/README.md, and only there. It used to be
+duplicated here and had already drifted — this copy still listed a
+bootstrap.sh that lives in the dotfiles root, not in nvim/, and predated
+lsp_servers.lua entirely. One tree, one place to update.
 
 ==============================================================================
 GETTING HELP                                                    *roest-help*
