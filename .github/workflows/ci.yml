@@ -9,7 +9,7 @@ name: portability
 
 on:
   push:
-    branches: [main, merge-nvim]
+    branches: [main]
   pull_request:
   workflow_dispatch:
   # For the `audit` job below: an advisory published on a Tuesday is not
