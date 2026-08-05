@@ -63,15 +63,20 @@ return {
       },
     }
 
-    -- The only way to invoke any of the above. Deleted in 1b17ef2 ("remove
-    -- unused keybindings", Jun 2026) as an unused mapping, which left conform
-    -- fully configured and completely unreachable — no keymap, no
-    -- format_on_save — while five doc locations went on promising it worked.
+    -- FORMAT-ON-SAVE IS NOT HERE. It's a BufWritePre autocmd in lua/options.lua,
+    -- not conform's own `format_on_save` option — it saves and restores the
+    -- cursor around the format, which that option doesn't do. Look there before
+    -- concluding this config doesn't auto-format; grepping this file for
+    -- `format_on_save` finds nothing and is genuinely misleading.
     --
-    -- `lsp_format = 'fallback'` is the part worth not losing again: it means a
-    -- filetype with no entry above still gets formatted by its language server.
-    -- That is where C# formatting comes from (roslyn), and Lua/Python/JS keep
-    -- using the dedicated formatters because those ARE listed.
+    -- This keymap is the MANUAL trigger, and the only way to format a visual
+    -- selection rather than the whole buffer. It was deleted in 1b17ef2
+    -- ("remove unused keybindings", Jun 2026) and restored after the docs were
+    -- found still promising it.
+    --
+    -- `lsp_format = 'fallback'` matches what the autocmd passes: a filetype with
+    -- no entry above still gets formatted by its language server. That is where
+    -- C# formatting comes from (roslyn) — keep the two in step.
     vim.keymap.set({ 'n', 'v' }, '<leader>l', function()
       conform.format {
         lsp_format = 'fallback',

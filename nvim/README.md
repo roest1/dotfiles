@@ -52,7 +52,7 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │       ├── health.lua       :checkhealth integration
 │       └── plugins/         One file per plugin
 │           ├── blink-cmp.lua       Autocompletion
-│           ├── formatter.lua       Formatting via <leader>l (conform.nvim)
+│           ├── formatter.lua       Formatter config (conform.nvim)
 │           ├── gitsigns.lua        Git gutter signs + staging
 │           ├── glow.lua            Markdown preview
 │           ├── harpoon.lua         Working file set

@@ -182,7 +182,8 @@ Related: blink.cmp (completion), fidget.nvim (LSP progress),
 ==============================================================================
 CONFORM (FORMATTER)                                  *roest-plugins-formatter*
 
-On-demand formatting via <leader>l. Not on save — see |roest-keymaps-formatting|.
+Auto-formatting on save, plus <leader>l on demand. The on-save hook lives in
+lua/options.lua as a BufWritePre autocmd — see |roest-keymaps-formatting|.
 
 Location: lua/external/plugins/formatter.lua
 

@@ -151,8 +151,17 @@ local tab = 4
 vim.opt.tabstop = tab -- Number of spaces = <Tab>
 vim.opt.shiftwidth = tab -- Number of spaces to use for auto-indent
 
--- Auto-formatting
--- runs on save `:w`
+-- Auto-formatting on save `:w`.
+--
+-- Deliberately an autocmd rather than conform's own `format_on_save` option:
+-- this saves and restores the cursor around the format, which that option
+-- doesn't do, and losing your place on every write is worse than the formatting
+-- is worth.
+--
+-- The cost is discoverability — it lives here, not in plugins/formatter.lua
+-- where anyone looking for it would look first. That file now points here.
+-- `lsp_format = 'fallback'` is what makes filetypes with no formatter entry
+-- (C#, via roslyn) format anyway; the <leader>l keymap passes the same thing.
 vim.api.nvim_create_autocmd('BufWritePre', {
   callback = function(args)
     -- save cursor position

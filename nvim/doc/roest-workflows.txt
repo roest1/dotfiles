@@ -69,7 +69,7 @@ Fix an error (quick fix):~
     Cursor on error → gra → select fix
 
 Format the file:~
-    <leader>l
+    <leader>l (or just save — a BufWritePre autocmd formats too)
 
 Comment out lines:~
     Select lines in visual mode → gc (if you add comment plugin)

@@ -172,8 +172,14 @@ FORMATTING                                          *roest-keymaps-formatting*
 
     <leader>l       Format file (or selection in visual mode)
 
-Formats via conform.nvim. There is no format-on-save — <leader>l is the
-trigger. Add `format_on_save` to conform.setup if you want it automatic.
+Auto-formats on save via conform.nvim. <leader>l is the manual trigger, and
+the only way to format a visual selection rather than the whole buffer.
+
+The on-save hook is a BufWritePre autocmd in lua/options.lua, NOT conform's
+own `format_on_save` option and not in formatter.lua — it saves and restores
+the cursor around the format, which conform's option does not do. Worth
+knowing before you go looking for it in the plugin file and conclude there
+isn't one.
 
 Formatters by filetype:
     Lua                        → stylua
