@@ -1,0 +1,99 @@
+*roest.txt*    Riley's Neovim Configuration Documentation
+
+==============================================================================
+ROEST'S NEOVIM                                                               *roest*
+
+Welcome back! This is your personal Neovim setup.
+
+If you're reading this after a long break, start here:
+    1. Run `:checkhealth` to verify everything works
+    2. Read |roest-quickstart| for the essentials
+    3. Browse |roest-keymaps| for all your keybindings
+    4. Check |roest-plugins| for what each plugin does
+
+==============================================================================
+QUICK START                                                   *roest-quickstart*
+
+Your most important keymaps (leader is <Space>):
+
+    Finding things~
+    <leader>sf      Find files in project
+    <leader>sg      Search text (grep) across project
+    <leader>/       Fuzzy search in current file
+    <leader><leader> Switch between open buffers
+    <leader>st      Search all TODOs in project
+
+    Navigation~
+    -             Open file browser (Oil)
+    <leader>-     File browser in floating window
+    <C-h/j/k/l>   Move between splits
+
+    Working with files~
+    <leader>a     Add file to Harpoon (your "tabs")
+    <C-n>/<C-p>   Next/prev Harpoon file
+    <C-e>         Show Harpoon quick menu
+
+    Code intelligence~
+    grd           Go to definition
+    grr           Find references
+    grn           Rename symbol
+    <leader>e     Show error popup
+    <leader>l     Format code
+
+    Editing~
+    sa"           Surround with quotes (visual or motion)
+    sd"           Delete surrounding quotes
+    sr"'          Replace surrounding " with '
+
+    Completion (insert mode)~
+    <Tab>         Next completion item
+    <S-Tab>       Previous item
+    <CR>          Confirm selection
+    <C-Space>     Trigger manually
+
+==============================================================================
+DOCUMENTATION INDEX                                              *roest-index*
+
+|roest-keymaps|     Every keymap, organized by category
+|roest-plugins|     What each plugin does and how to use it
+|roest-workflows|   "How do I..." recipes for common tasks
+|roest-commands|    Custom commands you've created
+|roest-harpoon|     Harpoon workflow
+
+These docs cover THIS config. For Vim itself — motions, operators, text
+objects, registers — use the built-in help, which is authoritative and never
+goes stale: |motion.txt|, |operator|, |text-objects|, |registers|.
+
+For the shell, run `h` in a terminal (`h <command>` for detail). The shell
+documents the shell; this documents the editor.
+
+==============================================================================
+LEADER KEY                                                      *roest-leader*
+
+Your leader key is <Space>. When you see `<leader>` in docs, press Space.
+
+Example: `<leader>sf` means press Space, then s, then f.
+
+==============================================================================
+FILE STRUCTURE                                               *roest-structure*
+
+The directory tree lives in nvim/README.md, and only there. It used to be
+duplicated here and had already drifted — this copy still listed a
+bootstrap.sh that lives in the dotfiles root, not in nvim/, and predated
+lsp_servers.lua entirely. One tree, one place to update.
+
+==============================================================================
+GETTING HELP                                                    *roest-help*
+
+    :help roest             This file
+    :help roest-keymaps     All keybindings
+    :help roest-plugins     Plugin reference
+    :help roest-workflows   Common tasks
+    :help roest-commands    Custom commands
+
+    :Telescope help_tags    Search all help (or <leader>sh)
+    :Telescope keymaps      Search keymaps (or <leader>sk)
+    :checkhealth            Verify setup is working
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

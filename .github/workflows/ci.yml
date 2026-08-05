@@ -1,0 +1,455 @@
+name: portability
+
+# The point of this workflow is to make "clone and get running on any platform"
+# provable rather than claimed. The previous Makefile promised WSL support in its
+# README while `make deps` hard-exited on apt — a bug that survived because
+# nothing ever ran it on Ubuntu.
+#
+# Every job is a fresh machine, which is the only honest test of a bootstrap.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # For the `audit` job below: an advisory published on a Tuesday is not
+  # discovered by a workflow that only runs when someone pushes. A dotfiles repo
+  # can sit untouched for a month, which is exactly how long the gap would be.
+  # GitHub only runs schedules on the default branch, so this starts working
+  # once this lands on main.
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  # ── Lint ───────────────────────────────────────────────────────────────────
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint shell sources
+        run: |
+          # Glob rather than a list, so a new section's deps.sh is covered the
+          # moment it exists — same reason the Makefile globs sections.
+          shellcheck --severity=warning \
+            bootstrap.sh install.sh \
+            lib/*.sh \
+            */deps.sh tools/*.sh
+
+  # ── Manifest sanity ────────────────────────────────────────────────────────
+  # Cheap guard against a typo in deps.conf taking down every other job.
+  manifest:
+    name: manifest parses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Regression guard: ARGS was once a blocklist, so any goal not in it got a
+      # stub rule that silently overrode the real target — `make help` printed
+      # "overriding recipe for target 'help'" and ran the wrong recipe.
+      - name: No target overrides its own recipe
+        run: |
+          fail=0
+          for t in help sections status check test sync link; do
+            if make $t 2>&1 | grep -qE "warning: (overriding|ignoring old) recipe"; then
+              echo "make $t triggers a recipe override"; fail=1
+            fi
+          done
+          # section args must still be accepted, and still not warn
+          if make check nvim 2>&1 | grep -qE "warning:"; then
+            echo "make check nvim warns"; fail=1
+          fi
+          exit $fail
+
+      - name: Sections are discoverable
+        run: |
+          source lib/manifest.sh
+          sections=$(manifest_sections | tr '\n' ' ')
+          echo "sections: $sections"
+          for want in bash nvim wezterm dev; do
+            echo "$sections" | grep -qw "$want" || { echo "missing section: $want"; exit 1; }
+          done
+      - name: Every tool line has a known provider
+        run: |
+          source lib/manifest.sh
+          bad=0
+          while IFS=$'\t' read -r section provider cmd pkg; do
+            for p in ${provider//||/ }; do
+              case "$p" in
+                pkg|uv|cargo|mise|manual) ;;
+                *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
+              esac
+            done
+          done < <(manifest_lines tool)
+          exit $bad
+      - name: Every link source exists in the repo
+        run: |
+          source lib/manifest.sh
+          bad=0
+          while IFS=$'\t' read -r section src dest; do
+            [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
+          done < <(manifest_lines link)
+          exit $bad
+
+      # A generator whose output the parser rejects is worse than no generator,
+      # so assert the round trip rather than just that it runs.
+      - name: "tools/adopt.sh emits lines the parser accepts"
+        run: |
+          ./tools/adopt.sh git make tar > /tmp/adopt.txt
+          grep -q '^tool ' /tmp/adopt.txt || { echo "adopt emitted no tool lines"; cat /tmp/adopt.txt; exit 1; }
+          mkdir -p /tmp/rt
+          { echo "[roundtrip]"; grep '^tool ' /tmp/adopt.txt; } > /tmp/rt/deps.conf
+          source lib/manifest.sh
+          n_in=$(grep -c '^tool ' /tmp/rt/deps.conf)
+          n_out=$(MANIFEST_FILE=/tmp/rt/deps.conf manifest_lines tool | wc -l)
+          echo "generated $n_in line(s), parsed back $n_out"
+          [ "$n_in" -eq "$n_out" ] || { echo "round trip lost lines"; exit 1; }
+
+      - name: Links report in sync right after `make link`
+        run: |
+          make link
+          source lib/status.sh
+          # Only the link half — tools legitimately aren't installed in this job.
+          status_links
+          if [ "$STATUS_DRIFT" -ne 0 ]; then
+            echo "links drifted immediately after make link"; exit 1
+          fi
+
+  # ── Links only: the locked-down-machine path ───────────────────────────────
+  # No sudo, no network, nothing installed. Must work everywhere.
+  link-only:
+    # The name is a stable literal, NOT ${{ matrix.os }}. Required status checks
+    # match by exact name: if the name embedded the runner label and that label
+    # ever changed (pinning to ubuntu-24.04, GitHub retiring a label), the
+    # required check would never report — and a check that never reports doesn't
+    # fail a PR, it blocks it indefinitely waiting for a status that won't come.
+    name: link only (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: macos
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: make link
+        run: make link
+      - name: Config is symlinked into the repo
+        run: |
+          test -L "$HOME/.bashrc"
+          test -L "$HOME/.config/nvim"
+          test -L "$HOME/.config/wezterm/wezterm.lua"
+      - name: Idempotent — second run changes nothing
+        run: |
+          make link | tee /tmp/second.txt
+          if grep -qE "linked |backed up " /tmp/second.txt; then
+            echo "second run was not idempotent"; exit 1
+          fi
+
+  # ── Full install per platform ──────────────────────────────────────────────
+  install:
+    name: install (${{ matrix.name }})
+    runs-on: ${{ matrix.runs-on }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu / apt
+            runs-on: ubuntu-latest
+            container: ''
+          - name: macos / brew
+            runs-on: macos-latest
+            container: ''
+          - name: fedora / dnf
+            runs-on: ubuntu-latest
+            container: fedora:latest
+    steps:
+      - name: Bootstrap container prerequisites
+        if: matrix.container != ''
+        run: dnf install -y git make sudo findutils
+
+      - uses: actions/checkout@v7
+
+      - name: Install the bash section
+        run: make install bash
+
+      - name: Verify the bash section
+        run: |
+          # `make check` exits 0 even when tools are missing, so the summary
+          # always prints for a human. Assert on the output instead.
+          make check bash | tee /tmp/check.txt
+          if grep -q MISSING /tmp/check.txt; then
+            echo "bash section incomplete"; exit 1
+          fi
+
+  # ── the neovim floor holds on the platform that can't meet it ──────────────
+  # Ubuntu is the only platform where the distro package cannot satisfy the 0.12
+  # floor (24.04 ships 0.9.5), so it is the only platform where the mise fallback
+  # actually runs — and until this job existed, nothing exercised it. The other
+  # install jobs run `make install bash`, which never touches neovim.
+  #
+  # This drives the real lib/ code rather than re-implementing the decision, but
+  # stops short of `make install nvim` on purpose: that would clone 26 plugins
+  # and compile tree-sitter parsers, minutes of work that proves nothing about
+  # provider selection. What's asserted is exactly the claim — one nvim, and it
+  # meets the floor.
+  nvim-floor:
+    name: neovim floor (ubuntu, mise fallback)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Reports what apt offers; deliberately does NOT fail when that improves.
+      # This job is a required check, and Ubuntu shipping a newer neovim is good
+      # news — blocking every PR on it would mean an upstream improvement stops
+      # unrelated work until someone edits CI. The assertion that matters is the
+      # one below: one nvim, at or above the floor. That holds either way.
+      - name: What apt offers (informational)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          cand=$(apt-cache policy neovim | awk '/Candidate:/ {print $2}')
+          echo "apt candidate: $cand"
+          case "$cand" in
+            0.9.*|0.1[01].*)
+              echo "below 0.12 — the mise fallback is doing real work here" ;;
+            *)
+              echo "::notice::apt now offers neovim $cand. If that is >= 0.12 the"
+              echo "::notice::mise||pkg ordering in deps.conf may no longer be needed." ;;
+          esac
+
+      - name: Resolve nvim through the real provider chain
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          source lib/providers.sh
+          pkg_detect
+          # Read the provider spec from the manifest rather than hardcoding it,
+          # so flipping deps.conf back to pkg||mise fails this job instead of
+          # silently passing against a stale copy of the intent.
+          spec=$(manifest_lines tool nvim | awk -F'\t' '$3=="nvim" {print $2}')
+          echo "declared provider chain: $spec"
+          [ "$spec" = "mise||pkg" ] || { echo "expected mise||pkg"; exit 1; }
+          provider_install "$spec" nvim neovim
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Exactly one nvim, and it meets the floor
+        run: |
+          set -euo pipefail
+          command -v nvim
+          nvim --version | head -1
+          v=$(nvim --version | awk 'NR==1 { sub(/^v/,"",$2); print $2 }')
+          maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
+          [ "$maj" -gt 0 ] || [ "$min" -ge 12 ] || { echo "nvim $v is below the 0.12 floor"; exit 1; }
+          # The point of mise-first: apt's 0.9.5 was never installed, so there is
+          # nothing to be second.
+          n=$(which -a nvim | sort -u | wc -l)
+          echo "nvim binaries on PATH: $n"
+          which -a nvim
+          [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
+          dpkg -s neovim >/dev/null 2>&1 && { echo "apt's neovim got installed after all"; exit 1; } || true
+          echo "one nvim, $v, no apt package — mise-first held"
+
+  # ── transitive advisories: the coverage Dependabot cannot give us ──────────
+  # This job is not redundant with Dependabot, and deleting it would silently
+  # remove the only transitive coverage in the repo. The full reasoning is in
+  # .github/dependabot.yml; the short version is that the dependency graph has
+  # no bun.lock parser, so it reads package.json, sees the 5 declared servers,
+  # and is blind to the ~70 packages underneath — which is where advisories
+  # actually land. `bun audit` resolves the installed tree instead, and it found
+  # three high-severity minimatch ReDoS advisories (GHSA-3ppc-4f35-3m26,
+  # -7r86-cg39-jmmj, -23c5-xmqv-rm74) reached via
+  # bash-language-server › editorconfig › minimatch, none of which GitHub
+  # reported. That is what the `overrides` block in package.json pins past.
+  audit:
+    name: bun audit (transitive advisories)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # setup-bun rather than `curl https://bun.com/install | bash`. This job's
+      # whole purpose is objecting to unreviewed code entering the build, so
+      # piping an unpinned remote script into bash to bootstrap it was the one
+      # inconsistency worth removing. The action is pinned and watched by the
+      # github-actions ecosystem in dependabot.yml; the curl script is neither.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # --frozen-lockfile so the audit describes the committed tree rather than
+      # whatever resolves today. An audit of a lockfile CI just rewrote is an
+      # audit of something that was never reviewed.
+      - name: Install the language servers
+        run: bun install --cwd nvim/lsp-servers --frozen-lockfile
+
+      # Fails the build on any advisory. When one turns out to be unfixable —
+      # a transitive exact-pin with no upstream release, which is precisely the
+      # minimatch situation — the escape hatch is `--ignore=<GHSA-id>` with a
+      # comment saying why, not deleting this step. An accepted risk should be
+      # written down in the same place the repo writes down its other accepted
+      # costs.
+      - name: No known advisories in the language server tree
+        run: bun audit --cwd nvim/lsp-servers
+
+      # yarn.lock is a GENERATED artifact whose only job is to be readable by
+      # GitHub's dependency graph, which has no bun.lock parser. bun.lock stays
+      # the source of truth; this proves the two agree. `bun install --yarn` is
+      # deterministic, so a diff here means someone changed deps without
+      # regenerating, and the dependency graph would be describing a tree that
+      # no longer exists — which is worse than not having the file at all.
+      - name: yarn.lock matches bun.lock
+        run: |
+          set -euo pipefail
+          bun install --cwd nvim/lsp-servers --yarn --frozen-lockfile
+          if ! git diff --exit-code -- nvim/lsp-servers/yarn.lock; then
+            echo
+            echo "yarn.lock is stale. Regenerate it:"
+            echo "    bun install --cwd nvim/lsp-servers --yarn"
+            exit 1
+          fi
+
+      # Socket's scanner runs DURING install and can abort it on a malicious or
+      # typosquatted package — prevention, where bun audit and Dependabot are
+      # both detection-after-disclosure. It is the only layer here that can act
+      # on a package no advisory database has heard of yet.
+      #
+      # bunfig.toml is written here rather than committed, and that is the whole
+      # design. The scanner fails CLOSED: with Socket's API unreachable,
+      # `bun install` exits 1 even with a frozen lockfile and a warm cache
+      # (verified). Committing bunfig.toml would put Socket's availability on the
+      # critical path of `make install`, and this repo's entire premise is
+      # bootstrapping locked-down and offline machines — `make link` exists
+      # precisely for machines with no network. So the scan lives where a new
+      # dependency actually enters the repo: CI. A fresh machine installing an
+      # already-pinned lockfile with integrity hashes is fetching bytes that were
+      # scanned when they were introduced.
+      - name: Scan for malicious packages (Socket, CI only)
+        run: |
+          set -euo pipefail
+          cat > nvim/lsp-servers/bunfig.toml <<'TOML'
+          [install.security]
+          scanner = "@socketsecurity/bun-security-scanner"
+          TOML
+          # Free mode — no SOCKET_API_KEY, no account, no secret to leak.
+          rm -rf nvim/lsp-servers/node_modules
+          bun install --cwd nvim/lsp-servers --frozen-lockfile
+          rm -f nvim/lsp-servers/bunfig.toml
+
+  # ── the toolchain is bun and uv, and stays that way ────────────────────────
+  # Not "nvim without node" any more — nvim never wants node now, so there is no
+  # special mode to exercise. What needs guarding is the invariant: that nothing
+  # quietly reintroduces node, npm, pip or a shim, and that the servers really do
+  # run under bun.
+  toolchain:
+    name: bun-only toolchain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pinned and Dependabot-watched, rather than piping an unpinned installer
+      # script into bash. Note this puts bun somewhere other than ~/.bun/bin, so
+      # the handshake step below resolves it with `command -v` rather than
+      # assuming a path.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: deps.conf declares no node, npm or pip
+        run: |
+          fail=0
+          source lib/manifest.sh
+          # provider column
+          if manifest_lines tool | grep -qP '\tnpm\t'; then
+            echo "npm provider reintroduced in deps.conf"; fail=1
+          fi
+          # command column — node itself, and pip under any provider
+          while IFS=$'\t' read -r section provider cmd pkg; do
+            case "$cmd" in
+              node|npm|npx|pip|pip3) echo "[$section] '$cmd' reintroduced"; fail=1 ;;
+            esac
+          done < <(manifest_lines tool)
+          [ $fail -eq 0 ] && echo "clean: no node, npm or pip in the manifest"
+          exit $fail
+
+      - name: No node shim anywhere in the repo
+        run: |
+          # Aliasing node to bun would make incompatibilities surface as errors
+          # blaming the wrong tool. If someone adds one, this should fail.
+          if grep -rnE '(ln -s.*\bbun\b.*/node|exec bun "\$@")' \
+               --include='*.sh' --include='*.lua' --include='*.conf' . ; then
+            echo "a node->bun shim was introduced — see lsp_servers.lua for why not"
+            exit 1
+          fi
+          echo "clean: no node shim"
+
+      # Server definitions live in lua/external/lsp_servers.lua rather than inline
+      # in the plugin spec precisely so they can be tested like this: `--clean`
+      # loads no plugins, so there's no 26-repo clone and no treesitter compile
+      # standing between the assertion and the cmd lines it's about.
+      # NOT `apt-get install neovim`. Ubuntu 24.04 ships 0.9.5, and this config
+      # documents 0.10+ — lsp_servers.lua uses vim.fs.joinpath, added in 0.10.
+      # So the apt version failed every run with "attempt to call field
+      # 'joinpath' (a nil value)", which read as a broken config rather than as
+      # CI testing against a version the config never claimed to support.
+      #
+      # Pinned and sha256-verified, the same treatment lemminx gets in
+      # nvim/deps.sh. Bump both the version and the hash together; a mismatch
+      # should stop the job, not be worked around.
+      - name: Install neovim (pinned)
+        env:
+          NVIM_VERSION: v0.12.4
+          NVIM_SHA256: 012bf3fcac5ade43914df3f174668bf64d05e049a4f032a388c027b1ebd78628
+        run: |
+          set -euo pipefail
+          url="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
+          curl -fsSL -o /tmp/nvim.tar.gz "$url"
+          echo "${NVIM_SHA256}  /tmp/nvim.tar.gz" | sha256sum -c -
+          sudo tar -xzf /tmp/nvim.tar.gz -C /opt
+          echo "/opt/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Unit-test the language server definitions
+        run: |
+          nvim --version | head -1
+          make test
+
+      # The language servers must work with no node and no npm anywhere — that
+      # is the entire point of moving them out of Mason. Asserted with a real
+      # LSP initialize handshake, because weaker checks (--version, exit codes)
+      # give false readings on several of these servers.
+      - name: LSP servers handshake under bun, with node/npm absent
+        run: |
+          bun install --cwd nvim/lsp-servers --frozen-lockfile
+          MIN=$(mktemp -d)
+          for b in sh bash env timeout bun; do ln -sf "$(command -v $b)" "$MIN/$b"; done
+          ! PATH=$MIN command -v node
+          ! PATH=$MIN command -v npm
+          PATH=$MIN bun nvim/lsp-servers/verify.ts | tee /tmp/lsp.txt
+          grep -q "ALL PASS" /tmp/lsp.txt
+
+      # Integration signal, deliberately advisory: this boots the real plugin
+      # stack, so a failure is as likely to be a flaky clone or an upstream
+      # plugin change as a bug here. The steps above are what gate the build.
+      #
+      # No PATH stripping — that made sense when node-absent was a special case.
+      # It is now the only case, so this just checks the editor boots and every
+      # server is registered.
+      - name: nvim boots and registers its servers (advisory)
+        continue-on-error: true
+        run: |
+          make link nvim
+          timeout 600 nvim --headless -c "lua
+            local names = vim.tbl_keys(require('external.lsp_servers').build())
+            table.sort(names)
+            print('configured: ' .. table.concat(names, ', '))
+            print('mason loaded: ' .. tostring(package.loaded['mason'] ~= nil))
+          " -c "qa!" 2>&1 | tee /tmp/nvim.txt
+          grep -q "mason loaded: false" /tmp/nvim.txt
+          for s in clangd lua_ls lemminx ts_ls cssls html jsonls yamlls bashls; do
+            grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
+          done

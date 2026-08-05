@@ -138,7 +138,7 @@ up() {
 
 # ─── Quick file search ────────────────────────────────────────────────────────
 
-# f: find file by name. No args → fzf picker → open in nvim.
+# f: find file by name. No args → fzf picker → open in $EDITOR.
 # With args → fd search (respects .gitignore).
 #
 # Depends on: fzf, fd
@@ -146,7 +146,7 @@ f() {
   if [[ $# -eq 0 ]]; then
     local file
     file=$(fzf --preview 'head -50 {}' 2>/dev/null)
-    [[ -n "$file" ]] && nvim "$file"
+    [[ -n "$file" ]] && "$EDITOR" "$file"
   else
     local _fd="fd"
     command -v fd &>/dev/null || _fd="fdfind"
@@ -292,7 +292,7 @@ extract() {
 dotfiles-edit() {
     local dotdir
     dotdir="$(cd "$(dirname "$(readlink -f ~/.bashrc 2>/dev/null || readlink ~/.bashrc)")" && pwd)"
-    nvim "$dotdir"
+    "$EDITOR" "$dotdir"
 }
 
 reload() {
@@ -317,17 +317,9 @@ dtest() {
     dotnet test
 }
 
-# nvim spelling errors
-
-nvi() { # nvim spelling errors
-    nvim .
-}
-nv() { # nvim spelling errors
-    nvim .
-}
-n() { # nvim spelling errors
-    nvim .
-}
+# n / nv / nvi moved to bash_roest_nvim — they're nvim-only by definition, and
+# that file is symlinked in only by the nvim area, so a bash-only install (a
+# work machine that disallows neovim) simply doesn't get them.
 
 
 # ─── Help System ──────────────────────────────────────────────────────────────
@@ -388,7 +380,7 @@ h() {
     gpr create         Create PR from current branch
     gpr mine           Show only your PRs
     ghsecrets          Manage repo & environment secrets
-    ghbranch           Branch management & protections
+    ghbranch           Branches & rulesets (effective rules, checks)
     ghenv              Environment management
 
   Utilities
@@ -629,7 +621,7 @@ gh-ui — unified GitHub command hub
     CI / Actions      Workflow status, logs, rerun (gha-ui)
     Secrets           Repo & environment secrets (ghsecrets)
     Environments      Create, configure, delete (ghenv)
-    Branches          Protection rules, defaults (ghbranch)
+    Branches          Rulesets, required checks, defaults (ghbranch)
 
   The preview pane shows live data as you navigate:
     Hover "Pull Requests" → see open PR titles + status
@@ -756,24 +748,35 @@ HELP
       ;;
     ghbranch)
       cat <<'HELP'
-ghbranch — branch management & protection rules
+ghbranch — branches & rulesets
 
   ghbranch         Opens interactive branch screen
 
   Menu options:
-    📋 List branches                Shows all with 🛡 for protected
-    🛡  View protection rules       See what's enforced on a branch
-    🛡  Set protection rules        Interactive setup wizard:
-                                      • Required approving reviews (0-6)
-                                      • Dismiss stale reviews on push
-                                      • Require status checks to pass
-                                      • Enforce for admins
-                                      • Require linear history
-    🗑  Remove protection            Strip all rules from a branch
+    📋 List branches                Shows all with 🛡 for ruled branches
+    🛡  View effective rules        What actually governs a branch, across
+                                    every ruleset targeting it — plus the
+                                    bypass list, which decides whether any
+                                    of it is a wall or just guidance
+    📜 Manage rulesets              Pick a ruleset, then:
+                                      • Enforcement (active/evaluate/disabled)
+                                      • Require branches up to date (strict)
+                                      • Required checks — add/remove, picked
+                                        from names CI actually reported
+                                      • Bypass mode (pull_request/always)
     🗑  Delete remote branch         With safety check (won't delete default)
     ⭐ Set default branch            Change repo's default branch
+    ⚠️  Legacy classic protection    Read + delete only, for migrating off it
 
-  Protection rules require admin access to the repository.
+  Rulesets, not classic branch protection. The classic API 404s on a repo
+  protected by a ruleset, which is how the old version managed to call main
+  protected on one screen and unprotected on the next.
+
+  Nothing here creates a classic rule — a branch with both is a branch where
+  "why was this rejected" has two possible answers.
+
+  Writes need admin. Rulesets update with PUT, not PATCH (PATCH 404s and
+  looks like a permissions error).
 
   Navigation: -/q back  │  r refresh on list views
   Depends on: gh, fzf, jq

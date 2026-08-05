@@ -1,0 +1,21 @@
+# Code owners for this repository.
+#
+# Every file is owned by @roest1, so any pull request requires his review when
+# the `main` ruleset has "require review from Code Owners" enabled.
+#
+# Note on how this actually behaves here:
+#
+#   * Outside contributors have no write access — they fork, open a PR, and
+#     cannot merge it. Only @roest1 can. That's GitHub's permission model, not
+#     this file; CODEOWNERS just makes the review requirement explicit and
+#     recorded on their PR.
+#
+#   * GitHub will not let anyone approve their own pull request. On a
+#     single-maintainer repo that means @roest1's own PRs can never satisfy
+#     "1 required approval" — he must be a bypass actor on the ruleset, or the
+#     required approval count must be 0. Otherwise `main` is unmergeable by
+#     anyone, including its owner.
+#
+# Last matching pattern wins, so more specific rules go below this line.
+
+*   @roest1

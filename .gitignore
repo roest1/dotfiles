@@ -1,2 +1,11 @@
 bash_roest_password_commands
 bash_roest_local
+
+# installed by `bun install --cwd nvim/lsp-servers`; bun.lock IS tracked
+nvim/lsp-servers/node_modules
+
+# Written by CI to enable Socket's install-time scanner, then removed. Never
+# commit it: the scanner fails closed, so a committed bunfig.toml would make
+# `make install` depend on Socket's API being reachable — see the reasoning on
+# the "Scan for malicious packages" step in .github/workflows/ci.yml.
+nvim/lsp-servers/bunfig.toml

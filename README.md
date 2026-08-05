@@ -1,35 +1,171 @@
 # dotfiles
 
-Personal configuration files. One clone, one script, full setup. Cross-platform bash (macOS + Linux/WSL + RHEL).
+Personal configuration files — bash and neovim in one repo. Cross-platform (macOS + Linux/WSL + RHEL).
 
 ## Install
 
-| Step | Command |
-| ---- | ------- |
-| 1. Clone          | `git clone https://github.com/roest1/dotfiles.git ~/dotfiles` |
-| 2. Run everything | `cd ~/dotfiles && make all` |
-| 3. Restart shell  | `exec bash` |
-
-`make all` runs three idempotent steps: `make deps` (brew/dnf installs CLI tools) → `make install` (symlinks `bash/*` and `git/gitconfig` into `~`, backs up existing files to `~/.dotfiles_backup/`) → `make check` (verifies tools).
-
-**Other targets:** `make shell` (set default shell to bash), `make update` (git pull + reinstall).
-
-**Tools installed:** zoxide, fzf, bat, eza, fd, ripgrep, gh, jq, plus bash 5 on macOS (ships 3.2).
-
-## New machine setup
+One line on a fresh machine — installs git if needed, clones, and runs `make install`:
 
 ```sh
-# 1. Dotfiles
-git clone https://github.com/roest1/dotfiles.git ~/dotfiles
-cd ~/dotfiles && make all
-
-# 2. Neovim config
-git clone https://github.com/roest1/nvim.git ~/.config/nvim
-cd ~/.config/nvim && make all
-
-# 3. Restart shell
-exec bash
+curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh | bash
 ```
+
+Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
+
+## Everything lives in `deps.conf`
+
+One file declares every config symlink and every dependency. **Toggling is
+commenting** — there's no flag to remember and no profile vocabulary to learn.
+
+```conf
+[nvim]
+link  nvim                    ~/.config/nvim
+tool  mise||pkg    nvim       neovim     # mise first: apt's is too old
+tool  mise||cargo  stylua
+tool  uv||pkg      ruff
+# tool  pkg        shfmt                 ← commented out = skipped
+post  bun install --cwd nvim/lsp-servers --frozen-lockfile
+```
+
+| Command | What |
+| ------- | ---- |
+| `make install` | everything enabled in `deps.conf` |
+| `make install nvim` | one section (repeatable: `make install bash nvim`) |
+| `make link` | symlinks only — no sudo, no network, nothing downloaded |
+| `make check` | verify what's enabled is actually present |
+| `make status` | **sync status** — is the machine what `deps.conf` says? |
+| `make test` | Lua unit tests (no plugins, no network) |
+| `make sections` | list sections |
+
+Sections are named after the program, so there's nothing to name: `[bash]`,
+`[nvim]`, `[wezterm]`, `[dev]`. The `Makefile` reads them from the manifest —
+**adding a program is a new section plus its config file, and no other edits.**
+
+### Installing a subset
+
+The real constraint at work usually isn't "no neovim," it's "not *that*
+dependency." So granularity goes down to the individual tool:
+
+- **Skip one tool** — comment its line.
+- **Skip a whole program** — `make install bash` instead of `make install`.
+- **Install nothing at all** — `make link` gives you every config with no sudo
+  and no network.
+
+Scope the one-liner the same way: `DOTFILES_TARGET=bash curl ... | bash`.
+
+**No node, npm or pip anywhere.** The toolchain is bun and uv. The six
+JavaScript language servers are declared in `nvim/lsp-servers/package.json`,
+installed by `bun install`, and run as `bun <path>` — with no `node` shim, since
+aliasing node to bun would make any incompatibility surface as an error blaming
+the wrong tool. Mason was dropped because it installs npm packages by shelling
+out to the `npm` binary, which only exists if node does. CI asserts on every
+push that node, npm and pip stay out of the manifest, and that all six servers
+complete a real LSP handshake with node absent from `$PATH`.
+
+### Providers
+
+Each `tool` line names how to install it. `||` declares a fallback chain:
+
+| Provider | Use |
+| -------- | --- |
+| `pkg`    | system package manager (brew / apt / dnf) |
+| `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
+| `npm`    | `npm -g` (needs node) |
+| `uv`     | Python tools (replaces pip; same vendor as ruff) |
+| `cargo`  | compiles from source — slow, prefer `mise` |
+| `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
+
+```conf
+tool  pkg||cargo  eza     # distro package if it exists, else compile
+```
+
+`[bash]` is near-pure `pkg`, so a locked-down machine can install the whole shell
+without mise, node, or a curl-piped installer.
+
+### Drift
+
+`make check` only asks "does this command exist," which turns out to be a weak
+question — it happily reports ok for a tool installed by a completely different
+provider than the manifest declares. `make status` asks the stronger one, in the
+shape ArgoCD uses: **declared state vs. live machine.**
+
+```
+[nvim] tools
+  ✓ tree-sitter    pkg
+  ✗ stylua         declared mise   actual cargo   ~/.cargo/bin/stylua
+```
+
+It checks three things:
+
+- **links** — is `~/.bashrc` a symlink into *this* repo, or a stale backup or a
+  hand-edited file?
+- **tools** — was this installed by the provider the manifest declares?
+  Provenance comes from asking `rpm`/`dpkg`/`brew`/`mise`/`uv` directly, not
+  from guessing at the path — `~/.local/bin` is genuinely ambiguous between a uv
+  shim, an apt rename symlink, and a hand-dropped binary.
+
+It deliberately does **not** report "installed but not declared." Nothing here
+can tell a dotfiles dependency from a project-scoped tool, so that list is mostly
+noise — and silencing the noise meant naming unrelated projects inside the file
+that defines every machine you own. This repo describes itself, nothing else.
+
+Drift matters because a manifest that describes a machine you don't have
+produces a *different* machine when you clone it somewhere fresh — which is the
+one thing this repo exists to get right.
+
+### Writing a manifest line
+
+`./tools/adopt.sh <command>` figures out the parts that are easy to get wrong —
+which provider owns it, and the package name when it differs from the command:
+
+```
+$ ./tools/adopt.sh rg fd clangd stylua wezterm
+tool  pkg          rg           ripgrep
+tool  pkg          fd           fd-find
+tool  pkg          clangd       clang-tools-extra
+tool  cargo        stylua
+tool  pkg||manual  wezterm      # installed outside any manager (~/.local/bin/wezterm)
+```
+
+You name the commands. There's **no bulk mode on purpose**: nothing can tell a
+dotfiles dependency from a project-scoped tool — a `uv` tool belonging to one
+project looks identical to one you want on every machine. It prints; it never
+edits `deps.conf`.
+
+It's a script rather than a make target on purpose too: every `make` target is
+about *operating* this repo, and this is about *editing* it.
+
+## Layout
+
+| Path | What |
+| ---- | ---- |
+| `deps.conf` | **the manifest** — links and dependencies, one file |
+| `bootstrap.sh` | Curl-able entry point for a fresh machine |
+| `install.sh`   | Symlinks only; walks the manifest's `link` lines |
+| `lib/manifest.sh` | Parses `deps.conf` |
+| `lib/providers.sh` | Maps a provider name to an installer; handles `\|\|` chains |
+| `lib/pkg.sh`   | The single implementation of "install a tool" |
+| `lib/run.sh`   | Installs a section's tools, runs `post` steps and platform fixups |
+| `bash/`, `nvim/`, `wezterm/` | Config, plus an optional `deps.sh` for platform-conditional fixups |
+
+`nvim/` is self-contained — its own Makefile and README — so it still stands
+alone despite living here.
+
+## Portability is tested, not claimed
+
+`.github/workflows/ci.yml` runs on every push: `make link` on Ubuntu and macOS,
+full installs across apt / brew / dnf, shellcheck, manifest validation, and a
+job that comments out the node block and asserts nvim still starts clean.
+
+This exists because the previous Makefile promised WSL support in this README
+while `make deps` hard-exited on apt. Nothing ever ran it on Ubuntu, so nobody
+noticed.
+
+## Contributing
+
+Portability fixes and machinery bugs are welcome; personal-preference changes
+aren't (fork instead — the layout is built for it). See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## GitHub Terminal Tools
 
@@ -53,8 +189,27 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 
 ```
 ~/dotfiles/
-├── Makefile                              Orchestrator: deps, install, shell, check, update
+├── deps.conf                             THE MANIFEST — links + dependencies
+├── Makefile                              Reads sections from deps.conf
+├── bootstrap.sh                          Curl-able fresh-machine entry point
 ├── install.sh                            Symlink engine (backs up existing files)
+├── CONTRIBUTING.md                       How to add a tool without breaking the manifest
+├── .github/
+│   ├── workflows/ci.yml                  Portability + supply-chain checks
+│   ├── dependabot.yml                    bun + github-actions ecosystems
+│   └── CODEOWNERS                        Required for code-owner review
+├── lib/
+│   ├── manifest.sh                       deps.conf parser
+│   ├── providers.sh                      provider dispatch + || chains
+│   ├── pkg.sh                            the installers
+│   ├── run.sh                            section runner
+│   └── status.sh                         declared-vs-actual drift detection
+├── tools/
+│   └── adopt.sh                          Generates a deps.conf line for a command
+├── nvim/                                 Neovim config (own Makefile + README)
+│   └── lsp-servers/                      JS language servers + prettier, run by bun
+├── wezterm/
+│   └── wezterm.lua                     → ~/.config/wezterm/wezterm.lua
 ├── bash/
 │   ├── bashrc                          → ~/.bashrc
 │   ├── bash_roest_theme                → ~/.bash_roest_theme
@@ -66,7 +221,8 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ├── git/
 │   ├── gitconfig                       → ~/.gitconfig
 │   ├── README.md                         GitHub tips and tricks
-│   └── GITHUB_TOOLS.md                   Interactive tools walkthrough
+│   ├── GITHUB_TOOLS.md                   Interactive tools walkthrough
+│   └── GITHUB_SETUP.md                   New-repo settings + ruleset reference
 ├── podman/
 │   └── README.md                         podman container-engine reference (Linux)
 └── systemd/
@@ -74,7 +230,9 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ```
 </details>
 
-Neovim config lives in a separate repo: [nvim](https://github.com/roest1/nvim).
+Neovim config lives in `nvim/` — merged in from the former `roest1/nvim` repo with
+its full history. It keeps its own `Makefile` and `README.md` so the directory
+still stands alone.
 
 ## What goes where
 

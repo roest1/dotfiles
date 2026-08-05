@@ -1,35 +1,49 @@
 # dotfiles/Makefile
 #
-# Portable dotfiles installer for macOS, Linux (WSL), and RHEL.
+# Portable dotfiles + nvim monorepo. macOS (brew), Ubuntu/WSL (apt), RHEL (dnf).
 # Every target is idempotent — safe to re-run.
 #
-# Usage:
-#   make              Show help
-#   make install      Symlink dotfiles into ~
-#   make deps         Install CLI tools (brew on mac/WSL, dnf on RHEL)
-#   make shell        Set default shell to bash
-#   make update       Pull latest changes and re-install
-#   make check        Verify tool availability
-#   make all          deps + install + check
+# Everything this repo installs or links is declared in deps.conf. This file
+# does not know what a "bash" or an "nvim" is; it reads sections from the
+# manifest. Adding a program means adding a section there, not editing here.
+#
+#   make install              everything enabled in deps.conf
+#   make install nvim         one section  (repeatable: make install bash nvim)
+#   make link                 symlinks only — no sudo, no network
+#   make check                verify what's enabled is actually present
+#
+# To skip a tool, comment it out in deps.conf. There is no flag.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
+# make(1) spawns a non-interactive, non-login shell, which never reads .bashrc —
+# so tool directories that only .bashrc puts on PATH are invisible here. Without
+# this line the check target reports false MISSINGs for anything installed by
+# cargo, bun, uv or mise.
+export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(PATH)
+
 UNAME := $(shell uname -s)
 DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && pwd)
 
-# Tools this config depends on (brew package names).
-BREW_DEPS := bash zoxide fzf bat eza fd ripgrep gh jq
+# Sections come from the manifest, not from this file.
+SECTIONS := $(shell sed -nE 's/^\[([A-Za-z0-9_-]+)\].*/\1/p' $(DOTFILES_DIR)/deps.conf)
 
-# RHEL/Fedora equivalents (dnf package names).
-# zoxide is not in base RHEL repos — installed separately.
-DNF_DEPS := fzf bat fd-find ripgrep gh jq eza
+# Section names passed on the command line (`make install nvim`) are arguments,
+# not targets, so they get a no-op rule to stop make complaining.
+#
+# This MUST be an allowlist of real section names, not a blocklist of known
+# targets: with filter-out, every goal that wasn't listed — help, sync, shell,
+# update, sections — got a stub rule that silently overrode the real one, which
+# is why `make help` printed "overriding recipe for target 'help'".
+ARGS := $(filter $(SECTIONS),$(MAKECMDGOALS))
+$(eval $(ARGS):;@:)
 
 # --------------------------------------------------------------------------- #
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help all install deps shell update check
+.PHONY: help install link check status sync test shell update sections $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -37,39 +51,52 @@ help: ## Show this help
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-
-all: deps install check ## Install everything (deps + install + check)
-
-install: ## Symlink dotfiles into ~
-	@bash "$(DOTFILES_DIR)/install.sh"
-
-deps: ## Install CLI tools (auto-detects package manager)
-	@if command -v dnf >/dev/null 2>&1; then \
-		echo ""; \
-		echo "Detected dnf (RHEL/Fedora)"; \
-		echo "-------------------------------------------"; \
-		echo "Enabling EPEL (if not already)..."; \
-		sudo dnf install -y epel-release 2>/dev/null \
-			|| sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-$$(rpm -E %rhel).noarch.rpm 2>/dev/null \
-			|| echo "  EPEL already enabled or not needed"; \
-		echo "Installing: $(DNF_DEPS)"; \
-		sudo dnf install -y $(DNF_DEPS) 2>&1 | tail -1; \
-		echo ""; \
-		echo "Installing zoxide..."; \
-		if ! command -v zoxide >/dev/null 2>&1; then \
-			curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh; \
-		else \
-			echo "  zoxide already installed"; \
-		fi; \
-	elif command -v brew >/dev/null 2>&1 || [ "$(UNAME)" = "Darwin" ]; then \
-		$(MAKE) _brew_deps; \
-	else \
-		echo "No supported package manager found (need brew or dnf)."; \
-		echo "Install Homebrew: https://brew.sh"; \
-		exit 1; \
-	fi
+	@echo "  Sections (from deps.conf): $(SECTIONS)"
+	@echo "    make install nvim        install just that section"
+	@echo "    make link bash           link just that section's config"
+	@echo "    make check nvim          verify just that section"
 	@echo ""
-	@echo "Done. Run 'make check' to verify."
+	@echo "  To skip a single tool, comment it out in deps.conf."
+	@echo ""
+
+sections: ## List sections declared in deps.conf
+	@echo "$(SECTIONS)" | tr ' ' '\n'
+
+install: ## Link config + install tools (optionally: make install <section>...)
+	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
+	@source "$(DOTFILES_DIR)/lib/run.sh" && run_tools $(ARGS)
+	@source "$(DOTFILES_DIR)/lib/run.sh" && run_post $(ARGS)
+	@$(MAKE) --no-print-directory check $(ARGS)
+
+link: ## Symlink config only — no sudo, no network, nothing installed
+	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
+
+check: ## Verify enabled tools are present (optionally: make check <section>...)
+	@source "$(DOTFILES_DIR)/lib/run.sh" && run_check $(ARGS) || true
+
+status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
+	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
+
+sync: ## Install/update nvim plugins + parsers (headless)
+	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
+
+test: ## Run the Lua unit tests (no plugins, no network)
+	@command -v nvim >/dev/null 2>&1 || { echo "nvim not installed — skipping"; exit 0; }
+	@nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+		-c "luafile $(DOTFILES_DIR)/nvim/tests/lsp_servers_spec.lua" -c "qa!" 2>&1 \
+		| tee /tmp/dotfiles-test.txt
+	@grep -q "ALL PASS" /tmp/dotfiles-test.txt || { echo "tests failed"; exit 1; }
+	@# LSP servers: only meaningful once they're installed, so skip rather than fail
+	@if command -v bun >/dev/null 2>&1 && [ -d "$(DOTFILES_DIR)/nvim/lsp-servers/node_modules" ]; then \
+		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee /tmp/dotfiles-lsp.txt; \
+		grep -q "ALL PASS" /tmp/dotfiles-lsp.txt || { echo "lsp handshake failed"; exit 1; }; \
+	else \
+		echo "lsp servers not installed — skipping handshake test"; \
+	fi
+
+# --------------------------------------------------------------------------- #
+#  Misc                                                                        #
+# --------------------------------------------------------------------------- #
 
 shell: ## Set default shell to bash
 ifeq ($(UNAME),Darwin)
@@ -105,50 +132,7 @@ else
 	fi
 endif
 
-update: ## Pull latest changes and re-install
+update: ## Pull latest changes and re-link
 	@echo "Pulling latest..."
 	@git -C "$(DOTFILES_DIR)" pull --ff-only
-	@$(MAKE) install
-
-check: ## Verify tool availability
-	@echo ""
-	@echo "Checking tools..."
-	@echo "-------------------------------------------"
-	@all_ok=true; \
-	for cmd in zoxide fzf bat eza rg fd gh jq; do \
-		if command -v "$$cmd" >/dev/null 2>&1; then \
-			printf "  %-12s ok\n" "$$cmd"; \
-		elif [ "$$cmd" = "bat" ] && command -v batcat >/dev/null 2>&1; then \
-			printf "  %-12s ok (batcat)\n" "$$cmd"; \
-		elif [ "$$cmd" = "fd" ] && command -v fdfind >/dev/null 2>&1; then \
-			printf "  %-12s ok (fdfind)\n" "$$cmd"; \
-		else \
-			printf "  %-12s MISSING\n" "$$cmd"; \
-			all_ok=false; \
-		fi; \
-	done; \
-	echo "-------------------------------------------"; \
-	if $$all_ok; then \
-		echo "All tools installed."; \
-	else \
-		echo "Run 'make deps' to install missing tools."; \
-	fi
-	@echo ""
-
-# --------------------------------------------------------------------------- #
-#  Internal helpers                                                            #
-# --------------------------------------------------------------------------- #
-
-.PHONY: _ensure_brew _brew_deps
-
-_ensure_brew:
-	@if ! command -v brew >/dev/null 2>&1; then \
-		echo "Homebrew not found. Installing..."; \
-		/bin/bash -c "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
-	fi
-
-_brew_deps: _ensure_brew
-	@echo ""
-	@echo "Installing tools via Homebrew: $(BREW_DEPS)"
-	@echo "-------------------------------------------"
-	@brew install $(BREW_DEPS) 2>&1 | grep -v 'already installed' || true
+	@$(MAKE) --no-print-directory link

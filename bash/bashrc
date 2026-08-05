@@ -124,6 +124,16 @@ elif [[ -d /usr/lib/jvm ]]; then
 fi
 [[ -n "$JAVA_HOME" ]] && export PATH="$JAVA_HOME/bin:$PATH"
 
+# Default editor. Set UNCONDITIONALLY, and deliberately before bash_roest_local.
+#
+# Not `${EDITOR:-nvim}`: Fedora's /etc/profile.d/nano-default-editor.sh has
+# already set EDITOR=/usr/bin/nano by the time we get here (via /etc/bashrc
+# above), so a :- default would silently lose to the distro and `f` would open
+# nano. This is a single default, not a fallback chain — on a machine without
+# neovim, override it in ~/.bash_roest_local, which is sourced next and wins:
+#   export EDITOR=vim
+export EDITOR=nvim
+
 # Machine-local config (env vars needed before package managers init)
 [[ -f ~/.bash_roest_local ]] && source ~/.bash_roest_local
 
@@ -131,13 +141,16 @@ fi
 # Package managers (auto-generated blocks — don't manually edit)
 #####################################################################
 
-# nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+# nvm was removed on 2026-07-31: it had zero node versions installed and was
+# sourcing a heavy init script on every interactive shell to do nothing. node
+# comes from the system package manager via deps.conf's [nvim] section. If you
+# ever need multiple node versions, prefer mise (already a provider) over nvm.
 
 # rust / cargo (rustup)
 [ -s "$HOME/.cargo/env" ] && \. "$HOME/.cargo/env"
+
+# mise — shims for tools declared with the `mise` provider in deps.conf
+[ -d "$HOME/.local/share/mise/shims" ] && export PATH="$HOME/.local/share/mise/shims:$PATH"
 
 #####################################################################
 # Custom config
@@ -148,4 +161,8 @@ source ~/.bash_roest_theme
 source ~/.bash_roest_productivity
 source ~/.bash_roest_git
 source ~/.bash_roest_github
+
+# nvim-area shortcuts (n/nv/nvi). Only present when the nvim area is installed.
+[[ -f ~/.bash_roest_nvim ]] && source ~/.bash_roest_nvim
+
 export PATH="$HOME/.local/bin:$PATH"

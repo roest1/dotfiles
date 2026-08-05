@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ─── nvim-area shell shortcuts ───────────────────────────────────────────────
+#
+# Only symlinked by the [nvim] section (`make install nvim` / `make link nvim`),
+# and sourced from .bashrc behind a `[[ -f ]]` guard. On a machine where you
+# install only the bash config — a work box that doesn't allow neovim — this
+# file is simply absent and these functions never exist.
+#
+# That's the whole reason they live here instead of in bash_roest_productivity:
+# they are named after nvim and do nothing else. A `$EDITOR` fallback chain
+# would be pretending they're general-purpose. They aren't.
+
+# open the current directory in nvim
+nvi() { nvim .; }
+nv()  { nvim .; }
+n()   { nvim .; }
