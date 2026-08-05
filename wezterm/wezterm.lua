@@ -1,6 +1,12 @@
 local wezterm = require 'wezterm'
 local config = wezterm.config_builder()
 
+-- 0xProto Nerd Font, installed by wezterm/deps.sh. On a machine without it,
+-- the fallback chain (plus wezterm's always-appended bundled fonts, including
+-- Symbols Nerd Font for glyphs) keeps the terminal working — just in
+-- JetBrains Mono instead.
+config.font = wezterm.font_with_fallback { '0xProto Nerd Font', 'JetBrains Mono' }
+
 -- Attach a GUI window to the Jarvis sidecar's mux server so you can watch the
 -- worker + brain Claude Code panes live:  wezterm connect mux
 -- socket_path points at the SAME default socket the sidecar's `wezterm cli`
