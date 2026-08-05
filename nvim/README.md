@@ -54,10 +54,10 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │           ├── blink-cmp.lua       Autocompletion
 │           ├── formatter.lua       Formatter config (conform.nvim)
 │           ├── gitsigns.lua        Git gutter signs + staging
-│           ├── glow.lua            Markdown preview
 │           ├── harpoon.lua         Working file set
 │           ├── lint.lua            Async linting (nvim-lint)
 │           ├── lsp.lua             Language server setup (no Mason)
+│           ├── markview.lua        In-buffer markdown rendering
 │           ├── mini.lua            Surround + autopairs
 │           ├── oil.lua             File browser
 │           ├── roslyn.lua          C# language server

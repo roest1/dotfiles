@@ -10,6 +10,8 @@ return {
       'yaml',
       'bash',
       'markdown',
+      'markdown_inline',
+      'latex',
       'sql',
       'typescript',
       'javascript',
