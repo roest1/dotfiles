@@ -95,6 +95,33 @@ updates:
       # major can change the cmd/args contract — bash-language-server already
       # wants `start` rather than `--stdio` — and nvim/lsp-servers/verify.ts
       # proves the handshake, so a major is exactly the case worth seeing alone.
+      #
+      # That design earned its keep on 2026-08-05: PR #6 bumped typescript to
+      # 7.0.2 alone, and verify.ts failed it. See the ignore below.
+
+    ignore:
+      # TypeScript 7 is the Go-native port, and it ships no lib/tsserver.js —
+      # `lib/` holds only getExePath.js, tsc.js and version.cjs, and the bin map
+      # dropped `tsserver`, leaving `tsc`. typescript-language-server resolves
+      # that exact path (four sites in its cli.mjs) and so never starts: PR #6's
+      # handshake timed out at 20s while the other five servers passed. 5.3.0 is
+      # the newest release that exists, so there is nothing to wait for on the
+      # server side.
+      #
+      # Not just a wrapper problem. `require('typescript')` under 7.0.2 returns
+      # { version, versionMajorMinor } and nothing else — the compiler API is
+      # gone, with the rest namespaced under ./unstable/*. Volar embeds that API,
+      # which is why Vue, Svelte, Astro and MDX tooling can't target 7 either.
+      #
+      # REMOVE THIS when either becomes true:
+      #   - typescript-language-server ships TS 7 support (>5.3.0), or
+      #   - this config moves to the native server (`tsc --lsp --stdio`), at
+      #     which point typescript-language-server goes away entirely. Blocked
+      #     today on TS 7.1's stable API, which is what Volar needs; measured
+      #     3ms/14MB vs 57ms/60MB, and 29 capabilities vs 23, so it's worth
+      #     revisiting rather than forgetting.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
