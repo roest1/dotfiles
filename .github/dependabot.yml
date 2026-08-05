@@ -113,6 +113,9 @@ updates:
       # gone, with the rest namespaced under ./unstable/*. Volar embeds that API,
       # which is why Vue, Svelte, Astro and MDX tooling can't target 7 either.
       #
+      # Tracked in #8, which carries the measurements, the file-by-file change
+      # list and the one-command check for whether the trigger has been met.
+      #
       # REMOVE THIS when either becomes true:
       #   - typescript-language-server ships TS 7 support (>5.3.0), or
       #   - this config moves to the native server (`tsc --lsp --stdio`), at
