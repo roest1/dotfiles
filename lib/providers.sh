@@ -54,7 +54,6 @@ _provider_try() {
 
   case "$provider" in
     pkg)   pkg_install   "$cmd" ;;
-    npm)   npm_install   "$cmd" "$pkg" ;;
     uv)    uv_install    "$cmd" "$pkg" ;;
     cargo) cargo_install "$cmd" "$pkg" ;;
     mise)  mise_install  "$cmd" "$pkg" ;;

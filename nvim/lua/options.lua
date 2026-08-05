@@ -144,34 +144,6 @@ vim.o.scrolloff = 10
 -- See `:help 'confirm'`
 vim.o.confirm = true
 
---[[ TODO : Maybe future project is to build my own formatter
--- Maybe some other alignment/spacing tricks can be implemented like ensuring `x=1` gets to `x = 1` unless in specific situations like method parameters like in Python.
--- LSP formatters already do a lot, but we can apply a couple settings after the lsp to get the look I want
---
---
--- Align comments in current visual selection
-----------------------------------------------
--- Good for sections with consecutive lines of code and comments on each line:
---
--- Before:
---
---    local x = 0 -- x variable
---    local longer_var_name = 2 -- y variable
---
--- Select in Visual and run `:lua AlignComments()`
--- After:
---
---    local x = 0                  -- x variable
---    local longer_var_name = 2    -- y variable
---
-----------------------------------------------------
---- Notes:
----   Only works on the selected text from visual mode.
----   Omits lines without comments
----   Default comment token is "--" (Lua)
----
---]]
-
 -- override tab spacing globally
 vim.opt.expandtab = true -- Use spaces instead of tabs
 vim.opt.smartindent = true -- Smart indent new lines

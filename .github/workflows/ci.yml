@@ -77,7 +77,7 @@ jobs:
           while IFS=$'\t' read -r section provider cmd pkg; do
             for p in ${provider//||/ }; do
               case "$p" in
-                pkg|npm|uv|cargo|mise|manual) ;;
+                pkg|uv|cargo|mise|manual) ;;
                 *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
               esac
             done

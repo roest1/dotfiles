@@ -29,8 +29,6 @@ run_tools() {
       echo "[$section]"
       echo "-------------------------------------------"
     fi
-    # npm needs a writable global prefix before the first npm install
-    [[ "$provider" == *npm* ]] && setup_npm_prefix
     provider_install "$provider" "$cmd" "$pkg" || true
     ran_any=1
   done < <(manifest_lines tool "$@")

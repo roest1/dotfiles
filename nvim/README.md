@@ -18,9 +18,10 @@ so the config is version-controlled in place — don't clone into it.
 
 `make install nvim` links the config and installs the `[nvim]` section of
 `../deps.conf`. From inside this directory, `make all` does the same thing by
-delegating upward.
-
-`make all` runs two idempotent steps: `make deps` → `make sync` (lazy.nvim plugin install + tree-sitter parsers, headless). `make deps` delegates to the parent repo's manifest (`../deps.conf`, the `[nvim]` section) so there's one source of truth for the toolchain. Verify the install with `:checkhealth external` inside nvim.
+delegating upward: `make deps` (the manifest's `[nvim]` section, so there's one
+source of truth for the toolchain) then `make sync` (lazy.nvim plugins +
+tree-sitter parsers, headless). Both are idempotent. Verify with
+`:checkhealth external` inside nvim.
 
 **Installs:** neovim, git, make, unzip, ripgrep, fd, stylua, tree-sitter, ruff, plus the language servers — clangd, lua-language-server and lemminx as native binaries, and six JavaScript-based servers from `lsp-servers/package.json` installed with `bun`. `prettier` comes from that same manifest and is run the same way.
 
@@ -51,7 +52,7 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │       ├── health.lua       :checkhealth integration
 │       └── plugins/         One file per plugin
 │           ├── blink-cmp.lua       Autocompletion
-│           ├── formatter.lua       Auto-format on save (conform.nvim)
+│           ├── formatter.lua       Formatting via <leader>l (conform.nvim)
 │           ├── gitsigns.lua        Git gutter signs + staging
 │           ├── glow.lua            Markdown preview
 │           ├── harpoon.lua         Working file set

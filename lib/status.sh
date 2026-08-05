@@ -32,7 +32,7 @@ STATUS_DRIFT=0
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
-# Returns one of: pkg cargo npm uv mise bun manual unknown
+# Returns one of: pkg cargo uv mise bun manual unknown
 provider_of() {
   local cmd="$1"
   local path resolved
@@ -50,7 +50,6 @@ provider_of() {
 
   case "$resolved" in
     "$HOME"/.cargo/bin/*)  echo "cargo"; return ;;
-    "$HOME"/.npm-global/*) echo "npm";   return ;;
     *"/mise/"*)            echo "mise";  return ;;
     # bun's own installer lands in ~/.bun — same category as zoxide's curl
     # installer or an extracted wezterm: outside any package manager.
@@ -62,12 +61,6 @@ provider_of() {
   if command -v dpkg >/dev/null 2>&1 && dpkg -S "$resolved" >/dev/null 2>&1; then echo "pkg"; return; fi
   if command -v brew >/dev/null 2>&1 && [[ "$resolved" == *"/Cellar/"* ]]; then echo "pkg"; return; fi
 
-  # npm's global prefix isn't always ~/.npm-global
-  if command -v npm >/dev/null 2>&1; then
-    local npm_bin
-    npm_bin="$(npm prefix -g 2>/dev/null)/bin"
-    [[ "$resolved" == "$npm_bin"/* ]] && { echo "npm"; return; }
-  fi
 
   case "$resolved" in
     /usr/bin/*|/usr/local/bin/*|/opt/homebrew/*) echo "pkg" ;;

@@ -172,7 +172,8 @@ FORMATTING                                          *roest-keymaps-formatting*
 
     <leader>l       Format file (or selection in visual mode)
 
-Auto-formats on save via conform.nvim.
+Formats via conform.nvim. There is no format-on-save — <leader>l is the
+trigger. Add `format_on_save` to conform.setup if you want it automatic.
 
 Formatters by filetype:
     Lua                        → stylua

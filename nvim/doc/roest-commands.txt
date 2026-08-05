@@ -159,13 +159,18 @@ Usage:~
     :ResetNvim!     (force)
 
 Deletes:~
-    ~/.local/share/nvim     (plugins, Mason installs)
+    ~/.local/share/nvim     (plugins, tree-sitter parsers)
     ~/.cache/nvim           (cache)
 
 After execution:~
     1. Restart Neovim
     2. Plugins reinstall via Lazy
-    3. LSPs/tools must be reinstalled via Mason
+
+Language servers are NOT affected. They live outside these directories —
+native ones on PATH from ../deps.conf, the JavaScript ones in
+nvim/lsp-servers/node_modules — so a reset never costs you the toolchain.
+That was not true under Mason, which kept its installs in
+~/.local/share/nvim/mason and lost them with every reset.
 
 When to use:~
     - Plugin corruption

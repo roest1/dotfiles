@@ -20,8 +20,8 @@ SHELL := /bin/bash
 # make(1) spawns a non-interactive, non-login shell, which never reads .bashrc —
 # so tool directories that only .bashrc puts on PATH are invisible here. Without
 # this line the check target reports false MISSINGs for anything installed by
-# cargo, bun, uv, mise, or a user-prefixed npm.
-export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(HOME)/.npm-global/bin:$(PATH)
+# cargo, bun, uv or mise.
+export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(PATH)
 
 UNAME := $(shell uname -s)
 DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && pwd)

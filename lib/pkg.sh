@@ -104,38 +104,6 @@ ensure_symlink() {
   echo "  🔗 Symlinked $src -> $dest (~/.local/bin/$dest)"
 }
 
-# Ensure npm global prefix is user-writable (avoids EACCES on RHEL/Linux).
-setup_npm_prefix() {
-  command -v npm >/dev/null 2>&1 || return 0
-  local npm_prefix
-  npm_prefix="$(npm config get prefix 2>/dev/null)"
-  if [ ! -w "$npm_prefix" ] 2>/dev/null; then
-    mkdir -p "$HOME/.npm-global"
-    npm config set prefix "$HOME/.npm-global"
-  fi
-  export PATH="$HOME/.npm-global/bin:$PATH"
-}
-
-# Install an npm package. Usage: npm_install <command_name> [package_name]
-npm_install() {
-  local cmd="$1"
-  local pkg="${2:-$1}"
-
-  if command -v "$cmd" >/dev/null 2>&1; then
-    echo "  ✅ $cmd"
-    return 0
-  fi
-
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "  ⚠️  npm not found — install node/npm first, then: npm install -g $pkg"
-    return 1
-  fi
-
-  echo "  ➡️  Installing $pkg via npm..."
-  npm install -g "$pkg" 2>/dev/null \
-    || { echo "  ⚠️  npm install -g $pkg failed"; return 1; }
-}
-
 pip_install() {
   local tool="$1"
 

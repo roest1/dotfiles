@@ -5,36 +5,15 @@ return {
     local conform = require 'conform'
     conform.setup {
       formatters_by_ft = {
-        -- To see what your <key> = { '...' }, should be for your language
-        --  go to a file in nvim and run `:set filetype?` and it will tell you
-
-        -- conform will run the first available formatter
-        -- prettierd is a wrapper of prettier that keeps a daemon running and all requests go to that daemon
-        -- prettier is the default formatter and each request spawns a new process (slower)
-
-        --[[
-        -- dotnet-format
-
-        # Install:
-
-        dotnet tool install -g dotnet-format
-
-        dotnet-format requires having .editorconfig in the same dir as the .sln file. 
-
-        Example .editorconfig file:
-
-            ```
-            [*.cs]
-            # Sort using directives alphabetically, with 'System' first
-            dotnet_sort_system_directives_first = true
-            dotnet_separate_import_directive_groups = true
-            # Remove usings that aren't being used
-            dotnet_style_qualification_for_field = false:suggestion
-            dotnet_style_qualification_for_property = false:suggestion
-            ```
-        --]]
-        --dotnet tool install -g csharpier
-        -- cs = { 'csharpier', 'dotnet-format' }, -- maybe cshapier as a backup?
+        -- To see what your <key> = { '...' } should be for a language, open a
+        -- file and run `:set filetype?`.
+        --
+        -- No `cs` entry on purpose. C# formatting comes from roslyn through
+        -- `lsp_format = 'fallback'` in the keymap below — the LSP already does
+        -- it, so a separate formatter would be a second opinion to keep in sync.
+        -- csharpier and dotnet-format were defined here and mapped to nothing,
+        -- and each spawns a fresh `dotnet` process per format; .NET cold start
+        -- is what made that feel slow, not the language server.
         lua = { 'stylua' },
 
         -- prettierd is gone with node — it was an npm global. prettier itself is
@@ -81,17 +60,24 @@ return {
           -- look. --write on conform's temp file works for every filetype above.
           stdin = false,
         },
-        ['csharpier'] = {
-          command = 'dotnet-csharpier',
-          args = { '--write-stdout' },
-        },
-        ['dotnet-format'] = {
-          command = 'dotnet',
-          args = { 'format', '--include', '--no-restore', '$FILENAME' },
-          stdin = false, -- dotnet-format works on files, not stdin
-        },
       },
     }
 
+    -- The only way to invoke any of the above. Deleted in 1b17ef2 ("remove
+    -- unused keybindings", Jun 2026) as an unused mapping, which left conform
+    -- fully configured and completely unreachable — no keymap, no
+    -- format_on_save — while five doc locations went on promising it worked.
+    --
+    -- `lsp_format = 'fallback'` is the part worth not losing again: it means a
+    -- filetype with no entry above still gets formatted by its language server.
+    -- That is where C# formatting comes from (roslyn), and Lua/Python/JS keep
+    -- using the dedicated formatters because those ARE listed.
+    vim.keymap.set({ 'n', 'v' }, '<leader>l', function()
+      conform.format {
+        lsp_format = 'fallback',
+        async = false,
+        timeout_ms = 3000,
+      }
+    end, { desc = 'Format file or range (Visual mode)' })
   end,
 }

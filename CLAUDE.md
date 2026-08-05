@@ -49,7 +49,7 @@ The repo describes itself and nothing else; don't reintroduce an ignore list.
 
 When adding a tool, add a `tool` line to the right section. **Don't add install logic** —
 `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`,
-`npm_install`, `uv_install`, `mise_install`, `cargo_install`, `ensure_symlink`), and
+`uv_install`, `mise_install`, `cargo_install`, `ensure_symlink`), and
 `lib/providers.sh` dispatches to it. Every helper short-circuits on `command -v`, which is
 what makes overlapping tools (`rg`, `fd` appear in both `[bash]` and `[nvim]`) safe.
 

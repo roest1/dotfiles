@@ -30,7 +30,7 @@ every dependency:
 ```conf
 [nvim]
 link  nvim                  ~/.config/nvim
-tool  pkg   nvim      neovim
+tool  mise||pkg    nvim  neovim
 tool  mise||cargo  stylua
 post  make -C nvim sync
 ```
@@ -67,10 +67,10 @@ tool  <provider>  <command>  [package]     # package defaults to command
 Providers: `pkg` (system package manager), `mise`, `uv`, `cargo`, and
 `manual`. Use `||` for fallbacks: `pkg||cargo eza`.
 
-`npm` is still in the dispatcher (`lib/providers.sh`) and still accepted by the
-manifest validator, but **the `bun-only toolchain` job rejects any `npm` line in
-`deps.conf`**, so it is unreachable by design — dead code kept only because
-removing it touches four files. Don't reach for it; JavaScript tools go in
+There is no `npm` provider. It was removed once nothing could reach it — the
+`bun-only toolchain` job rejects any `npm` line in `deps.conf`, so the
+dispatcher case, the installer, the global-prefix setup and the provenance
+detection were all unreachable. JavaScript tools go in
 `nvim/lsp-servers/package.json` and run under `bun`.
 
 `./tools/adopt.sh <command>` writes the line for you — it resolves the provider

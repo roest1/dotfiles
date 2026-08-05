@@ -175,13 +175,14 @@ Keymaps (when LSP is attached):
     gW              Workspace symbols
     <leader>th      Toggle inlay hints
 
-Related: mason.nvim (installs servers), blink.cmp (completion),
-    fidget.nvim (LSP progress), lazydev.nvim (Lua-specific)
+Related: blink.cmp (completion), fidget.nvim (LSP progress),
+    lazydev.nvim (Lua-specific). No mason.nvim — servers are declared, not
+    installed from the editor. See |roest-commands-servers|.
 
 ==============================================================================
 CONFORM (FORMATTER)                                  *roest-plugins-formatter*
 
-Auto-formatting on save.
+On-demand formatting via <leader>l. Not on save — see |roest-keymaps-formatting|.
 
 Location: lua/external/plugins/formatter.lua
 
