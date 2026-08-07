@@ -145,13 +145,22 @@ prune_orphans
 # Repo-local config, never --global: this hook is about THIS repo's rules, and
 # a global hooksPath would silently replace the hooks of every other repo on
 # the machine.
+# Every git call here is allowed to fail without taking install.sh with it. A
+# `.git` directory is not sufficient for git to accept the repo: under a CI
+# container, or anywhere the work tree is owned by another user, git rejects it
+# for dubious ownership and `config --local` exits 128. Linking your dotfiles
+# must not fail because a hook could not be registered.
 if [[ -d "$DOTFILES_DIR/.git" ]] && command -v git >/dev/null 2>&1; then
-  current="$(git -C "$DOTFILES_DIR" config --local --get core.hooksPath || true)"
+  current="$(git -C "$DOTFILES_DIR" config --local --get core.hooksPath 2>/dev/null || true)"
   if [[ "$current" != ".githooks" ]]; then
-    git -C "$DOTFILES_DIR" config --local core.hooksPath .githooks
     echo ""
     echo "[git hooks]"
-    echo "  set core.hooksPath -> .githooks"
+    if git -C "$DOTFILES_DIR" config --local core.hooksPath .githooks 2>/dev/null; then
+      echo "  set core.hooksPath -> .githooks"
+    else
+      echo "  skipped — git declined this work tree (ownership?)"
+      echo "  The secret guard is not active here. CI still checks it."
+    fi
   fi
 fi
 
