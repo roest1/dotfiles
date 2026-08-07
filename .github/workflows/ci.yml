@@ -523,7 +523,14 @@ jobs:
             $null = [System.Management.Automation.Language.Parser]::ParseFile(
               (Resolve-Path $f).Path, [ref] $null, [ref] $errors)
             if ($errors) {
-              foreach ($e in $errors) { Write-Host "$f : $($e.Message)" }
+              # Line and column, not just the message. A parse error reported
+              # without a position is nearly useless when the only machine that
+              # can reproduce it is this runner.
+              foreach ($e in $errors) {
+                Write-Host ('{0}({1},{2}): {3}' -f $f,
+                  $e.Extent.StartLineNumber, $e.Extent.StartColumnNumber, $e.Message)
+                Write-Host ('    >>> ' + $e.Extent.Text)
+              }
               $bad = 1
             }
           }
