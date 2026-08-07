@@ -38,6 +38,29 @@ jobs:
             lib/*.sh \
             */deps.sh tools/*.sh
 
+      # Runs here rather than on the Windows runner so it fails in seconds,
+      # but the reason is pure Windows PowerShell 5.1.
+      - name: PowerShell sources are ASCII-only
+        run: |
+          # 5.1 reads a .ps1 with no BOM as ANSI (cp1252), not UTF-8. An em
+          # dash (E2 80 94) then decodes as three cp1252 characters ending in
+          # 0x94 — which in cp1252 is RIGHT DOUBLE QUOTATION MARK, and
+          # PowerShell treats that as a string delimiter. One em dash inside a
+          # COMMENT opened a string that swallowed the rest of the file, and
+          # the reported error was a bogus "invalid variable reference" 200
+          # lines further down.
+          #
+          # A UTF-8 BOM also fixes it. ASCII-only is the fix that survives an
+          # editor helpfully stripping the BOM.
+          if bad=$(grep -rnP '[^\x00-\x7F]' --include='*.ps1' . 2>/dev/null); then
+            echo "non-ASCII in PowerShell sources:"
+            echo "$bad"
+            echo ""
+            echo "Windows PowerShell 5.1 mis-parses these. Use ASCII punctuation."
+            exit 1
+          fi
+          echo "ok: all .ps1 sources are ASCII"
+
   # ── Manifest sanity ────────────────────────────────────────────────────────
   # Cheap guard against a typo in deps.conf taking down every other job.
   manifest:

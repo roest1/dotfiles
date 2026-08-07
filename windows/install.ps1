@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     The Windows counterpart to install.sh. Both read the same manifest, so
-    adding a Windows config stays a deps.conf edit — the invariant the bash
+    adding a Windows config stays a deps.conf edit - the invariant the bash
     side already holds itself to.
 
     Only sections that explicitly declare `platform windows` are visible here.
@@ -14,7 +14,7 @@
     which is right for [bash] (Linux and macOS both) and catastrophic here,
     where it would link bashrc into %USERPROFILE%.
 
-    Targets Windows PowerShell 5.1, not just PowerShell 7 — 5.1 is what a
+    Targets Windows PowerShell 5.1, not just PowerShell 7 - 5.1 is what a
     fresh Windows box runs when you paste the bootstrap line. So: no ternary
     operators, no null-coalescing, no $IsWindows, and Join-Path takes exactly
     two arguments.
@@ -28,7 +28,7 @@
     Limit to these manifest sections. Default: every windows section.
 
 .PARAMETER LinkOnly
-    Symlinks only — no winget, no downloads. The analogue of `make link`, for
+    Symlinks only - no winget, no downloads. The analogue of `make link`, for
     a machine where you can't install anything but still want your config.
 
 .EXAMPLE
@@ -72,7 +72,7 @@ $BackupDir = Join-Path $env:USERPROFILE ('.dotfiles_backup\' + (Get-Date -Format
 
 # --- Manifest --------------------------------------------------------------
 
-# Strip from the first '#' and trim. Matches bash's ${raw%%#*} exactly —
+# Strip from the first '#' and trim. Matches bash's ${raw%%#*} exactly -
 # including that a '#' inside a value would truncate it, which is why the
 # manifest has no such values.
 function Remove-ManifestComment {
@@ -246,7 +246,7 @@ function Install-WingetTool {
     }
 
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "  SKIP $Command — winget not found" -ForegroundColor Yellow
+        Write-Host "  SKIP $Command - winget not found" -ForegroundColor Yellow
         Write-Host "    Install 'App Installer' from the Microsoft Store, then re-run." -ForegroundColor Yellow
         return $false
     }
@@ -255,7 +255,7 @@ function Install-WingetTool {
 
     # | Out-Host, not bare. A native command's stdout joins this function's
     # output stream, so `if (-not (Install-WingetTool ...))` would be testing
-    # an array of winget's progress lines with a boolean stapled on the end —
+    # an array of winget's progress lines with a boolean stapled on the end -
     # non-empty either way, so every failure would read as success. Out-Host
     # writes to the console without entering the pipeline.
     winget install --exact --id $Package --accept-package-agreements --accept-source-agreements | Out-Host
@@ -263,7 +263,7 @@ function Install-WingetTool {
     # $ErrorActionPreference does not apply to native executables, so a failed
     # winget would otherwise be reported as success.
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "  FAILED $Command — winget exit $LASTEXITCODE" -ForegroundColor Red
+        Write-Host "  FAILED $Command - winget exit $LASTEXITCODE" -ForegroundColor Red
         return $false
     }
 
@@ -274,7 +274,7 @@ function Install-WingetTool {
 # --- Run -------------------------------------------------------------------
 
 Write-Host ''
-Write-Host "Windows dotfiles — $RepoRoot"
+Write-Host "Windows dotfiles - $RepoRoot"
 Write-Host '-------------------------------------------'
 
 # @() because a single-record result unrolls to a scalar on return, and the
@@ -332,7 +332,7 @@ foreach ($r in ($records | Where-Object { $_.Kind -eq 'tool' })) {
     if ($r.Fields.Count -ge 4) { $package = $r.Fields[3] }
 
     if ($provider -ne 'winget') {
-        Write-Host "  SKIP $command — provider '$provider' is not available on Windows" -ForegroundColor Yellow
+        Write-Host "  SKIP $command - provider '$provider' is not available on Windows" -ForegroundColor Yellow
         continue
     }
     if (-not (Install-WingetTool -Command $command -Package $package)) { $failed++ }
@@ -343,7 +343,7 @@ foreach ($r in ($records | Where-Object { $_.Kind -eq 'tool' })) {
 #
 # Path derived from $RepoRoot, not $PSScriptRoot: the latter is empty when this
 # script is run as a scriptblock rather than a file, which would skip the
-# fixups in silence — the worst way for them not to run.
+# fixups in silence - the worst way for them not to run.
 $depsScript = Join-Path $RepoRoot 'windows\deps.ps1'
 if (Test-Path -LiteralPath $depsScript) {
     Write-Host ''

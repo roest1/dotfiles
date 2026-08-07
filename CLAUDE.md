@@ -154,6 +154,14 @@ in `lib/providers.sh`, not a rewrite.
   `wezterm.exe` load a config over `\\wsl.localhost\...`; the maintainer has said the WSL
   filesystem isn't visible to the host that way. Hence a second clone on `C:` and a
   PowerShell installer, rather than teaching `install.sh` to reach across.
+- **`.ps1` files must be pure ASCII.** Windows PowerShell 5.1 reads a `.ps1` without a BOM
+  as ANSI (cp1252), not UTF-8. An em dash (`E2 80 94`) decodes as three cp1252 characters
+  ending in `0x94`, which in cp1252 is `"` — and PowerShell treats that as a **string
+  delimiter**. A single em dash inside a *comment* opened a string that swallowed the rest
+  of the file; the error it reported was a bogus "invalid variable reference" 200 lines
+  away, in a comment that was never the problem. Don't chase the reported line — check for
+  non-ASCII first. CI enforces this in the `shellcheck` job. A UTF-8 BOM would also work,
+  but ASCII survives an editor stripping the BOM.
 - **The PowerShell targets Windows PowerShell 5.1, not pwsh 7.** 5.1 is what a fresh box
   runs when the bootstrap line is pasted, so: no ternaries, no `??`, no `$IsWindows`,
   `Join-Path` takes exactly two arguments, and `$ErrorActionPreference = 'Stop'` does

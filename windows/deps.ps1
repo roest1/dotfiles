@@ -1,9 +1,9 @@
 <#
-    [windows] platform fixups — the counterpart to wezterm/deps.sh.
+    [windows] platform fixups - the counterpart to wezterm/deps.sh.
 
     Dot-sourced by windows/install.ps1 after that section's tools, the same way
     lib/run.sh runs <section>/deps.sh after its tools. Inherits the caller's
-    Set-StrictMode and $ErrorActionPreference, so it must not call `exit` —
+    Set-StrictMode and $ErrorActionPreference, so it must not call `exit` -
     that would take install.ps1's summary down with it.
 
     Everything here is a downgrade if it fails, never a breakage: without the
@@ -97,10 +97,10 @@ function Install-ProtoFont {
 
         if ($installed -gt 0) {
             Write-Host "  installed 0xProto Nerd Font ($installed faces)" -ForegroundColor Green
-            Write-Host '    Already-running apps keep the old font list — restart wezterm.'
+            Write-Host '    Already-running apps keep the old font list - restart wezterm.'
         }
         else {
-            Write-Host '  no .ttf files in the archive — skipping font' -ForegroundColor Yellow
+            Write-Host '  no .ttf files in the archive - skipping font' -ForegroundColor Yellow
         }
     }
     catch {
@@ -137,7 +137,7 @@ function Show-ElevationStatus {
         return
     }
 
-    Write-Host '  no elevation helper — the admin launcher entry will not work' -ForegroundColor Yellow
+    Write-Host '  no elevation helper - the admin launcher entry will not work' -ForegroundColor Yellow
     Write-Host '    Windows 11 24H2+: enable sudo in Settings > System > For developers.'
     Write-Host '    Otherwise uncomment the gsudo line in deps.conf and re-run.'
 }
