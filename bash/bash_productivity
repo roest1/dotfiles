@@ -411,7 +411,7 @@ h() {
     dotfiles-edit      Open dotfiles dir in nvim
     reload             Re-source ~/.bashrc
 
-  Neovim (see :help roest-bash)
+  Neovim (see :help dotfiles-commands)
     :Copy              Copy directory files to clipboard
     :Find / :FindReplace   Project-wide search/replace
 

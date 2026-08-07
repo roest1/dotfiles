@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based. A monorepo: the neovim config lives in `nvim/`, merged in from the former `roest1/nvim` repo with full history.
+Cross-platform dotfiles — terminal, editor and shell as one versioned unit (macOS + Linux/WSL + RHEL + the Windows host). Bash-based. A monorepo: the neovim config lives in `nvim/`, merged in from the former `roest1/nvim` repo with full history.
 
 ## Setup Workflow
 
@@ -224,6 +224,13 @@ windows/
                             admin), elevation-helper reporting.
   README.md                 Developer Mode, the CTRL+SHIFT+O picker, elevation,
                             and why the config can't be shared with WSL.
+.githooks/
+  pre-commit                Refuses to commit machine-local or secret files.
+                            Wired up by install.sh via core.hooksPath (repo-
+                            local, never --global), so it arrives with a clone.
+  secret-patterns           The path patterns, read by BOTH the hook and the
+                            CI step that checks the same thing — one source of
+                            truth so the local and remote guards can't drift.
 deps.conf                   THE MANIFEST — every link and dependency, one file.
 lib/                        manifest.sh (parser), providers.sh (dispatch),
                             pkg.sh (installers), run.sh (section runner),
@@ -243,7 +250,7 @@ CONTRIBUTING.md             How to add a tool without breaking the manifest
 - **Tool dependencies:** `zoxide`, `fzf`, `bat`, `eza`, `fd`, `ripgrep`, `gh`, `jq`. All optional — features degrade gracefully via `command -v` guards. Declared in `deps.conf`'s `[bash]` section, installed via brew/apt/dnf. Some tools have alternate binary names on RHEL/Debian (`bat` → `batcat`, `fd` → `fdfind`) — handled with fallback checks.
 - **Symlink pattern:** `install.sh` symlinks `bash/*` to `~/.*` (e.g. `bash/bashrc` → `~/.bashrc`), driven entirely by the `link` lines in `deps.conf`. It hard-codes no filenames — adding or renaming a config file is a manifest edit and nothing else. Renames are safe because `install.sh` **prunes orphans**: a symlink pointing into this repo whose target no longer exists is removed, so the retired name can't survive next to the new one. That test is structural on purpose — don't replace it with a list of old names, which would need maintaining and would silently stop covering the next rename.
 - **Navigation UX:** All interactive fzf commands use consistent keybindings — menus (`-`/`q` back), lists (type to filter, `esc` back), pagers (`r` refresh, `-`/`q` back).
-- **Machine-local config:** `bash_local` holds per-machine setup (CUDA, nvim path, RHEL-specific exports) — gitignored, optional-sourced before other custom configs. `bash_password_commands` is gitignored for secrets. These two are the **only** configs not declared in `deps.conf`, and must stay that way: the manifest describes what every machine gets. They're symlinked by hand (`bashrc` sources `~/.bash_local`, not the repo path, so the file alone does nothing), and `prune_orphans` leaves them alone as long as their targets exist.
+- **Machine-local config:** `~/.bash_local` (per-machine paths and exports) and `~/.bash_password_commands` (secrets) are optional-sourced by `bashrc`. They live **in `$HOME`, never in the work tree** — do not "tidy" them back into `bash/` with a `.gitignore` entry, which is how they used to be. Outside the tree, git cannot see them; inside it, protection is a rule that `git add -f` overrides and that a `.gitignore` rewrite silently deletes. They're also the only configs not declared in `deps.conf`, and must stay that way: the manifest describes what *every* machine gets.
 
 ## When Editing
 

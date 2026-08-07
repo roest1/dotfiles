@@ -136,6 +136,25 @@ done < <(manifest_lines link ${SECTIONS[@]+"${SECTIONS[@]}"})
 # rather than looking briefly stale.
 prune_orphans
 
+# --- Git hooks -----------------------------------------------------
+#
+# .githooks/ is tracked, so the pre-commit secret guard arrives with a clone
+# instead of being something every machine has to remember to set up. Git
+# ignores tracked hooks unless core.hooksPath points at them.
+#
+# Repo-local config, never --global: this hook is about THIS repo's rules, and
+# a global hooksPath would silently replace the hooks of every other repo on
+# the machine.
+if [[ -d "$DOTFILES_DIR/.git" ]] && command -v git >/dev/null 2>&1; then
+  current="$(git -C "$DOTFILES_DIR" config --local --get core.hooksPath || true)"
+  if [[ "$current" != ".githooks" ]]; then
+    git -C "$DOTFILES_DIR" config --local core.hooksPath .githooks
+    echo ""
+    echo "[git hooks]"
+    echo "  set core.hooksPath -> .githooks"
+  fi
+fi
+
 # --- Login shell shim (.bash_profile) ------------------------------
 #
 # Login shells (macOS Terminal/iTerm2, SSH on Linux/RHEL) read

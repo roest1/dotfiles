@@ -1,18 +1,18 @@
-*roest.txt*    Riley's Neovim Configuration Documentation
+*dotfiles.txt*    Neovim Configuration Documentation
 
 ==============================================================================
-ROEST'S NEOVIM                                                               *roest*
+NEOVIM CONFIGURATION                                                 *dotfiles*
 
-Welcome back! This is your personal Neovim setup.
+Welcome back! This is your Neovim setup.
 
 If you're reading this after a long break, start here:
     1. Run `:checkhealth` to verify everything works
-    2. Read |roest-quickstart| for the essentials
-    3. Browse |roest-keymaps| for all your keybindings
-    4. Check |roest-plugins| for what each plugin does
+    2. Read |dotfiles-quickstart| for the essentials
+    3. Browse |dotfiles-keymaps| for all your keybindings
+    4. Check |dotfiles-plugins| for what each plugin does
 
 ==============================================================================
-QUICK START                                                   *roest-quickstart*
+QUICK START                                                   *dotfiles-quickstart*
 
 Your most important keymaps (leader is <Space>):
 
@@ -52,13 +52,13 @@ Your most important keymaps (leader is <Space>):
     <C-Space>     Trigger manually
 
 ==============================================================================
-DOCUMENTATION INDEX                                              *roest-index*
+DOCUMENTATION INDEX                                              *dotfiles-index*
 
-|roest-keymaps|     Every keymap, organized by category
-|roest-plugins|     What each plugin does and how to use it
-|roest-workflows|   "How do I..." recipes for common tasks
-|roest-commands|    Custom commands you've created
-|roest-harpoon|     Harpoon workflow
+|dotfiles-keymaps|     Every keymap, organized by category
+|dotfiles-plugins|     What each plugin does and how to use it
+|dotfiles-workflows|   "How do I..." recipes for common tasks
+|dotfiles-commands|    Custom commands you've created
+|dotfiles-harpoon|     Harpoon workflow
 
 These docs cover THIS config. For Vim itself — motions, operators, text
 objects, registers — use the built-in help, which is authoritative and never
@@ -68,14 +68,14 @@ For the shell, run `h` in a terminal (`h <command>` for detail). The shell
 documents the shell; this documents the editor.
 
 ==============================================================================
-LEADER KEY                                                      *roest-leader*
+LEADER KEY                                                      *dotfiles-leader*
 
 Your leader key is <Space>. When you see `<leader>` in docs, press Space.
 
 Example: `<leader>sf` means press Space, then s, then f.
 
 ==============================================================================
-FILE STRUCTURE                                               *roest-structure*
+FILE STRUCTURE                                               *dotfiles-structure*
 
 The directory tree lives in nvim/README.md, and only there. It used to be
 duplicated here and had already drifted — this copy still listed a
@@ -83,13 +83,13 @@ bootstrap.sh that lives in the dotfiles root, not in nvim/, and predated
 lsp_servers.lua entirely. One tree, one place to update.
 
 ==============================================================================
-GETTING HELP                                                    *roest-help*
+GETTING HELP                                                    *dotfiles-help*
 
-    :help roest             This file
-    :help roest-keymaps     All keybindings
-    :help roest-plugins     Plugin reference
-    :help roest-workflows   Common tasks
-    :help roest-commands    Custom commands
+    :help dotfiles             This file
+    :help dotfiles-keymaps     All keybindings
+    :help dotfiles-plugins     Plugin reference
+    :help dotfiles-workflows   Common tasks
+    :help dotfiles-commands    Custom commands
 
     :Telescope help_tags    Search all help (or <leader>sh)
     :Telescope keymaps      Search keymaps (or <leader>sk)

@@ -1,3 +1,12 @@
+# Belt and braces only. These two live in $HOME — ~/.bash_local and
+# ~/.bash_password_commands — outside the work tree, where git cannot see them
+# at all. That is the actual protection, because it is a property rather than a
+# rule: `git add -f` overrides a .gitignore entry, and rewriting this file
+# silently removes one.
+#
+# These lines exist for the case where someone recreates them inside the repo.
+# .githooks/pre-commit and a CI step both refuse them too — see
+# .githooks/secret-patterns.
 bash_password_commands
 bash_local
 

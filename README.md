@@ -249,6 +249,9 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ├── bootstrap.ps1                         The same, for the Windows host
 ├── install.sh                            Symlink engine (backs up existing files)
 ├── CONTRIBUTING.md                       How to add a tool without breaking the manifest
+├── .githooks/
+│   ├── pre-commit                        Blocks committing secrets (core.hooksPath)
+│   └── secret-patterns                   Shared by the hook and the CI check
 ├── .github/
 │   ├── workflows/ci.yml                  Portability + supply-chain checks
 │   ├── dependabot.yml                    bun + github-actions ecosystems
@@ -312,25 +315,51 @@ still stands alone.
 
 ## Machine-local config
 
-Two gitignored files, sourced by `bashrc` when they exist — host-specific setup
-that must not be committed:
+Two files hold host-specific setup, sourced by `bashrc` when they exist:
 
 ```sh
-cd ~/dotfiles
-touch bash/bash_local && ln -s "$PWD/bash/bash_local" ~/.bash_local
-touch bash/bash_password_commands && ln -s "$PWD/bash/bash_password_commands" ~/.bash_password_commands
+touch ~/.bash_local && chmod 600 ~/.bash_local
+touch ~/.bash_password_commands && chmod 600 ~/.bash_password_commands
 ```
 
-**The symlink is the part that matters.** `bashrc` sources `~/.bash_local`, not
-the repo path, so creating the file alone does nothing.
+`~/.bash_local` is for per-machine paths and exports — CUDA, a distro-specific
+nvim location. It's sourced immediately after `EDITOR` is set unconditionally,
+which makes it the right place for a per-machine `EDITOR` override.
+`~/.bash_password_commands` is for anything sensitive.
 
-These two are the only configs *not* declared in `deps.conf`, and can't be: the
-manifest describes what every machine gets, and these are by definition what one
-machine gets. `install.sh` neither creates nor prunes them.
+**They live in `$HOME`, not in this repo, and that is the entire security
+design.** Git cannot commit a file outside its work tree — it can't see one. No
+`.gitignore` entry to maintain, no rule to remember, nothing to review when
+someone edits a config.
 
-`~/.bash_local` is sourced immediately after `EDITOR` is set unconditionally, so
-it's the right place for a per-machine `EDITOR` override — see the note in
-`bashrc`.
+This is worth being deliberate about, because the obvious alternative is worse.
+Keeping them in `bash/` and gitignoring them makes protection a *rule* rather
+than a *property*: `git add -f` overrides it, rewriting `.gitignore` silently
+removes it, and you're left auditing a file forever to be sure your passwords
+aren't one careless commit from being public.
+
+Two more layers sit behind that, for the secret file someone creates *inside*
+the repo later:
+
+| Layer | Catches |
+| ----- | ------- |
+| `$HOME`, outside the work tree | everything — git cannot see the file |
+| `.githooks/pre-commit` | a staged secret, before the commit exists |
+| CI: *No secret or machine-local files are tracked* | anything that got past the hook, before it reaches `main` |
+
+The hook and the CI step read the same list, [`.githooks/secret-patterns`](.githooks/secret-patterns),
+so they can't drift apart — add a pattern once and both are armed. `install.sh`
+points git at the hooks with `core.hooksPath`, so they arrive with a clone
+instead of being per-machine setup you have to remember.
+
+Order matters here: the hook is bypassable with `--no-verify` and doesn't exist
+until `install.sh` has run once, and CI can only tell you a secret **has already
+been pushed**. Neither is a substitute for the file simply not being there.
+
+If you want defence in depth beyond the repo, turn on GitHub's
+[push protection](https://docs.github.com/code-security/secret-scanning/push-protection-for-repositories-and-organizations)
+— free on public repos. It blocks pushes containing recognised credential
+formats, though not arbitrary passwords in a shell script.
 
 ## License
 

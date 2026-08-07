@@ -48,7 +48,7 @@ return {
     end
 
     vim.api.nvim_create_autocmd({ 'BufWritePost', 'InsertLeave', 'BufReadPost' }, {
-      group = vim.api.nvim_create_augroup('roest-lint', { clear = true }),
+      group = vim.api.nvim_create_augroup('dotfiles-lint', { clear = true }),
       callback = function()
         local names = available_linters(vim.bo.filetype)
         if #names > 0 then

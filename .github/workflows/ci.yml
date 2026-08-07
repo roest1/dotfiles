@@ -36,7 +36,28 @@ jobs:
           shellcheck --severity=warning \
             bootstrap.sh install.sh \
             lib/*.sh \
-            */deps.sh tools/*.sh
+            */deps.sh tools/*.sh \
+            .githooks/pre-commit
+
+      # The remote half of the secret guard. .githooks/pre-commit is the local
+      # half and shares this pattern file, but a hook is bypassable with
+      # --no-verify and absent entirely until install.sh has run once. This
+      # catches what got through, before it reaches main.
+      #
+      # It cannot un-publish a secret that is already pushed — that is why the
+      # real defence is keeping those files outside the work tree, where git
+      # cannot see them at all.
+      - name: No secret or machine-local files are tracked
+        run: |
+          patterns=$(grep -vE '^\s*(#|$)' .githooks/secret-patterns | paste -sd '|' -)
+          echo "patterns: $patterns"
+          if bad=$(git ls-files | grep -E "$patterns"); then
+            echo ""
+            echo "tracked files matching .githooks/secret-patterns:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "ok: nothing matching is tracked"
 
       # Runs here rather than on the Windows runner so it fails in seconds,
       # but the reason is pure Windows PowerShell 5.1.
