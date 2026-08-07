@@ -7,7 +7,7 @@
 # can drift into describing a machine you don't actually have. A fresh box built
 # from a drifted manifest gets different software than the one you're sitting at.
 #
-# This is the stronger question, in three parts:
+# This is the stronger question, in two parts:
 #
 #   links     is ~/.bashrc a symlink into THIS repo, or something else?
 #   tools     was this installed by the provider the manifest declares?

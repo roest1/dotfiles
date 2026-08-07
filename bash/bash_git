@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ~/.bash_roest_git
+# ~/.bash_git
 #
 # GitHub Actions commands — CI observability + log viewer
 #

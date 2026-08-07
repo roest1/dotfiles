@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# ~/.bash_roest_productivity
+# ~/.bash_productivity
 #
 # Source this from .bashrc:
-#   source ~/.bash_roest_productivity
+#   source ~/.bash_productivity
 #
 # Prerequisites (install once):
 #   brew install zoxide fzf bat eza
@@ -317,7 +317,7 @@ dtest() {
     dotnet test
 }
 
-# n / nv / nvi moved to bash_roest_nvim — they're nvim-only by definition, and
+# n / nv / nvi moved to bash_nvim — they're nvim-only by definition, and
 # that file is symlinked in only by the nvim area, so a bash-only install (a
 # work machine that disallows neovim) simply doesn't get them.
 

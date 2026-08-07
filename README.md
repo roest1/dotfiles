@@ -1,6 +1,8 @@
 # dotfiles
 
-Personal configuration files — bash and neovim in one repo. Cross-platform (macOS + Linux/WSL + RHEL).
+Terminal, editor and shell as one versioned unit — wezterm, neovim and bash in a
+single repo, with every symlink and every dependency declared in one manifest.
+Cross-platform: macOS, Linux, WSL, RHEL, and the Windows host.
 
 ## Install
 
@@ -11,6 +13,22 @@ curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh |
 ```
 
 Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
+
+### Windows
+
+That line sets up a Unix shell — including WSL, run from inside your distro. The
+**Windows host** is a separate install, from PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.ps1 | iex
+```
+
+It installs wezterm and gives you `CTRL+SHIFT+O` — one fuzzy picker for WSL,
+PowerShell, cmd, and an admin shell. Turn on Developer Mode first, or it falls
+back to copying the config instead of linking it.
+
+**[windows/README.md](windows/README.md)** — the picker, elevation, and why the
+Windows config can't be shared with the one inside WSL.
 
 ## Everything lives in `deps.conf`
 
@@ -26,6 +44,15 @@ tool  uv||pkg      ruff
 # tool  pkg        shfmt                 ← commented out = skipped
 post  bun install --cwd nvim/lsp-servers --frozen-lockfile
 ```
+
+Four line types, and that's the whole vocabulary:
+
+| Line | What |
+| ---- | ---- |
+| `link <repo-path> <dest>` | a symlink; `~` expands to your home |
+| `tool <provider> <command> [package]` | a dependency; package defaults to the command name |
+| `post <shell command>` | runs after that section's tools |
+| `platform <linux\|mac\|windows>` | restricts the whole section to one platform |
 
 | Command | What |
 | ------- | ---- |
@@ -70,10 +97,13 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 | -------- | --- |
 | `pkg`    | system package manager (brew / apt / dnf) |
 | `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
-| `npm`    | `npm -g` (needs node) |
 | `uv`     | Python tools (replaces pip; same vendor as ruff) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
+| `winget` | Windows Package Manager — only valid in a `platform windows` section |
 | `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
+
+There is no `npm` provider, and adding one is a CI failure. See the node
+paragraph above.
 
 ```conf
 tool  pkg||cargo  eza     # distro package if it exists, else compile
@@ -95,7 +125,7 @@ shape ArgoCD uses: **declared state vs. live machine.**
   ✗ stylua         declared mise   actual cargo   ~/.cargo/bin/stylua
 ```
 
-It checks three things:
+It checks two things:
 
 - **links** — is `~/.bashrc` a symlink into *this* repo, or a stale backup or a
   hand-edited file?
@@ -112,6 +142,28 @@ that defines every machine you own. This repo describes itself, nothing else.
 Drift matters because a manifest that describes a machine you don't have
 produces a *different* machine when you clone it somewhere fresh — which is the
 one thing this repo exists to get right.
+
+### Renaming a config file
+
+Rename it in the repo, update its `link` line, re-run. That's the whole
+procedure — and the reason it's that short is that `install.sh` prunes orphans.
+
+A rename leaves the old symlink in `$HOME` pointing at a repo path that no
+longer exists. Nothing else would ever notice: it isn't in the manifest any
+more, so the link loop doesn't walk it, and it sits there looking exactly like a
+working dotfile. You'd end up with both names side by side, which is precisely
+what renaming was supposed to prevent.
+
+So `install.sh` removes any symlink that **points into this repo and whose
+target is gone.** Not a list of retired names — a structural test, which stays
+correct for the next rename with nobody remembering to maintain it. It can't
+touch a link that still resolves, or one pointing anywhere outside the repo, and
+it only scans directories the manifest actually links into.
+
+```
+[orphaned links]
+  pruned /home/roest/.bash_roest_theme (target gone: .../bash/bash_roest_theme)
+```
 
 ### Writing a manifest line
 
@@ -142,6 +194,8 @@ about *operating* this repo, and this is about *editing* it.
 | `deps.conf` | **the manifest** — links and dependencies, one file |
 | `bootstrap.sh` | Curl-able entry point for a fresh machine |
 | `install.sh`   | Symlinks only; walks the manifest's `link` lines |
+| `bootstrap.ps1` | The same, for the Windows host — `irm ... \| iex` |
+| `windows/install.ps1` | Reads the same `deps.conf`; links + winget |
 | `lib/manifest.sh` | Parses `deps.conf` |
 | `lib/providers.sh` | Maps a provider name to an installer; handles `\|\|` chains |
 | `lib/pkg.sh`   | The single implementation of "install a tool" |
@@ -192,6 +246,7 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ├── deps.conf                             THE MANIFEST — links + dependencies
 ├── Makefile                              Reads sections from deps.conf
 ├── bootstrap.sh                          Curl-able fresh-machine entry point
+├── bootstrap.ps1                         The same, for the Windows host
 ├── install.sh                            Symlink engine (backs up existing files)
 ├── CONTRIBUTING.md                       How to add a tool without breaking the manifest
 ├── .github/
@@ -209,15 +264,20 @@ Start with `gh-ui` for the unified hub, or jump directly to:
 ├── nvim/                                 Neovim config (own Makefile + README)
 │   └── lsp-servers/                      JS language servers + prettier, run by bun
 ├── wezterm/
-│   └── wezterm.lua                     → ~/.config/wezterm/wezterm.lua
+│   ├── wezterm.lua                     → ~/.config/wezterm/wezterm.lua        (Linux/macOS)
+│   └── wezterm-windows.lua             → %USERPROFILE%\.config\wezterm\wezterm.lua
+├── windows/
+│   ├── install.ps1                       Windows link + winget engine
+│   ├── deps.ps1                          Nerd Font + elevation-helper fixups
+│   └── README.md                         Developer Mode, the picker, elevation
 ├── bash/
 │   ├── bashrc                          → ~/.bashrc
-│   ├── bash_roest_theme                → ~/.bash_roest_theme
-│   ├── bash_roest_productivity         → ~/.bash_roest_productivity
-│   ├── bash_roest_git                  → ~/.bash_roest_git
-│   ├── bash_roest_github               → ~/.bash_roest_github
-│   ├── bash_roest_local                → ~/.bash_roest_local               (untracked)
-│   └── bash_roest_password_commands    → ~/.bash_roest_password_commands   (untracked)
+│   ├── bash_theme                → ~/.bash_theme
+│   ├── bash_productivity         → ~/.bash_productivity
+│   ├── bash_git                  → ~/.bash_git
+│   ├── bash_github               → ~/.bash_github
+│   ├── bash_local                → ~/.bash_local               (untracked)
+│   └── bash_password_commands    → ~/.bash_password_commands   (untracked)
 ├── git/
 │   ├── gitconfig                       → ~/.gitconfig
 │   ├── README.md                         GitHub tips and tricks
@@ -238,26 +298,39 @@ still stands alone.
 
 | File                                | Controls                                                             |
 | ----------------------------------- | -------------------------------------------------------------------- |
-| `bash/bashrc`                       | Shell options, PATH, package managers, sources theme + productivity  |
-| `bash/bash_roest_theme`             | Prompt, colors, LS_COLORS, man page colors                           |
-| `bash/bash_roest_productivity`      | Custom commands, aliases, `h` help system                            |
-| `bash/bash_roest_git`               | GitHub Actions tools (`gha`, `gha-ui`, `gha-fail`, `gha-open`)       |
-| `bash/bash_roest_github`            | Unified GitHub hub (`gh-ui`) + `gpr`, `ghsecrets`, `ghbranch`, `ghenv` |
-| `bash/bash_roest_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)          |
-| `bash/bash_roest_password_commands` | Sensitive commands (untracked)                                       |
-| `podman/README.md`                  | `podman` container-engine reference (Linux/RHEL)                     |
-| `systemd/README.md`                 | `systemctl` / `journalctl` reference (Linux/RHEL)                    |
+| `bash/bashrc`                 | Shell options, PATH, package managers, sources theme + productivity   |
+| `bash/bash_theme`             | Prompt, colors, LS_COLORS, man page colors                            |
+| `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
+| `bash/bash_git`               | GitHub Actions tools (`gha`, `gha-ui`, `gha-fail`, `gha-open`)        |
+| `bash/bash_github`            | Unified GitHub hub (`gh-ui`) + `gpr`, `ghsecrets`, `ghbranch`, `ghenv` |
+| `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
+| `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
+| `wezterm/wezterm.lua`         | Terminal on Linux/macOS — declares the `mux` domain                   |
+| `wezterm/wezterm-windows.lua` | Terminal on the Windows host — the shell picker                       |
+| `podman/README.md`            | `podman` container-engine reference (Linux/RHEL)                      |
+| `systemd/README.md`           | `systemctl` / `journalctl` reference (Linux/RHEL)                     |
 
 ## Machine-local config
 
-Create either file for host-specific setup. Both are gitignored and sourced by `bashrc`:
+Two gitignored files, sourced by `bashrc` when they exist — host-specific setup
+that must not be committed:
 
 ```sh
-touch ~/dotfiles/bash/bash_roest_local              # CUDA paths, per-machine exports
-touch ~/dotfiles/bash/bash_roest_password_commands  # secrets
+cd ~/dotfiles
+touch bash/bash_local && ln -s "$PWD/bash/bash_local" ~/.bash_local
+touch bash/bash_password_commands && ln -s "$PWD/bash/bash_password_commands" ~/.bash_password_commands
 ```
 
-> **Note:** filenames in `bash/` and `git/` are hard-coded in `install.sh`. Edit the script if you add or rename files.
+**The symlink is the part that matters.** `bashrc` sources `~/.bash_local`, not
+the repo path, so creating the file alone does nothing.
+
+These two are the only configs *not* declared in `deps.conf`, and can't be: the
+manifest describes what every machine gets, and these are by definition what one
+machine gets. `install.sh` neither creates nor prunes them.
+
+`~/.bash_local` is sourced immediately after `EDITOR` is set unconditionally, so
+it's the right place for a per-machine `EDITOR` override — see the note in
+`bashrc`.
 
 ## License
 

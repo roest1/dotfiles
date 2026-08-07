@@ -124,18 +124,18 @@ elif [[ -d /usr/lib/jvm ]]; then
 fi
 [[ -n "$JAVA_HOME" ]] && export PATH="$JAVA_HOME/bin:$PATH"
 
-# Default editor. Set UNCONDITIONALLY, and deliberately before bash_roest_local.
+# Default editor. Set UNCONDITIONALLY, and deliberately before bash_local.
 #
 # Not `${EDITOR:-nvim}`: Fedora's /etc/profile.d/nano-default-editor.sh has
 # already set EDITOR=/usr/bin/nano by the time we get here (via /etc/bashrc
 # above), so a :- default would silently lose to the distro and `f` would open
 # nano. This is a single default, not a fallback chain — on a machine without
-# neovim, override it in ~/.bash_roest_local, which is sourced next and wins:
+# neovim, override it in ~/.bash_local, which is sourced next and wins:
 #   export EDITOR=vim
 export EDITOR=nvim
 
 # Machine-local config (env vars needed before package managers init)
-[[ -f ~/.bash_roest_local ]] && source ~/.bash_roest_local
+[[ -f ~/.bash_local ]] && source ~/.bash_local
 
 #####################################################################
 # Package managers (auto-generated blocks — don't manually edit)
@@ -156,13 +156,13 @@ export EDITOR=nvim
 # Custom config
 #####################################################################
 
-source ~/.bash_roest_theme
-[[ -f ~/.bash_roest_password_commands ]] && source ~/.bash_roest_password_commands
-source ~/.bash_roest_productivity
-source ~/.bash_roest_git
-source ~/.bash_roest_github
+source ~/.bash_theme
+[[ -f ~/.bash_password_commands ]] && source ~/.bash_password_commands
+source ~/.bash_productivity
+source ~/.bash_git
+source ~/.bash_github
 
 # nvim-area shortcuts (n/nv/nvi). Only present when the nvim area is installed.
-[[ -f ~/.bash_roest_nvim ]] && source ~/.bash_roest_nvim
+[[ -f ~/.bash_nvim ]] && source ~/.bash_nvim
 
 export PATH="$HOME/.local/bin:$PATH"

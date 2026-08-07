@@ -6,7 +6,7 @@
 # install only the bash config — a work box that doesn't allow neovim — this
 # file is simply absent and these functions never exist.
 #
-# That's the whole reason they live here instead of in bash_roest_productivity:
+# That's the whole reason they live here instead of in bash_productivity:
 # they are named after nvim and do nothing else. A `$EDITOR` fallback chain
 # would be pretending they're general-purpose. They aren't.
 

@@ -177,6 +177,28 @@ Require every check that is fast and deterministic. Checks that hit third-party
 package mirrors are worth requiring too, but they're the first to demote if one
 starts failing for reasons outside the repo.
 
+#### What this repo requires
+
+Exact names as `ci.yml` reports them:
+
+| Check | Require? |
+| ----- | -------- |
+| `shellcheck` | yes — fast, hermetic |
+| `manifest parses` | yes — a `deps.conf` typo breaks every other job |
+| `link only (linux)`, `link only (macos)` | yes — no network, so they can't flake |
+| `windows (link only)` | **yes** — see below |
+| `install (ubuntu / apt)`, `install (macos / brew)`, `install (fedora / dnf)` | yes, but first to demote: they hit distro mirrors |
+| `neovim floor (ubuntu, mise fallback)` | yes |
+| `bun audit (transitive advisories)` | yes, with the same mirror caveat |
+| `bun-only toolchain` | yes |
+
+`windows (link only)` deserves requiring even though the Windows path is the
+least-exercised one — *because* it is. Nothing on a Linux or macOS runner can
+execute `windows/install.ps1`, and no contributor is likely to have a Windows box
+handy, so this job is the only thing standing between a PowerShell syntax error
+and a broken bootstrap discovered on a fresh Windows machine. It needs no
+network beyond checkout and runs in well under a minute.
+
 **Require branches to be up to date before merging** — off by default, **on
 here**. It forces a PR to contain the latest base commits before it can merge,
 which catches *semantic* conflicts: two PRs that each pass CI alone but break
