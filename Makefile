@@ -136,8 +136,3 @@ else
 		echo "Done. Log out and back in to use bash."; \
 	fi
 endif
-
-update: ## Pull latest changes and re-link
-	@echo "Pulling latest..."
-	@git -C "$(DOTFILES_DIR)" pull --ff-only
-	@$(MAKE) --no-print-directory link

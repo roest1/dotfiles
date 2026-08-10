@@ -65,7 +65,7 @@ Four line types, and that's the whole vocabulary:
 | `make sections` | list sections |
 
 Sections are named after the program, so there's nothing to name: `[bash]`,
-`[nvim]`, `[wezterm]`, `[dev]`. The `Makefile` reads them from the manifest —
+`[nvim]`, `[wezterm]`. The `Makefile` reads them from the manifest —
 **adding a program is a new section plus its config file, and no other edits.**
 
 ### Installing a subset
