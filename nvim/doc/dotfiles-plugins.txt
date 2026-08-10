@@ -100,6 +100,16 @@ Inside Oil:
 
 Edit the buffer to rename/delete/create files, then :w to apply.
 
+<CR> on a .pdf hands the file to the OS's default viewer instead of opening
+it. Nothing is loaded into a buffer — you stay in Oil. Same for `nvim x.pdf`
+and :e. To read the raw bytes anyway, use `:noautocmd e file.pdf`.
+
+On a machine with no desktop handler at all (headless RHEL, a container), it
+warns and loads the file normally instead — the same binary buffer you got
+before this existed. It never becomes a silent no-op.
+
+Location: lua/options.lua (BufReadCmd autocmd)
+
 Git diffstat ~
 
 Inside a git repo, each changed file shows its diff floated at the window's

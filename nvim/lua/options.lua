@@ -187,6 +187,51 @@ vim.api.nvim_create_autocmd('FileType', {
   end,
 })
 
+-- PDFs open in the OS's default handler rather than loading as raw bytes.
+--
+-- BufReadCmd *replaces* nvim's read rather than running alongside it, so the
+-- buffer is never populated — you get the external viewer only, not a viewer
+-- plus a buffer of binary. It also sits below every route to opening a file, so
+-- one autocmd covers oil's <CR> (which goes through bufadd + :buffer, not
+-- :edit), `nvim x.pdf`, :e, and telescope alike.
+--
+-- vim.ui.open is what keeps this portable: it dispatches to xdg-open, open, or
+-- wslview itself, so this needs no platform conditional.
+--
+-- Escape hatch: `:noautocmd e file.pdf` skips this and loads the raw bytes.
+vim.api.nvim_create_autocmd('BufReadCmd', {
+  pattern = '*.pdf',
+  callback = function(args)
+    local path = vim.fn.fnamemodify(args.file, ':p')
+    local ok, err = vim.ui.open(path)
+    -- vim.ui.open returns nil,err rather than throwing when the machine has no
+    -- handler at all — a headless RHEL box or a minimal container. Deleting the
+    -- buffer there would make <CR> a silent no-op, which is worse than the
+    -- binary it replaces, so fall back to the pre-autocmd behaviour instead.
+    if not ok then
+      vim.notify(err, vim.log.levels.WARN, { title = 'pdf' })
+      -- Re-edit with autocmds off so nvim performs its own read. Doing it by
+      -- hand instead (readfile + set_lines) does not work: binary mode turns
+      -- NULs into newlines and nvim_buf_set_lines rejects those outright.
+      vim.schedule(function()
+        vim.cmd('noautocmd edit! ' .. vim.fn.fnameescape(path))
+      end)
+      return
+    end
+    -- Return to the buffer we came from (oil) before wiping the stub, or the
+    -- window is left sitting on a blank buffer.
+    local alt = vim.fn.bufnr '#'
+    vim.schedule(function()
+      if alt ~= -1 and alt ~= args.buf and vim.api.nvim_buf_is_valid(alt) then
+        pcall(vim.api.nvim_set_current_buf, alt)
+      end
+      if vim.api.nvim_buf_is_valid(args.buf) then
+        vim.api.nvim_buf_delete(args.buf, { force = true })
+      end
+    end)
+  end,
+})
+
 -- Tree-sitter folding (experiment)
 -- vim.api.nvim_create_autocmd("FileType", {
 --  callback = function()
