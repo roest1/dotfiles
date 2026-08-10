@@ -1,12 +1,12 @@
-*roest-keymaps.txt*    Complete Keymap Reference
+*dotfiles-keymaps.txt*    Complete Keymap Reference
 
 ==============================================================================
-KEYMAPS                                                        *roest-keymaps*
+KEYMAPS                                                        *dotfiles-keymaps*
 
 All keybindings in your config. Leader is <Space>.
 
 ==============================================================================
-NAVIGATION - BASIC                                    *roest-keymaps-navigation*
+NAVIGATION - BASIC                                    *dotfiles-keymaps-navigation*
 
     h/j/k/l         Move left/down/up/right
     w               Next word (start) - stops at punctuation
@@ -27,7 +27,7 @@ NAVIGATION - BASIC                                    *roest-keymaps-navigation*
     Example: `foo.bar.baz` is 3 words but 1 WORD.
 
 ==============================================================================
-NAVIGATION - SPLITS                                     *roest-keymaps-splits*
+NAVIGATION - SPLITS                                     *dotfiles-keymaps-splits*
 
     <C-h>           Move to left split
     <C-j>           Move to lower split
@@ -40,7 +40,7 @@ NAVIGATION - SPLITS                                     *roest-keymaps-splits*
     <C-w>o          Close all other splits (":only")
 
 ==============================================================================
-FILE FINDING - TELESCOPE                             *roest-keymaps-telescope*
+FILE FINDING - TELESCOPE                             *dotfiles-keymaps-telescope*
 
 All start with <leader>s for [S]earch:
 
@@ -68,7 +68,7 @@ Inside Telescope:
     <Esc>           Close Telescope
 
 ==============================================================================
-FILE NAVIGATION - HARPOON                              *roest-keymaps-harpoon*
+FILE NAVIGATION - HARPOON                              *dotfiles-keymaps-harpoon*
 
 Harpoon is your "working set" of files - like browser tabs for code.
 
@@ -86,7 +86,7 @@ Workflow:
     4. <leader>hr when done with task
 
 ==============================================================================
-FILE BROWSER - OIL                                        *roest-keymaps-oil*
+FILE BROWSER - OIL                                        *dotfiles-keymaps-oil*
 
 Oil turns directories into editable buffers.
 
@@ -103,7 +103,7 @@ Inside Oil:
 You can rename/delete files by editing the buffer and saving!
 
 ==============================================================================
-LSP - CODE INTELLIGENCE                                    *roest-keymaps-lsp*
+LSP - CODE INTELLIGENCE                                    *dotfiles-keymaps-lsp*
 
 These work when an LSP server is attached (most code files):
 
@@ -121,7 +121,7 @@ These work when an LSP server is attached (most code files):
     <C-t>           Jump back (after goto definition)
 
 ==============================================================================
-DIAGNOSTICS                                          *roest-keymaps-diagnostics*
+DIAGNOSTICS                                          *dotfiles-keymaps-diagnostics*
 
     <leader>e       Show error popup for current line
     <leader>q       Open quickfix list with all diagnostics
@@ -130,7 +130,7 @@ DIAGNOSTICS                                          *roest-keymaps-diagnostics*
     ]d              Next diagnostic
 
 ==============================================================================
-DIAGNOSTICS - TROUBLE                                  *roest-keymaps-trouble*
+DIAGNOSTICS - TROUBLE                                  *dotfiles-keymaps-trouble*
 
 Trouble gives you a better diagnostics panel.
 
@@ -142,7 +142,7 @@ Trouble gives you a better diagnostics panel.
     <leader>xQ      Toggle quickfix list
 
 ==============================================================================
-GIT - GITSIGNS                                        *roest-keymaps-gitsigns*
+GIT - GITSIGNS                                        *dotfiles-keymaps-gitsigns*
 
 Hunks are chunks of changed code. Signs appear in the gutter.
 
@@ -168,7 +168,7 @@ Toggles:
     <leader>tD      Toggle deleted lines inline
 
 ==============================================================================
-FORMATTING                                          *roest-keymaps-formatting*
+FORMATTING                                          *dotfiles-keymaps-formatting*
 
     <leader>l       Format file (or selection in visual mode)
 
@@ -187,11 +187,11 @@ Formatters by filetype:
     Markdown                   → prettier (run via bun)
     Python                     → ruff
 
-See |roest-plugins-formatter| for why prettier rather than prettierd, and why
+See |dotfiles-plugins-formatter| for why prettier rather than prettierd, and why
 bash and toml aren't in the list.
 
 ==============================================================================
-EDITING                                                *roest-keymaps-editing*
+EDITING                                                *dotfiles-keymaps-editing*
 
     <Esc>           Clear search highlights
     <leader>cr      Remove ^M (carriage returns)
@@ -201,7 +201,7 @@ EDITING                                                *roest-keymaps-editing*
     :UndotreeToggle Visual undo history
 
 ==============================================================================
-CUSTOM COMMANDS                                        *roest-keymaps-commands*
+CUSTOM COMMANDS                                        *dotfiles-keymaps-commands*
 
     :Find <keyword>                 Find files containing keyword
     :FindReplace <old> <new>        Replace across project
@@ -214,7 +214,7 @@ CUSTOM COMMANDS                                        *roest-keymaps-commands*
 
 Language servers are not managed from inside the editor — there is no :Mason.
 Native ones are declared in ../deps.conf; the JavaScript ones live in
-nvim/lsp-servers/package.json. See |roest-commands-servers|.
+nvim/lsp-servers/package.json. See |dotfiles-commands-servers|.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

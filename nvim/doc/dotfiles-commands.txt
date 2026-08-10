@@ -1,7 +1,7 @@
-*roest-commands.txt*    Riley Oest - Custom Commands Reference
+*dotfiles-commands.txt*    Custom Commands Reference
 
 ==============================================================================
-OVERVIEW                                                     *roest-commands*
+OVERVIEW                                                     *dotfiles-commands*
 
 This file documents custom commands and key tooling in this Neovim setup.
 
@@ -9,7 +9,7 @@ These commands are designed to work together as a lightweight workflow system
 for navigation, refactoring, and exporting code context.
 
 ------------------------------------------------------------------------------
-WORKFLOW                                                     *roest-commands-flow*
+WORKFLOW                                                     *dotfiles-commands-flow*
 
 Typical workflow:
 
@@ -27,10 +27,10 @@ Command roles:
     :Copy           -> export context for AI/docs
 
 ==============================================================================
-CUSTOM COMMANDS                                              *roest-commands-custom*
+CUSTOM COMMANDS                                              *dotfiles-commands-custom*
 
 ==============================================================================
-:FIND                                                        *roest-commands-find*
+:FIND                                                        *dotfiles-commands-find*
 
 Find files containing a keyword using ripgrep.
 
@@ -55,7 +55,7 @@ Example:~
 Location: lua/external/findreplace.lua
 
 ==============================================================================
-:FINDREPLACE                                          *roest-commands-findreplace*
+:FINDREPLACE                                          *dotfiles-commands-findreplace*
 
 Find and replace text across all matching files.
 
@@ -86,7 +86,7 @@ Example:~
 Location: lua/external/findreplace.lua
 
 ==============================================================================
-:COPY                                                        *roest-commands-copy*
+:COPY                                                        *dotfiles-commands-copy*
 
 Copy file contents to clipboard for external use (AI, docs, sharing).
 
@@ -150,7 +150,7 @@ Recommended usage (Oil):~
 Location: lua/external/copy.lua
 
 ==============================================================================
-:RESETNVIM                                                *roest-commands-reset*
+:RESETNVIM                                                *dotfiles-commands-reset*
 
 Reset Neovim environment (destructive).
 
@@ -180,7 +180,7 @@ When to use:~
 Location: lua/external/reset.lua
 
 ==============================================================================
-:YANKBUFFER                                            *roest-commands-yankbuffer*
+:YANKBUFFER                                            *dotfiles-commands-yankbuffer*
 
 Copy entire buffer to system clipboard.
 
@@ -197,7 +197,7 @@ Behavior:~
 Location: lua/keymaps.lua
 
 ==============================================================================
-:GLOW                                                        *roest-commands-glow*
+:GLOW                                                        *dotfiles-commands-glow*
 
 Render Markdown preview in terminal.
 
@@ -218,10 +218,10 @@ Install:~
 Location: lua/external/plugins/glow.lua
 
 ==============================================================================
-:PASTEIMAGE                                            *roest-commands-pasteimage*
+:PASTEIMAGE                                            *dotfiles-commands-pasteimage*
 
 Paste an image from the OS clipboard into a directory as a PNG. Pairs with Oil
-for a "screenshot → snip → paste" workflow. See |roest-plugins-pasteimage|.
+for a "screenshot → snip → paste" workflow. See |dotfiles-plugins-pasteimage|.
 
 Usage:~
     :PasteImage                     Screenshot-YYYYMMDD-HHMMSS.png
@@ -241,10 +241,10 @@ Backend (auto-detected):~
 Location: lua/external/pasteimg.lua
 
 ==============================================================================
-CORE TOOLING                                                *roest-commands-core*
+CORE TOOLING                                                *dotfiles-commands-core*
 
 ==============================================================================
-LAZY (Plugin Manager)                                  *roest-commands-lazy*
+LAZY (Plugin Manager)                                  *dotfiles-commands-lazy*
 
     :Lazy               Open dashboard
     :Lazy update        Update plugins
@@ -256,7 +256,7 @@ LAZY (Plugin Manager)                                  *roest-commands-lazy*
 Inside dashboard: press ? for help
 
 ==============================================================================
-LANGUAGE SERVERS                                   *roest-commands-servers*
+LANGUAGE SERVERS                                   *dotfiles-commands-servers*
 
 There is no Mason and no :Mason command. Servers are declared ahead of time
 rather than installed from inside the editor, so there is nothing to open.
@@ -278,7 +278,7 @@ exists if node does. Dropping it is what removed node from this config
 entirely. See the parent repo's CLAUDE.md.
 
 ==============================================================================
-LSP                                                         *roest-commands-lsp*
+LSP                                                         *dotfiles-commands-lsp*
 
     :LspInfo        Show active servers
     :LspRestart     Restart LSP
@@ -286,7 +286,7 @@ LSP                                                         *roest-commands-lsp*
     :LspStart       Start LSP
 
 ==============================================================================
-TELESCOPE                                             *roest-commands-telescope*
+TELESCOPE                                             *dotfiles-commands-telescope*
 
     :Telescope find_files
     :Telescope live_grep
@@ -298,7 +298,7 @@ TELESCOPE                                             *roest-commands-telescope*
     :Telescope git_commits
 
 ==============================================================================
-TROUBLE                                                *roest-commands-trouble*
+TROUBLE                                                *dotfiles-commands-trouble*
 
     :Trouble diagnostics
     :Trouble symbols
@@ -308,7 +308,7 @@ TROUBLE                                                *roest-commands-trouble*
     :Trouble close
 
 ==============================================================================
-TREESITTER                                          *roest-commands-treesitter*
+TREESITTER                                          *dotfiles-commands-treesitter*
 
     :TSInstall <lang>
     :TSUpdate
@@ -316,7 +316,7 @@ TREESITTER                                          *roest-commands-treesitter*
     :TSModuleInfo
 
 ==============================================================================
-ROSLYN                                                  *roest-commands-roslyn*
+ROSLYN                                                  *dotfiles-commands-roslyn*
 
 C# development support:
 

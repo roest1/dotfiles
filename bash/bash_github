@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# ~/.bash_roest_github
+# ~/.bash_github
 #
 # Interactive GitHub management — fzf-powered screens
 # Source this from .bashrc:
-#   source ~/.bash_roest_github
+#   source ~/.bash_github
 #
 # Commands:
 #   gh-ui         Unified hub → all GitHub & Actions tools (with live preview)

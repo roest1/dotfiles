@@ -83,7 +83,7 @@ return {
       { name = 'ruff', desc = 'Python linter', required = true },
     })
 
-    check_tools('Productivity (bash_roest_productivity)', {
+    check_tools('Productivity (bash_productivity)', {
       { name = 'zoxide', desc = 'Smart cd', required = false },
       { name = 'fzf', desc = 'Fuzzy finder', required = false },
       { name = 'bat', desc = 'Better cat', required = false },

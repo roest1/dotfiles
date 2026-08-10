@@ -1,7 +1,7 @@
-*roest-workflows.txt*    Common Tasks and Workflows
+*dotfiles-workflows.txt*    Common Tasks and Workflows
 
 ==============================================================================
-WORKFLOWS                                                    *roest-workflows*
+WORKFLOWS                                                    *dotfiles-workflows*
 
 "How do I..." recipes for common tasks.
 
@@ -17,7 +17,7 @@ cgn<replace-key> → <Esc>
     Press n/N to go to next/Prev
 
 ==============================================================================
-FINDING FILES                                        *roest-workflows-finding*
+FINDING FILES                                        *dotfiles-workflows-finding*
 
 Find a file by name:~
     <leader>sf → type filename → <CR>
@@ -41,7 +41,7 @@ Search in just the current file:~
     <leader>/ → type search term
 
 ==============================================================================
-NAVIGATING CODE                                    *roest-workflows-navigating*
+NAVIGATING CODE                                    *dotfiles-workflows-navigating*
 
 Jump to where something is defined:~
     Cursor on symbol → grd
@@ -60,7 +60,7 @@ See all symbols in project:~
     gW → type to filter
 
 ==============================================================================
-EDITING CODE                                          *roest-workflows-editing*
+EDITING CODE                                          *dotfiles-workflows-editing*
 
 Rename a variable everywhere:~
     Cursor on variable → grn → type new name → <CR>
@@ -80,7 +80,7 @@ Indent multiple lines:~
     Or: << and >> in normal mode
 
 ==============================================================================
-WORKING WITH FILES                                      *roest-workflows-files*
+WORKING WITH FILES                                      *dotfiles-workflows-files*
 
 Create a new file:~
     - (open Oil) → type filename on blank line → :w
@@ -97,7 +97,7 @@ Copy directory contents to clipboard (for AI/docs):~
     Exclude: :Copy --exclude=node_modules
 
 ==============================================================================
-WORKING SET (HARPOON)                                  *roest-workflows-harpoon*
+WORKING SET (HARPOON)                                  *dotfiles-workflows-harpoon*
 
 Start a new task with specific files:~
     1. Open each file you need
@@ -114,7 +114,7 @@ Remove one file from set:~
     <C-e> → delete the line → close
 
 ==============================================================================
-GIT WORKFLOWS                                            *roest-workflows-git*
+GIT WORKFLOWS                                            *dotfiles-workflows-git*
 
 See what I changed:~
     <leader>hp on a changed line (green + in gutter)
@@ -144,7 +144,7 @@ Navigate between changes:~
     ]c (next) and [c (previous)
 
 ==============================================================================
-DEBUGGING CODE                                        *roest-workflows-debug*
+DEBUGGING CODE                                        *dotfiles-workflows-debug*
 
 See the error on current line:~
     <leader>e
@@ -162,7 +162,7 @@ Jump to previous error:~
     [d
 
 ==============================================================================
-SPLITS AND WINDOWS                                    *roest-workflows-splits*
+SPLITS AND WINDOWS                                    *dotfiles-workflows-splits*
 
 Open file in vertical split:~
     In Telescope: <C-v>
@@ -185,7 +185,7 @@ Close current split:~
     :q
 
 ==============================================================================
-SEARCH AND REPLACE                                    *roest-workflows-replace*
+SEARCH AND REPLACE                                    *dotfiles-workflows-replace*
 
 Replace in current file:~
     :%s/old/new/gc
@@ -200,7 +200,7 @@ Find files containing text:~
     Then :args to see the list
 
 ==============================================================================
-TERMINAL                                              *roest-workflows-terminal*
+TERMINAL                                              *dotfiles-workflows-terminal*
 
 Open terminal in Neovim:~
     :term
@@ -217,7 +217,7 @@ Exit terminal mode:~
 For persistent terminals, use tmux instead.
 
 ==============================================================================
-CLIPBOARD                                            *roest-workflows-clipboard*
+CLIPBOARD                                            *dotfiles-workflows-clipboard*
 
 Copy entire file:~
     :%y (automatically uses system clipboard)
@@ -230,7 +230,7 @@ Paste from system clipboard:~
     "+p or just p
 
 ==============================================================================
-SESSIONS (COMING BACK LATER)                        *roest-workflows-sessions*
+SESSIONS (COMING BACK LATER)                        *dotfiles-workflows-sessions*
 
 Currently no session plugin installed.
 Your Harpoon list persists across sessions.
@@ -240,7 +240,7 @@ To save session state, consider adding:
     - Or use tmux
 
 ==============================================================================
-MAINTENANCE                                        *roest-workflows-maintenance*
+MAINTENANCE                                        *dotfiles-workflows-maintenance*
 
 Update plugins:~
     :Lazy update
@@ -249,7 +249,7 @@ Check plugin status:~
     :Lazy
 
 Install/update LSP servers:~
-    Not from inside the editor — see |roest-commands-servers|.
+    Not from inside the editor — see |dotfiles-commands-servers|.
     Native:  make install nvim
     JS ones: make -C nvim servers
 

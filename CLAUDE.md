@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-Riley Oest's cross-platform dotfiles (macOS + Linux/WSL + RHEL). Bash-based. A monorepo: the neovim config lives in `nvim/`, merged in from the former `roest1/nvim` repo with full history.
+Cross-platform dotfiles — terminal, editor and shell as one versioned unit (macOS + Linux/WSL + RHEL + the Windows host). Bash-based. A monorepo: the neovim config lives in `nvim/`, merged in from the former `roest1/nvim` repo with full history.
 
 ## Setup Workflow
 
@@ -58,6 +58,20 @@ installer or an extracted build is an acceptable source, so `make status` doesn'
 correct state as drift (zoxide's curl installer, wezterm extracted into `~/.local`, bun's
 own installer). The actual install goes in the section's `deps.sh`.
 
+**Windows is a second entry point, not a second manifest.** `windows/install.ps1` parses
+the same `deps.conf` from PowerShell, so the "nothing else enumerates links" rule still
+holds across both. A section may declare `platform <linux|mac|windows>`, which makes it
+invisible everywhere else.
+
+The two parsers read that field with deliberately *opposite* defaults, and the asymmetry
+is the whole point. A section with no `platform` line means "every platform this entry
+point handles" — correct for `[bash]`, which really does run on Linux and macOS. The
+PowerShell side instead requires `platform windows` explicitly, because inheriting the
+permissive reading there would link `bashrc` into `%USERPROFILE%`. `[wezterm]` and
+`[windows]` both claim `~/.config/wezterm/wezterm.lua` in their respective homes; the
+filter is the only thing stopping a bare `./install.sh` inside WSL from overwriting the
+Linux config with the Windows one. A `windows-latest` CI job asserts both halves.
+
 Prefer `pkg` for anything the distro ships; `mise` for tools distros don't reliably carry;
 `||` chains rather than conditionals. **Never key provider choice on `$PM`** — that's a
 proxy for facts it can't see. The old code ran `cargo_install tree-sitter` whenever
@@ -105,10 +119,10 @@ in `lib/providers.sh`, not a rewrite.
   `~/.npm-global/bin`, which is vestigial — nothing installs there now that npm is gone.
   Harmless, since a missing directory on `PATH` costs nothing, but it can go with the
   `npm` provider whenever that's cleaned up.)
-- **`EDITOR` is set unconditionally to `nvim`**, before `bash_roest_local` is sourced. It
+- **`EDITOR` is set unconditionally to `nvim`**, before `bash_local` is sourced. It
   cannot be `${EDITOR:-nvim}`: Fedora's `/etc/profile.d/nano-default-editor.sh` sets
   `EDITOR=/usr/bin/nano` first, so a `:-` default silently loses. Per-machine overrides go
-  in `~/.bash_roest_local`, sourced immediately after, which wins.
+  in `~/.bash_local`, sourced immediately after, which wins.
 - **No node, npm or pip. Don't reintroduce them.** Mason was removed because it installs
   npm packages by shelling out to the `npm` binary, which only exists if node does. The six
   JS language servers — and `prettier` — now live in `nvim/lsp-servers/package.json`,
@@ -130,6 +144,32 @@ in `lib/providers.sh`, not a rewrite.
   domain that the Jarvis sidecar connects to (`JARVIS_WEZTERM_DOMAIN` defaults to `'mux'`
   in `jarvis-ui/server/workerSession.ts`). Don't replace it with a stock config.
 
+  `wezterm/wezterm-windows.lua` is a **different file for a different job**, not a variant
+  to be merged back in. It configures `wezterm.exe` on the Windows host, whose purpose is
+  to get you into WSL; it declares no `unix_domains`, because that socket path is a Linux
+  path belonging to a process inside the guest.
+- **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
+  writes an *LX symlink*; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
+  Ordinary file *writes* to `/mnt/c` are fine — this is specific to symlinks. Nor will
+  `wezterm.exe` load a config over `\\wsl.localhost\...`; the maintainer has said the WSL
+  filesystem isn't visible to the host that way. Hence a second clone on `C:` and a
+  PowerShell installer, rather than teaching `install.sh` to reach across.
+- **`.ps1` files must be pure ASCII.** Windows PowerShell 5.1 reads a `.ps1` without a BOM
+  as ANSI (cp1252), not UTF-8. An em dash (`E2 80 94`) decodes as three cp1252 characters
+  ending in `0x94`, which in cp1252 is `"` — and PowerShell treats that as a **string
+  delimiter**. A single em dash inside a *comment* opened a string that swallowed the rest
+  of the file; the error it reported was a bogus "invalid variable reference" 200 lines
+  away, in a comment that was never the problem. Don't chase the reported line — check for
+  non-ASCII first. CI enforces this in the `shellcheck` job. A UTF-8 BOM would also work,
+  but ASCII survives an editor stripping the BOM.
+- **The PowerShell targets Windows PowerShell 5.1, not pwsh 7.** 5.1 is what a fresh box
+  runs when the bootstrap line is pasted, so: no ternaries, no `??`, no `$IsWindows`,
+  `Join-Path` takes exactly two arguments, and `$ErrorActionPreference = 'Stop'` does
+  **not** catch a native command's failure — check `$LASTEXITCODE` after `winget` and
+  `git`. `bootstrap.ps1` also keeps its whole body inside an invoked scriptblock, because
+  a top-level `exit` under `irm | iex` terminates the user's shell. Nothing on Linux can
+  parse any of this; the `windows` CI job is the only thing that checks it.
+
 ## Architecture
 
 ```
@@ -137,17 +177,17 @@ bash/
   bashrc                    Main entrypoint (~/.bashrc). OS detection, history,
                             shell options, PATH (dotnet, java, homebrew, cargo, mise,
                             bun), package managers, sources custom configs.
-  bash_roest_theme          Prompt (PS1 + right-aligned PROMPT_COMMAND), LS_COLORS,
+  bash_theme                Prompt (PS1 + right-aligned PROMPT_COMMAND), LS_COLORS,
                             conda env display, git branch/dirty/sync indicators,
                             GitHub Actions status in prompt (background-cached).
-  bash_roest_productivity   CLI tools: aliases (git, ls/cat/bat/eza), zoxide, fzf,
+  bash_productivity         CLI tools: aliases (git, ls/cat/bat/eza), zoxide, fzf,
                             utility functions (mkcd, up, f, findword, lines, port,
                             serve, loop, extract, ddiff, c, etc.), .NET aliases
                             (dclean, dbuild, dtest), help system (`h`).
-  bash_roest_git            GitHub Actions commands: gha, gha-fail, gha-open, gha-ui
+  bash_git                  GitHub Actions commands: gha, gha-fail, gha-open, gha-ui
                             (interactive workflow picker with smart log view;
                             scope: HEAD or recent runs).
-  bash_roest_github         Unified hub (gh-ui) + interactive GitHub management via fzf:
+  bash_github               Unified hub (gh-ui) + interactive GitHub management via fzf:
                             gpr (PR management with filters), ghsecrets, ghbranch, ghenv.
                             ghbranch drives RULESETS, not classic branch protection —
                             the classic API 404s on a ruleset-protected repo, which had
@@ -174,6 +214,23 @@ nvim/lsp-servers/           JS language servers + prettier, installed by bun.
                             bun.lock parser). CI asserts the two agree.
 install.sh                  Symlinks all dotfiles into ~. Backs up existing files.
                             Generates bash_profile shim if missing. Safe to re-run.
+bootstrap.ps1               Windows entry point: `irm ... | iex`. Clones to
+                            %USERPROFILE%\dotfiles, hands off to windows/install.ps1.
+windows/
+  install.ps1               Reads the same deps.conf; links `platform windows`
+                            sections and installs their `winget` tools.
+  deps.ps1                  Platform fixups, the PowerShell analogue of a
+                            section's deps.sh: 0xProto Nerd Font (per-user, no
+                            admin), elevation-helper reporting.
+  README.md                 Developer Mode, the CTRL+SHIFT+O picker, elevation,
+                            and why the config can't be shared with WSL.
+.githooks/
+  pre-commit                Refuses to commit machine-local or secret files.
+                            Wired up by install.sh via core.hooksPath (repo-
+                            local, never --global), so it arrives with a clone.
+  secret-patterns           The path patterns, read by BOTH the hook and the
+                            CI step that checks the same thing — one source of
+                            truth so the local and remote guards can't drift.
 deps.conf                   THE MANIFEST — every link and dependency, one file.
 lib/                        manifest.sh (parser), providers.sh (dispatch),
                             pkg.sh (installers), run.sh (section runner),
@@ -191,13 +248,13 @@ CONTRIBUTING.md             How to add a tool without breaking the manifest
 - **OS portability:** `_OS=mac|linux` detected in `bashrc`. Mac/Linux differences (homebrew paths, `date` flags, `stat` flags) are handled inline with conditionals.
 - **Bash version:** macOS ships bash 3.2. `bash/deps.sh` installs bash 5 via homebrew. Bash 4+ features (`dirspell`, `globstar`) are guarded with `BASH_VERSINFO` checks.
 - **Tool dependencies:** `zoxide`, `fzf`, `bat`, `eza`, `fd`, `ripgrep`, `gh`, `jq`. All optional — features degrade gracefully via `command -v` guards. Declared in `deps.conf`'s `[bash]` section, installed via brew/apt/dnf. Some tools have alternate binary names on RHEL/Debian (`bat` → `batcat`, `fd` → `fdfind`) — handled with fallback checks.
-- **Symlink pattern:** `install.sh` symlinks `bash/*` to `~/.*` (e.g. `bash/bashrc` → `~/.bashrc`). Filenames are hard-coded in `install.sh` — edit it when adding or renaming files.
+- **Symlink pattern:** `install.sh` symlinks `bash/*` to `~/.*` (e.g. `bash/bashrc` → `~/.bashrc`), driven entirely by the `link` lines in `deps.conf`. It hard-codes no filenames — adding or renaming a config file is a manifest edit and nothing else. Renames are safe because `install.sh` **prunes orphans**: a symlink pointing into this repo whose target no longer exists is removed, so the retired name can't survive next to the new one. That test is structural on purpose — don't replace it with a list of old names, which would need maintaining and would silently stop covering the next rename.
 - **Navigation UX:** All interactive fzf commands use consistent keybindings — menus (`-`/`q` back), lists (type to filter, `esc` back), pagers (`r` refresh, `-`/`q` back).
-- **Machine-local config:** `bash_roest_local` holds per-machine setup (CUDA, nvim path, RHEL-specific exports) — gitignored, optional-sourced before other custom configs. `bash_roest_password_commands` is gitignored for secrets.
+- **Machine-local config:** `~/.bash_local` (per-machine paths and exports) and `~/.bash_password_commands` (secrets) are optional-sourced by `bashrc`. They live **in `$HOME`, never in the work tree** — do not "tidy" them back into `bash/` with a `.gitignore` entry, which is how they used to be. Outside the tree, git cannot see them; inside it, protection is a rule that `git add -f` overrides and that a `.gitignore` rewrite silently deletes. They're also the only configs not declared in `deps.conf`, and must stay that way: the manifest describes what *every* machine gets.
 
 ## When Editing
 
 - Test on both bash 3.2 (macOS `/bin/bash`) and bash 5+ (homebrew / Linux).
 - Guard all tool usage with `command -v` checks.
-- Keep the `h` help function in `bash_roest_productivity` in sync with any command changes.
+- Keep the `h` help function in `bash_productivity` in sync with any command changes.
 - The README is intentionally concise: install + new-machine flow + GitHub tools pointer + "what goes where" table. Prose explanations of bash internals belong here in `CLAUDE.md`, not in the README.
