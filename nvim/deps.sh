@@ -187,15 +187,28 @@ install_lemminx
 #   • Linux → xclip (X11) + wl-clipboard (Wayland); install both, harmless
 #
 # Genuinely a runtime probe (/proc/version), not something a manifest can state.
+#
+# The macOS test is `uname -s`, NOT `$PM = brew`. Those are the same thing only
+# if brew implies macOS, and linuxbrew is the counterexample: a RHEL box with
+# linuxbrew took this branch and ran `brew install pngpaste`, which has no Linux
+# bottle. It failed, and since this is the last block in the file, `set -e` made
+# its exit status the script's — "nvim/deps.sh failed" for a clipboard helper
+# that machine has no use for. Same class of mistake as keying a provider on
+# $PM; see CLAUDE.md.
+#
+# Nothing here is load-bearing: :PasteImage degrades to an error message. So the
+# whole block is best-effort and must not decide the script's exit status.
 
 echo ""
 echo "  clipboard image paste:"
 
 if grep -qiE "microsoft|wsl" /proc/version 2>/dev/null; then
   echo "  ✅ WSL — uses Windows PowerShell, no install needed"
-elif [ "$PM" = "brew" ]; then
-  pkg_install "pngpaste"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  pkg_install "pngpaste" || echo "  ⚠️  :PasteImage will not work without pngpaste"
 elif [ -n "${PM}" ]; then
-  pkg_install "xclip"
-  pkg_install "wl-paste"
+  pkg_install "xclip" || true
+  pkg_install "wl-paste" || true
 fi
+
+exit 0

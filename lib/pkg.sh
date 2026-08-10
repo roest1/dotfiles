@@ -20,14 +20,26 @@
 
 # ─── Detect package manager ──────────────────────────────────────────────────
 
+# On macOS, brew IS the system package manager. On Linux it is a supplementary
+# one that may or may not be installed, and preferring it over the distro's was
+# wrong: a RHEL 9 box with linuxbrew present got PM=brew, so `pkg` meant "ask
+# Homebrew" for everything. Two installs failed there that dnf would have done —
+# `brew install mise` (fell back to mise.run) and `brew install pngpaste`, which
+# has no Linux bottle at all — and the dnf-only clang/bindgen branch in
+# nvim/deps.sh went dead because it tests `$PM = dnf`.
+#
+# So: distro first on Linux, brew as the fallback for machines that have no
+# apt/dnf but do have linuxbrew.
 PM=""
 pkg_detect() {
-  if command -v brew >/dev/null 2>&1; then
-    PM="brew"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    command -v brew >/dev/null 2>&1 && PM="brew"
   elif command -v apt >/dev/null 2>&1; then
     PM="apt"
   elif command -v dnf >/dev/null 2>&1; then
     PM="dnf"
+  elif command -v brew >/dev/null 2>&1; then
+    PM="brew"
   fi
   export PM
 }
