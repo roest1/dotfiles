@@ -14,7 +14,7 @@ so the config is version-controlled in place — don't clone into it.
 | ------------------ | ----------------------------------------------------------------- |
 | 1. Clone dotfiles  | `git clone https://github.com/roest1/dotfiles.git ~/dotfiles`      |
 | 2. Install + sync  | `cd ~/dotfiles && make install nvim`                               |
-| 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help roest`         |
+| 3. Build help docs | `:helptags ~/.config/nvim/doc` &nbsp;→&nbsp; `:help dotfiles`         |
 
 `make install nvim` links the config and installs the `[nvim]` section of
 `../deps.conf`. From inside this directory, `make all` does the same thing by
@@ -68,7 +68,7 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │           ├── trouble.lua         Diagnostics panel
 │           ├── undotree.lua        Visual undo history
 │           └── which-key.lua       Keymap discovery popup
-└── doc/                     Help files (:help roest)
+└── doc/                     Help files (:help dotfiles)
 ```
 
 </details>
@@ -92,17 +92,17 @@ docs are authoritative and always match your version.
 | `<leader>l`       | Format file               |
 | `<leader>e`       | Show error popup          |
 
-Full reference: `:help roest-keymaps`
+Full reference: `:help dotfiles-keymaps`
 
 ## Documentation
 
 | Command                 | What                       |
 | ----------------------- | -------------------------- |
-| `:help roest`           | Start here                 |
-| `:help roest-keymaps`   | All keybindings            |
-| `:help roest-plugins`   | Plugin reference           |
-| `:help roest-workflows` | "How do I..." recipes      |
-| `:help roest-commands`  | Custom commands            |
+| `:help dotfiles`           | Start here                 |
+| `:help dotfiles-keymaps`   | All keybindings            |
+| `:help dotfiles-plugins`   | Plugin reference           |
+| `:help dotfiles-workflows` | "How do I..." recipes      |
+| `:help dotfiles-commands`  | Custom commands            |
 
 ## Maintenance
 

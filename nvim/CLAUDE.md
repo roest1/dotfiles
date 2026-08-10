@@ -39,12 +39,12 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 
 ## Help Documentation
 
-Custom help files live in `doc/` (`:help roest-*`): keymaps, plugins, workflows, options, commands, harpoon. After editing any doc file, regenerate tags with `:helptags ~/.config/nvim/doc`.
+Custom help files live in `doc/` (`:help dotfiles-*`): keymaps, plugins, workflows, options, commands, harpoon. After editing any doc file, regenerate tags with `:helptags ~/.config/nvim/doc`.
 
 **These docs cover this config only.** Two things they deliberately do not cover:
 
-- **Vim itself** — motions, operators, text objects, registers. `:help motion.txt` is authoritative and always matches the installed version; a local copy can only drift. `doc/roest-motions.txt` was exactly that and was removed (258 lines, of which 10 mentioned this config at all).
-- **The shell** — that's `h` in a terminal. `doc/roest-bash.txt` put bash docs in the editor's help and had already gone stale, still telling you to run `./bootstrap.sh` from the nvim config and `brew install` the tools that `deps.conf` now owns.
+- **Vim itself** — motions, operators, text objects, registers. `:help motion.txt` is authoritative and always matches the installed version; a local copy can only drift. `doc/dotfiles-motions.txt` was exactly that and was removed (258 lines, of which 10 mentioned this config at all).
+- **The shell** — that's `h` in a terminal. `doc/dotfiles-bash.txt` put bash docs in the editor's help and had already gone stale, still telling you to run `./bootstrap.sh` from the nvim config and `brew install` the tools that `deps.conf` now owns.
 
 The rule: the shell documents the shell, the editor documents the editor, and neither documents vim or git themselves. Don't reintroduce a doc that crosses those lines.
 
@@ -67,18 +67,18 @@ As the config grows, unused components accumulate (plugins you disabled, keybind
 -- ? Uncertain: check :help [plugin-name] to understand its default behavior
 ```
 
-**Action:** Plugins with no keybinds, no references, and default config candidates for removal. Remove from `plugin_modules` list, delete the file from `lua/external/plugins/`, and remove any keybinds/help from `lua/keymaps.lua` and `doc/roest-keymaps.txt`.
+**Action:** Plugins with no keybinds, no references, and default config candidates for removal. Remove from `plugin_modules` list, delete the file from `lua/external/plugins/`, and remove any keybinds/help from `lua/keymaps.lua` and `doc/dotfiles-keymaps.txt`.
 
 ### Unused Custom Modules
 
-**Discovery:** Check `init.lua` for loaded modules. Each should have a `:command` that appears in `doc/roest-commands.txt` with actual usage notes.
+**Discovery:** Check `init.lua` for loaded modules. Each should have a `:command` that appears in `doc/dotfiles-commands.txt` with actual usage notes.
 
 ```lua
--- lua/external/findreplace.lua  → :Find, :FindReplace in roest-commands.txt?
--- lua/external/copy.lua         → :Copy in roest-commands.txt?
--- lua/external/reset.lua        → :ResetNvim in roest-commands.txt?
--- lua/external/oilgit.lua       → :OilGit in roest-plugins.txt (oil section)?
--- lua/external/pasteimg.lua     → :PasteImage in roest-plugins.txt (oil section)?
+-- lua/external/findreplace.lua  → :Find, :FindReplace in dotfiles-commands.txt?
+-- lua/external/copy.lua         → :Copy in dotfiles-commands.txt?
+-- lua/external/reset.lua        → :ResetNvim in dotfiles-commands.txt?
+-- lua/external/oilgit.lua       → :OilGit in dotfiles-plugins.txt (oil section)?
+-- lua/external/pasteimg.lua     → :PasteImage in dotfiles-plugins.txt (oil section)?
 ```
 
 **Action:** Remove from `init.lua` and delete the module file if undocumented or not referenced in help.
@@ -89,14 +89,14 @@ As the config grows, unused components accumulate (plugins you disabled, keybind
 - Plugins actually in `plugin_modules`
 - LSP servers in `lsp.lua`
 - Formatter/linter filetypes in `formatter.lua` / `lint.lua`
-- Help docs in `doc/roest-keymaps.txt`
+- Help docs in `doc/dotfiles-keymaps.txt`
 
 ```bash
 # Example: grep for removed plugin keybinds
 git log -p lua/keymaps.lua | grep -E '^\-.*keymap.set' | head -20
 ```
 
-**Action:** Remove obsolete keybinds (e.g., `<leader>e` if its plugin was removed). Update `doc/roest-keymaps.txt` to match.
+**Action:** Remove obsolete keybinds (e.g., `<leader>e` if its plugin was removed). Update `doc/dotfiles-keymaps.txt` to match.
 
 ### Unused Settings & Options
 

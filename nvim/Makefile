@@ -1,4 +1,4 @@
-# roest-nvim/Makefile
+# dotfiles-nvim/Makefile
 #
 # Portable installer for macOS, Linux (WSL), and Fedora/RHEL.
 # Every target is idempotent — safe to re-run.
@@ -39,7 +39,7 @@ SERVER_COOLDOWN := 604800
 
 help: ## Show this help
 	@echo ""
-	@echo "roest-nvim — $(UNAME)"
+	@echo "dotfiles-nvim — $(UNAME)"
 	@echo ""
 	@echo "  Not sure?  First time → make all    •    Updating → make update"
 	@echo ""

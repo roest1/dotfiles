@@ -1,14 +1,14 @@
-*roest-plugins.txt*    Plugin Reference
+*dotfiles-plugins.txt*    Plugin Reference
 
 ==============================================================================
-PLUGINS                                                        *roest-plugins*
+PLUGINS                                                        *dotfiles-plugins*
 
 Every plugin in your config, what it does, and how to use it.
 
 Run `:Lazy` to see plugin status. Press `?` for help in that menu.
 
 ==============================================================================
-BLINK.CMP (COMPLETION)                                  *roest-plugins-blink*
+BLINK.CMP (COMPLETION)                                  *dotfiles-plugins-blink*
 
 Autocompletion engine. Shows suggestions as you type.
 
@@ -28,7 +28,7 @@ Features:
     - Sources: LSP → path → snippets → buffer (priority order)
 
 ==============================================================================
-TELESCOPE                                              *roest-plugins-telescope*
+TELESCOPE                                              *dotfiles-plugins-telescope*
 
 Fuzzy finder for files, text, help, keymaps, and more.
 
@@ -59,7 +59,7 @@ Inside Telescope:
 Dependencies: plenary.nvim, telescope-fzf-native.nvim
 
 ==============================================================================
-HARPOON                                                  *roest-plugins-harpoon*
+HARPOON                                                  *dotfiles-plugins-harpoon*
 
 Working file set. Like browser tabs for code.
 
@@ -79,10 +79,10 @@ Workflow:
     3. <C-n>/<C-p> to jump between them
     4. <leader>hr when done
 
-See also: |roest-harpoon|
+See also: |dotfiles-harpoon|
 
 ==============================================================================
-OIL                                                          *roest-plugins-oil*
+OIL                                                          *dotfiles-plugins-oil*
 
 File browser that works like a buffer. Edit filenames to rename!
 
@@ -113,7 +113,7 @@ Combines staged and unstaged changes. Commands:
 
 Location: lua/external/oilgit.lua
 
-Paste image from clipboard ~                       *roest-plugins-pasteimage*
+Paste image from clipboard ~                       *dotfiles-plugins-pasteimage*
                                                                   *:PasteImage*
 
 Drop an image off the OS clipboard into a directory as a PNG — the
@@ -145,7 +145,7 @@ Install the per-platform tool with ./bootstrap.sh; verify with
 Location: lua/external/pasteimg.lua
 
 ==============================================================================
-LSP                                                          *roest-plugins-lsp*
+LSP                                                          *dotfiles-plugins-lsp*
 
 Language Server Protocol — code intelligence.
 
@@ -177,13 +177,13 @@ Keymaps (when LSP is attached):
 
 Related: blink.cmp (completion), fidget.nvim (LSP progress),
     lazydev.nvim (Lua-specific). No mason.nvim — servers are declared, not
-    installed from the editor. See |roest-commands-servers|.
+    installed from the editor. See |dotfiles-commands-servers|.
 
 ==============================================================================
-CONFORM (FORMATTER)                                  *roest-plugins-formatter*
+CONFORM (FORMATTER)                                  *dotfiles-plugins-formatter*
 
 Auto-formatting on save, plus <leader>l on demand. The on-save hook lives in
-lua/options.lua as a BufWritePre autocmd — see |roest-keymaps-formatting|.
+lua/options.lua as a BufWritePre autocmd — see |dotfiles-keymaps-formatting|.
 
 Location: lua/external/plugins/formatter.lua
 
@@ -213,7 +213,7 @@ are the usual answers if you want them — both native binaries, a deps.conf lin
 each, no JavaScript involved.
 
 ==============================================================================
-NVIM-LINT (LINTER)                                      *roest-plugins-lint*
+NVIM-LINT (LINTER)                                      *dotfiles-plugins-lint*
 
 Async linting alongside LSP diagnostics.
 
@@ -233,7 +233,7 @@ Runs on: save, insert-leave, buffer read.
 Diagnostics appear alongside LSP errors in the gutter.
 
 ==============================================================================
-GITSIGNS                                                *roest-plugins-gitsigns*
+GITSIGNS                                                *dotfiles-plugins-gitsigns*
 
 Git gutter signs + staging/blame without leaving Neovim.
 
@@ -261,7 +261,7 @@ Keymaps:
     <leader>tD      Toggle deleted preview
 
 ==============================================================================
-TROUBLE                                                  *roest-plugins-trouble*
+TROUBLE                                                  *dotfiles-plugins-trouble*
 
 Better diagnostics panel.
 
@@ -278,7 +278,7 @@ Keymaps:
 Inside Trouble: q to close, <CR> to jump, j/k to navigate.
 
 ==============================================================================
-WHICH-KEY                                              *roest-plugins-which-key*
+WHICH-KEY                                              *dotfiles-plugins-which-key*
 
 Shows available keymaps in a popup after pressing leader.
 
@@ -291,7 +291,7 @@ How it works:
 No keymaps to learn — it teaches you keymaps you already have.
 
 ==============================================================================
-MINI (SURROUND + PAIRS)                                  *roest-plugins-mini*
+MINI (SURROUND + PAIRS)                                  *dotfiles-plugins-mini*
 
 Surround: manipulate surrounding characters.
 Pairs: auto-close brackets and quotes.
@@ -307,7 +307,7 @@ Pairs:
     Automatic — type ( and ) appears. Works for (, [, {, ", ', `.
 
 ==============================================================================
-TODO-COMMENTS                                      *roest-plugins-todo-comments*
+TODO-COMMENTS                                      *dotfiles-plugins-todo-comments*
 
 Highlights TODO, FIXME, HACK, NOTE, WARN, PERF in comments.
 
@@ -319,7 +319,7 @@ Keymaps:
     [t              Jump to previous TODO
 
 ==============================================================================
-TREESITTER                                            *roest-plugins-treesitter*
+TREESITTER                                            *dotfiles-plugins-treesitter*
 
 Syntax highlighting using actual parsing (not regex).
 
@@ -334,7 +334,7 @@ Commands:
     :TSUpdate               Update all parsers
 
 ==============================================================================
-UNDOTREE                                                *roest-plugins-undotree*
+UNDOTREE                                                *dotfiles-plugins-undotree*
 
 Visual undo history tree.
 
@@ -344,7 +344,7 @@ Commands:
     :UndotreeToggle         Open/close undo tree panel
 
 ==============================================================================
-GLOW                                                        *roest-plugins-glow*
+GLOW                                                        *dotfiles-plugins-glow*
 
 Markdown preview in terminal. Requires `glow` CLI.
 
@@ -354,14 +354,14 @@ Commands:
     :Glow                   Render current markdown file
 
 ==============================================================================
-ROSE-PINE (THEME)                                        *roest-plugins-theme*
+ROSE-PINE (THEME)                                        *dotfiles-plugins-theme*
 
 Colorscheme: rose-pine-moon with transparent background.
 
 Location: lua/external/plugins/theme.lua
 
 ==============================================================================
-ROSLYN                                                    *roest-plugins-roslyn*
+ROSLYN                                                    *dotfiles-plugins-roslyn*
 
 C# language server (Microsoft's Roslyn).
 

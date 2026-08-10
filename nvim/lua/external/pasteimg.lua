@@ -25,7 +25,7 @@
 --   • macOS           → pngpaste (brew), else an osascript fallback
 --
 -- See lua/external/reqs.lua, deps.sh, and `:checkhealth external` for the
--- per-platform tool. Documented in `:help roest-plugins-oil`.
+-- per-platform tool. Documented in `:help dotfiles-plugins-oil`.
 
 local M = {}
 

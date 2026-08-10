@@ -6,7 +6,7 @@
 -- + unstaged combined). Untracked files show `+N` for their line count.
 -- Palette matches PS1 (Ayu xterm-256: +green 150, -red 203).
 --
--- Toggle with `:OilGit`. See `:help roest-plugins` (oil section).
+-- Toggle with `:OilGit`. See `:help dotfiles-plugins` (oil section).
 
 local M = {}
 

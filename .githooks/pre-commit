@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+#####################################################################
+# Refuse to commit machine-local or secret-bearing files.
+#
+# This is the SECOND line of defence, not the first. The first is that
+# ~/.bash_local and ~/.bash_password_commands live in $HOME, outside
+# the work tree, where git cannot see them at all — a property, not a
+# rule. A .gitignore entry is only a rule: `git add -f` overrides it,
+# and rewriting .gitignore silently removes it.
+#
+# What this catches is the NEXT one — the secret file someone creates
+# inside the repo months from now, when the reasoning above has been
+# forgotten.
+#
+# Installed by install.sh via `git config core.hooksPath .githooks`,
+# so it is version-controlled and arrives with a clone rather than
+# being something each machine has to remember.
+#
+# Patterns live in .githooks/secret-patterns, shared with the CI step
+# that checks the same thing, so the two cannot drift apart.
+#####################################################################
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PATTERN_FILE="$HERE/secret-patterns"
+
+# A missing pattern file must not silently disable the guard. Failing the
+# commit is the safe direction: the cost is an error message, and the cost of
+# the other choice is a published secret.
+if [[ ! -f "$PATTERN_FILE" ]]; then
+  echo "pre-commit: $PATTERN_FILE is missing — refusing to run unguarded." >&2
+  exit 1
+fi
+
+patterns=""
+while IFS= read -r line || [[ -n "$line" ]]; do
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  [[ -z "$line" ]] && continue
+  patterns+="${patterns:+|}$line"
+done < "$PATTERN_FILE"
+
+[[ -z "$patterns" ]] && exit 0
+
+# --diff-filter=AM: only additions and modifications. Deleting one of these is
+# exactly what you should always be able to commit.
+staged=$(git diff --cached --name-only --diff-filter=AM || true)
+[[ -z "$staged" ]] && exit 0
+
+bad=$(printf '%s\n' "$staged" | grep -E "$patterns" || true)
+[[ -z "$bad" ]] && exit 0
+
+echo ""
+echo "pre-commit: refusing to commit files that must never be tracked here:"
+printf '  %s\n' $bad
+echo ""
+echo "Machine-local and secret files belong in \$HOME, outside the work tree."
+echo "See README.md -> Machine-local config."
+echo ""
+echo "If this is genuinely wrong, bypass with: git commit --no-verify"
+echo ""
+exit 1

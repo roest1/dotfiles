@@ -36,7 +36,51 @@ jobs:
           shellcheck --severity=warning \
             bootstrap.sh install.sh \
             lib/*.sh \
-            */deps.sh tools/*.sh
+            */deps.sh tools/*.sh \
+            .githooks/pre-commit
+
+      # The remote half of the secret guard. .githooks/pre-commit is the local
+      # half and shares this pattern file, but a hook is bypassable with
+      # --no-verify and absent entirely until install.sh has run once. This
+      # catches what got through, before it reaches main.
+      #
+      # It cannot un-publish a secret that is already pushed — that is why the
+      # real defence is keeping those files outside the work tree, where git
+      # cannot see them at all.
+      - name: No secret or machine-local files are tracked
+        run: |
+          patterns=$(grep -vE '^\s*(#|$)' .githooks/secret-patterns | paste -sd '|' -)
+          echo "patterns: $patterns"
+          if bad=$(git ls-files | grep -E "$patterns"); then
+            echo ""
+            echo "tracked files matching .githooks/secret-patterns:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "ok: nothing matching is tracked"
+
+      # Runs here rather than on the Windows runner so it fails in seconds,
+      # but the reason is pure Windows PowerShell 5.1.
+      - name: PowerShell sources are ASCII-only
+        run: |
+          # 5.1 reads a .ps1 with no BOM as ANSI (cp1252), not UTF-8. An em
+          # dash (E2 80 94) then decodes as three cp1252 characters ending in
+          # 0x94 — which in cp1252 is RIGHT DOUBLE QUOTATION MARK, and
+          # PowerShell treats that as a string delimiter. One em dash inside a
+          # COMMENT opened a string that swallowed the rest of the file, and
+          # the reported error was a bogus "invalid variable reference" 200
+          # lines further down.
+          #
+          # A UTF-8 BOM also fixes it. ASCII-only is the fix that survives an
+          # editor helpfully stripping the BOM.
+          if bad=$(grep -rnP '[^\x00-\x7F]' --include='*.ps1' . 2>/dev/null); then
+            echo "non-ASCII in PowerShell sources:"
+            echo "$bad"
+            echo ""
+            echo "Windows PowerShell 5.1 mis-parses these. Use ASCII punctuation."
+            exit 1
+          fi
+          echo "ok: all .ps1 sources are ASCII"
 
   # ── Manifest sanity ────────────────────────────────────────────────────────
   # Cheap guard against a typo in deps.conf taking down every other job.
@@ -78,10 +122,22 @@ jobs:
             for p in ${provider//||/ }; do
               case "$p" in
                 pkg|uv|cargo|mise|manual) ;;
+                winget) echo "[$section] winget is only valid in a platform windows section"; bad=1 ;;
                 *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
               esac
             done
           done < <(manifest_lines tool)
+          # The windows sections, which the line above cannot see. winget is
+          # the only provider that means anything there: lib/providers.sh has
+          # no case for it, and windows/install.ps1 has no case for the others.
+          while IFS=$'\t' read -r section provider cmd pkg; do
+            for p in ${provider//||/ }; do
+              case "$p" in
+                winget) ;;
+                *) echo "[$section] provider '$p' is not installable on Windows"; bad=1 ;;
+              esac
+            done
+          done < <(MANIFEST_PLATFORM=windows manifest_lines tool windows)
           exit $bad
       - name: Every link source exists in the repo
         run: |
@@ -90,6 +146,14 @@ jobs:
           while IFS=$'\t' read -r section src dest; do
             [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
           done < <(manifest_lines link)
+          # `platform windows` sections are invisible on this runner by design.
+          # Check them explicitly, or deleting wezterm-windows.lua would only be
+          # caught by whoever next ran the bootstrap on Windows.
+          #
+          # The assignment can't leak: process substitution is its own process.
+          while IFS=$'\t' read -r section src dest; do
+            [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
+          done < <(MANIFEST_PLATFORM=windows manifest_lines link)
           exit $bad
 
       # A generator whose output the parser rejects is worse than no generator,
@@ -149,6 +213,31 @@ jobs:
           if grep -qE "linked |backed up " /tmp/second.txt; then
             echo "second run was not idempotent"; exit 1
           fi
+
+      # prune_orphans deletes files, so its blast radius is tested rather than
+      # reasoned about. The two negative cases are the ones that matter: a dead
+      # link this repo did not create, and a live one.
+      - name: Orphan pruning removes only this repo's dead links
+        run: |
+          ln -s "$PWD/bash/retired_name" "$HOME/.bash_orphan"       # dead, ours
+          ln -s /nonexistent/elsewhere "$HOME/.unrelated_dead_link" # dead, not ours
+          test -L "$HOME/.bashrc"                                   # live, ours
+
+          make link
+
+          fail=0
+          if [ -L "$HOME/.bash_orphan" ]; then
+            echo "FAIL: dead link into the repo was not pruned"; fail=1
+          fi
+          if [ ! -L "$HOME/.unrelated_dead_link" ]; then
+            echo "FAIL: pruned a dead link that does not point into this repo"; fail=1
+          fi
+          if [ ! -L "$HOME/.bashrc" ]; then
+            echo "FAIL: pruned a link whose target still exists"; fail=1
+          fi
+          rm -f "$HOME/.unrelated_dead_link"
+          [ $fail -eq 0 ] && echo "ok: pruned exactly the repo's own dead link"
+          exit $fail
 
   # ── Full install per platform ──────────────────────────────────────────────
   install:
@@ -453,3 +542,89 @@ jobs:
           for s in clangd lua_ls lemminx ts_ls cssls html jsonls yamlls bashls; do
             grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
           done
+
+  # ── Windows host ───────────────────────────────────────────────────────────
+  # The only job that executes the PowerShell entry point. Every other job here
+  # runs on Linux or macOS, where windows/install.ps1 is unreachable — so
+  # without this, a syntax error in it ships and is discovered by whoever next
+  # bootstraps a Windows machine, which is the worst possible time.
+  windows:
+    name: windows (link only)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # `shell: powershell` is Windows PowerShell 5.1, deliberately, NOT pwsh 7.
+      # 5.1 is what a fresh box runs when the bootstrap line is pasted, and it
+      # is where the syntax these scripts avoid (ternaries, ??, $IsWindows,
+      # multi-arg Join-Path) would actually blow up.
+      - name: PowerShell parses under 5.1
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in @('bootstrap.ps1', 'windows\install.ps1', 'windows\deps.ps1')) {
+            $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $f).Path, [ref] $null, [ref] $errors)
+            if ($errors) {
+              # Line and column, not just the message. A parse error reported
+              # without a position is nearly useless when the only machine that
+              # can reproduce it is this runner.
+              foreach ($e in $errors) {
+                Write-Host ('{0}({1},{2}): {3}' -f $f,
+                  $e.Extent.StartLineNumber, $e.Extent.StartColumnNumber, $e.Message)
+                Write-Host ('    >>> ' + $e.Extent.Text)
+              }
+              $bad = 1
+            }
+          }
+          exit $bad
+
+      - name: install.ps1 -LinkOnly
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1 -LinkOnly
+
+      - name: The Windows config is in place and matches the repo
+        shell: powershell
+        run: |
+          $dest = Join-Path $env:USERPROFILE '.config\wezterm\wezterm.lua'
+          if (-not (Test-Path -LiteralPath $dest)) { throw "not installed: $dest" }
+          # Accept either a symlink or the copy fallback: whether symlink
+          # creation is permitted depends on the runner's privileges, and both
+          # outcomes are correct behaviour. What must hold is the CONTENT.
+          $got  = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
+          $want = (Get-FileHash -LiteralPath '.\wezterm\wezterm-windows.lua' -Algorithm SHA256).Hash
+          if ($got -ne $want) { throw "content differs from wezterm/wezterm-windows.lua" }
+          Write-Host "ok: $dest"
+
+      # The regression this whole design exists to prevent. The bash parser
+      # treats a section with no `platform` line as "every platform", which is
+      # right for [bash] on Linux and macOS; the PowerShell parser must NOT
+      # inherit that reading, or it links bashrc into %USERPROFILE%.
+      - name: Bash sections are not linked on Windows
+        shell: powershell
+        run: |
+          # Asserts on what install.ps1 REPORTED, not on whether these paths
+          # exist. The runner image ships its own %USERPROFILE%\.gitconfig, so
+          # "must not exist" would fail for a reason that has nothing to do
+          # with this repo.
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1 -LinkOnly | Out-String
+          Write-Host $out
+          foreach ($leaked in @('.bashrc', '.gitconfig', 'nvim')) {
+            if ($out -match [regex]::Escape($leaked)) {
+              throw "install.ps1 touched a non-windows destination: $leaked"
+            }
+          }
+          if ($out -notmatch 'wezterm\.lua') { throw 'install.ps1 did not link the wezterm config' }
+          Write-Host 'ok: only windows sections were linked'
+
+      - name: Re-running is idempotent
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1 -LinkOnly
+          if ($LASTEXITCODE -ne 0) { throw "second run exited $LASTEXITCODE" }
+          $dest = Join-Path $env:USERPROFILE '.config\wezterm\wezterm.lua'
+          $got  = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
+          $want = (Get-FileHash -LiteralPath '.\wezterm\wezterm-windows.lua' -Algorithm SHA256).Hash
+          if ($got -ne $want) { throw "second run left the wrong content in place" }
+          Write-Host 'ok: idempotent'
