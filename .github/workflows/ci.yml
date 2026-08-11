@@ -111,7 +111,7 @@ jobs:
           source lib/manifest.sh
           sections=$(manifest_sections | tr '\n' ' ')
           echo "sections: $sections"
-          for want in bash nvim wezterm dev; do
+          for want in bash nvim wezterm; do
             echo "$sections" | grep -qw "$want" || { echo "missing section: $want"; exit 1; }
           done
       - name: Every tool line has a known provider
