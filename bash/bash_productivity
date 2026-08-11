@@ -288,6 +288,137 @@ extract() {
     fi
 }
 
+# ─── 2csv / 2txt / 2xlsx — spreadsheet conversion ────────────────────────────
+#
+# One mnemonic, not three names: `2` + the format you want. The input type is
+# detected, so you never say it.
+#
+#   2csv  report.xlsx      2txt  report.xlsx      2xlsx  old.xls
+#
+# Reads xlsx, xlsm, xlsb, legacy BIFF .xls, ods, csv and tsv. One engine
+# handles all of it: qsv, which wraps the calamine parser. No Excel, no
+# LibreOffice, no Python. Declared in deps.conf's [bash] section.
+#
+# Legacy .xls needs no special case — calamine parses BIFF directly, and it
+# is the reason 2xlsx is rarely necessary. The usual motive for converting
+# .xls to .xlsx first is that openpyxl and pandas cannot read .xls at all;
+# that constraint simply isn't present here.
+#
+# Why not duckdb, which is the obvious alternative and measured *faster* here
+# (0.32s vs 0.47s on 200k rows, at a fifth of the RSS — qsv materialises the
+# sheet, duckdb streams it):
+#
+#   1. Its xlsx reader is zip-only. A legacy BIFF .xls fails outright with
+#      "Failed to open zip for reading", and the spatial/st_read fallback
+#      fails too — GDAL can't open it either. That's half the `xls*` this is
+#      for, and no flag fixes it.
+#   2. Its default typing renders an integer id column as 1.0, 2.0. Excel
+#      stores every number as a double and duckdb faithfully believes it;
+#      you need all_varchar=true to get the literal cell back.
+#
+# So duckdb needs a second engine bolted on for .xls and a flag to stop it
+# corrupting ids. One tool that's correct by default beats two that aren't.
+# If you ever want to *filter or join* during conversion rather than dump a
+# sheet, that's duckdb's job and worth reaching for separately.
+#
+# csv→txt goes through `qsv fmt`, not `tr ',' '\t'`, because a blind
+# translate corrupts any quoted field containing a comma. qsv re-quotes
+# correctly: "alpha, inc" loses its quotes in tab output, 'quote"d' keeps them.
+#
+# Depends on: qsv  (2xlsx additionally: ssconvert, commented in deps.conf)
+_sheet_convert() {
+    local target="$1"; shift
+    local cmd="2${target}" outdelim="" sheet="" force=0 f ext out rc=0
+    local files=() sheetarg=()
+
+    case "$target" in
+        csv) outdelim=',' ;;
+        txt) outdelim='\t' ;;
+    esac
+
+    if [[ "$target" == "xlsx" ]]; then
+        if ! command -v ssconvert &>/dev/null; then
+            echo "$cmd: needs ssconvert — uncomment the gnumeric line in" >&2
+            echo "      deps.conf [bash], then: make install bash" >&2
+            echo "      (qsv reads .xls directly, so $cmd is only for" >&2
+            echo "       producing a real workbook — 2csv/2txt don't need it)" >&2
+            return 127
+        fi
+    elif ! command -v qsv &>/dev/null; then
+        echo "$cmd: qsv not installed — run: make install bash" >&2
+        return 127
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -s|--sheet) sheet="$2"; shift 2 ;;
+            -f|--force) force=1; shift ;;
+            -h|--help)  echo "usage: $cmd [-s <sheet>] [-f] <file>..." >&2; return 0 ;;
+            --)         shift; while [[ $# -gt 0 ]]; do files+=("$1"); shift; done ;;
+            -*)         echo "$cmd: unknown flag '$1'" >&2; return 2 ;;
+            *)          files+=("$1"); shift ;;
+        esac
+    done
+
+    if [[ ${#files[@]} -eq 0 ]]; then
+        echo "usage: $cmd [-s <sheet>] [-f] <file>..." >&2
+        return 2
+    fi
+
+    # -s selects one sheet to flatten into one delimited file. Converting a
+    # whole workbook to a workbook keeps every sheet, so the flag has nothing
+    # to mean here — say so instead of ignoring it.
+    if [[ "$target" == "xlsx" && -n "$sheet" ]]; then
+        echo "$cmd: -s doesn't apply — a workbook keeps all its sheets" >&2
+        return 2
+    fi
+    [[ -n "$sheet" ]] && sheetarg=(--sheet "$sheet")
+
+    for f in "${files[@]}"; do
+        if [[ ! -f "$f" ]]; then
+            echo "$cmd: no such file: $f" >&2; rc=1; continue
+        fi
+
+        out="${f%.*}.${target}"
+        if [[ "$out" == "$f" ]]; then
+            echo "$cmd: $f is already .${target}" >&2; rc=1; continue
+        fi
+        if [[ -e "$out" && $force -eq 0 ]]; then
+            echo "$cmd: $out exists (use -f to overwrite)" >&2; rc=1; continue
+        fi
+
+        # bash 3.2 has no ${var,,}, so lowercase the extension with tr.
+        ext=$(printf '%s' "${f##*.}" | tr '[:upper:]' '[:lower:]')
+        case "$ext" in
+            xlsx|xlsm|xlsb|xls|ods|csv|tsv|tab|txt) ;;
+            *) echo "$cmd: don't know how to read '$f'" >&2; rc=1; continue ;;
+        esac
+
+        if [[ "$target" == "xlsx" ]]; then
+            ssconvert "$f" "$out" >/dev/null 2>&1 \
+                || { echo "$cmd: ssconvert failed on $f" >&2; rc=1; continue; }
+        else
+            case "$ext" in
+                xlsx|xlsm|xlsb|xls|ods)
+                    qsv excel --quiet "${sheetarg[@]}" --delimiter "$outdelim" \
+                        --output "$out" "$f" || { rc=1; continue; }
+                    ;;
+                *)
+                    qsv fmt --out-delimiter "$outdelim" --output "$out" "$f" \
+                        || { rc=1; continue; }
+                    ;;
+            esac
+        fi
+        echo "$out"
+    done
+    return $rc
+}
+
+# `2` + the format you want. Function names may begin with a digit in bash.
+2csv()  { _sheet_convert csv  "$@"; }
+2txt()  { _sheet_convert txt  "$@"; }
+2xlsx() { _sheet_convert xlsx "$@"; }
+
 # edit/reload dotfiles (symlinked by install.sh)
 dotfiles-edit() {
     local dotdir
@@ -348,6 +479,11 @@ h() {
     f <pattern>        Search files by name                [fd]
     findword <str>     Grep for whole-word matches         [rg]
     extract <file>     Auto-extract any archive format
+
+  Spreadsheets  ("2" + the format you want)                [qsv]
+    2csv <file>...     → .csv     reads xlsx/xlsm/xlsb/xls/ods/csv/tsv
+    2txt <file>...     → .txt     tab-delimited
+    2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2csv
 
   Project Info
     lines              Total lines of code (git-aware)
@@ -487,6 +623,50 @@ extract — universal archive extractor
   .gz, .bz2, .7z, .tgz, .tbz2, .Z
 
   No flags to remember — just `extract whatever.tar.gz`.
+HELP
+      ;;
+    2csv|2txt|2xlsx|qsv)
+      cat <<'HELP'
+2csv / 2txt / 2xlsx — spreadsheet conversion
+
+  One thing to remember: "2" + the format you want. The input type is
+  detected, so you never say what you're converting from.
+
+  2csv report.xlsx             → report.csv
+  2txt report.xlsx             → report.txt (tab-delimited)
+  2csv legacy.xls old.xlsm     Batch: one output per input
+  2csv -s "Q2 Actuals" b.xlsx  Pick a sheet by name or 0-based index
+  2txt data.csv                Re-delimit an existing CSV to tabs
+  2csv -f report.xlsx          Overwrite an existing output
+
+  Reads: .xlsx .xlsm .xlsb .xls .ods .csv .tsv
+  Output is named after the input, so the source is never touched.
+  Refuses to clobber an existing output unless you pass -f.
+  Bad input doesn't stop a batch — the rest still convert, exit is 1.
+
+  Multi-sheet workbooks export the first sheet by default. To list them:
+    qsv excel --metadata c book.xlsx
+
+  Legacy .xls needs nothing special — calamine parses BIFF directly.
+
+  2xlsx is the odd one out and usually unnecessary. qsv reads .xls fine
+  but can't *write* xlsx, so it shells out to ssconvert, which is off by
+  default: uncomment the gnumeric line in deps.conf [bash]. Reach for it
+  only when you need to hand someone a real workbook — not to make a
+  .xls readable, which it already is. -s doesn't apply there, since a
+  workbook keeps all its sheets.
+
+  Why qsv and not duckdb: duckdb's xlsx reader is zip-only, so .xls
+  fails with "Failed to open zip for reading" — the spatial/st_read
+  path fails too. It also types Excel numbers as doubles, so an id
+  column comes out 1.0, 2.0 unless you pass all_varchar=true. duckdb is
+  genuinely faster and lighter, and worth reaching for directly if you
+  want to filter or join during conversion rather than dump a sheet.
+
+  Re-delimiting goes through `qsv fmt`, which is CSV-aware. Don't
+  replace it with tr ',' '\t' — that corrupts quoted fields.
+
+  Depends on: qsv   (make install bash)
 HELP
       ;;
     lines)
