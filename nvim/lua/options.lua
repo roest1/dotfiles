@@ -187,7 +187,8 @@ vim.api.nvim_create_autocmd('FileType', {
   end,
 })
 
--- PDFs open in the OS's default handler rather than loading as raw bytes.
+-- Binary documents and images open in the OS's default handler rather than
+-- loading as raw bytes.
 --
 -- BufReadCmd *replaces* nvim's read rather than running alongside it, so the
 -- buffer is never populated — you get the external viewer only, not a viewer
@@ -198,9 +199,15 @@ vim.api.nvim_create_autocmd('FileType', {
 -- vim.ui.open is what keeps this portable: it dispatches to xdg-open, open, or
 -- wslview itself, so this needs no platform conditional.
 --
+-- Raster images only. SVG is deliberately absent: it is text, and editing one
+-- in the buffer is a thing you actually want. In-terminal rendering was the
+-- other option and was rejected — snacks.image and image.nvim both need the
+-- kitty graphics protocol, whose wezterm implementation is incomplete enough
+-- that neither supports it.
+--
 -- Escape hatch: `:noautocmd e file.pdf` skips this and loads the raw bytes.
 vim.api.nvim_create_autocmd('BufReadCmd', {
-  pattern = '*.pdf',
+  pattern = { '*.pdf', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.bmp', '*.avif' },
   callback = function(args)
     local path = vim.fn.fnamemodify(args.file, ':p')
     local ok, err = vim.ui.open(path)
@@ -209,7 +216,7 @@ vim.api.nvim_create_autocmd('BufReadCmd', {
     -- buffer there would make <CR> a silent no-op, which is worse than the
     -- binary it replaces, so fall back to the pre-autocmd behaviour instead.
     if not ok then
-      vim.notify(err, vim.log.levels.WARN, { title = 'pdf' })
+      vim.notify(err, vim.log.levels.WARN, { title = 'open' })
       -- Re-edit with autocmds off so nvim performs its own read. Doing it by
       -- hand instead (readfile + set_lines) does not work: binary mode turns
       -- NULs into newlines and nvim_buf_set_lines rejects those outright.

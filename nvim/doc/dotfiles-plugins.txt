@@ -100,9 +100,14 @@ Inside Oil:
 
 Edit the buffer to rename/delete/create files, then :w to apply.
 
-<CR> on a .pdf hands the file to the OS's default viewer instead of opening
-it. Nothing is loaded into a buffer — you stay in Oil. Same for `nvim x.pdf`
-and :e. To read the raw bytes anyway, use `:noautocmd e file.pdf`.
+<CR> on a PDF or a raster image (.png .jpg .jpeg .gif .webp .bmp .avif) hands
+the file to the OS's default viewer instead of opening it. Nothing is loaded
+into a buffer — you stay in Oil. Same for `nvim x.pdf` and :e. To read the
+raw bytes anyway, use `:noautocmd e file.pdf`.
+
+.svg is deliberately not in that list: it is text, and worth editing in a
+buffer. Images are not rendered inside nvim because wezterm's kitty graphics
+support is too incomplete for snacks.image or image.nvim to rely on.
 
 On a machine with no desktop handler at all (headless RHEL, a container), it
 warns and loads the file normally instead — the same binary buffer you got
