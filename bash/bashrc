@@ -9,6 +9,23 @@
 # see /usr/share/doc/bash/examples/startup-files (in the package bash-doc)
 # for examples
 
+# Every `source ~/.bash_*` below is a symlink path resolved at runtime, so the
+# linter cannot follow it from the repo. Disabled once here rather than with six
+# inline directives in the sourcing block: each target is linted on its own in
+# the same CI job, so following them would only duplicate that.
+#
+# (Note for editors: a comment line must not START with the linter's name, or it
+# is parsed as a malformed directive. That cost a confusing SC1072 once.)
+# shellcheck disable=SC1090
+
+# When scripts, background processes, or tools like Claude Code run terminal commands,
+# they launch non-interactive, non-login subshells. 
+# By default, these subshells skip loading ~/.bashrc
+# Bash specifically looks for BASH_ENV when launching a non-interactive
+# shell. If set, Bash executes the commands in that file (~/.bash_subshell)
+# before running anything else.
+# export BASH_ENV="$HOME/.bash_subshell" # DANGEROUS
+
 # ─── PATH for tools that live nowhere else ────────────────────────
 # ABOVE the interactive guard on purpose. bun installs to ~/.bun/bin,
 # which no system profile adds (unlike ~/.local/bin, which /etc/profile.d
@@ -114,7 +131,11 @@ export PATH="$DOTNET_ROOT:$PATH"
 
 # ─── Java ──────────────────────────────────────────────────────────
 if [[ "$_OS" == "mac" ]]; then
-  export JAVA_HOME=$(/usr/libexec/java_home 2>/dev/null)
+  # Split, not `export JAVA_HOME=$(...)`: a combined declaration returns
+  # export's status, not java_home's, so a machine with no JDK would set
+  # JAVA_HOME to empty and look like it succeeded.
+  JAVA_HOME="$(/usr/libexec/java_home 2>/dev/null)"
+  export JAVA_HOME
 elif [[ -d /usr/lib/jvm ]]; then
   # Works on both Debian (-amd64 suffix) and RHEL (no suffix)
   for _jvm in /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/java-17*; do
@@ -160,13 +181,35 @@ export SUDO_EDITOR=nvim
 # Custom config
 #####################################################################
 
+# ─── Where this repo lives ────────────────────────────────────────
+# Every config here is a symlink into the clone, so the clone can find
+# itself: resolve this file's link and walk up out of bash/.
+#
+# This exists so shell functions can ASK the manifest instead of keeping
+# a copy of it. `h deps` used to carry its own hardcoded tool list, which
+# is the one thing deps.conf exists to prevent — and it had already
+# drifted (it listed dotnet, which nothing declares, and omitted qsv,
+# which is declared). Anything in the shell that wants repo data should
+# defer through here rather than restate it.
+#
+# Plain `readlink`, not `readlink -f`: -f is a GNU extension that BSD and
+# older macOS don't carry, and install.sh creates single-level absolute
+# links, so one hop is all there is to resolve. Left unset if this file
+# isn't a symlink (someone copied it instead of installing) — callers
+# check before using it.
+if [[ -L "${BASH_SOURCE[0]}" ]]; then
+  _bashrc_link="$(readlink "${BASH_SOURCE[0]}")"
+  DOTFILES_ROOT="$(cd -P "$(dirname "$_bashrc_link")/.." 2>/dev/null && pwd)"
+  [[ -f "$DOTFILES_ROOT/deps.conf" ]] || unset DOTFILES_ROOT
+  unset _bashrc_link
+fi
+export DOTFILES_ROOT
+
 source ~/.bash_theme
 [[ -f ~/.bash_password_commands ]] && source ~/.bash_password_commands
 source ~/.bash_productivity
 source ~/.bash_git
 source ~/.bash_github
-
-# nvim-area shortcuts (n/nv/nvi). Only present when the nvim area is installed.
-[[ -f ~/.bash_nvim ]] && source ~/.bash_nvim
+source ~/.bash_github_tui
 
 export PATH="$HOME/.local/bin:$PATH"

@@ -192,7 +192,7 @@ __gh_actions() {
       result=$(gh api "repos/${repo}/commits/${sha}/check-runs" 2>/dev/null)
 
       if [[ -n "$result" ]]; then
-        local total succeeded failed running skipped last_run_iso last_run_epoch
+        local total succeeded failed running skipped last_run_iso
 
         total=$(echo "$result" | jq '.check_runs | length')
 
