@@ -59,18 +59,50 @@ fi
 # Both read choices on stdin. Pass extra fzf flags after the title:
 #   printf '%s\n' a b c | __fzf_menu "Pick one" --height=5
 #
-# FZF_MENU_BACK overrides the last word for top-level screens that exit
-# rather than return:  FZF_MENU_BACK=exit __fzf_menu "GitHub — $repo"
+# Three optional variables, each set for a single call rather than exported.
+# They live here so a screen cannot invent its own spelling of the same idea:
+#
+#   FZF_MENU_BACK   last word of the hint, for a top-level screen that exits
+#                   rather than returns:
+#                     FZF_MENU_BACK=exit __fzf_menu "GitHub — $repo"
+#
+#   FZF_MENU_HELP   path to a file shown by `?`. The binding and the ` ?help`
+#                   hint appear together, so a screen cannot advertise help it
+#                   doesn't have or have help nobody can find:
+#                     FZF_MENU_HELP="$f" __fzf_menu "Pull Requests"
+#
+#   FZF_MENU_EXPECT comma-separated keys that should end the menu and report
+#                   themselves. Output becomes two lines — the key (empty for a
+#                   plain enter) then the selection — so only call sites that
+#                   set it need to handle that. gh-tui uses it for `r`, which
+#                   nothing else needs and which the pagers already spell the
+#                   same way.
 __fzf_menu() {
   local title="$1"; shift
-  fzf --disabled --bind 'q:abort,-:abort' \
-      --header="${title}  │  ↑↓ nav  enter select  -/q ${FZF_MENU_BACK:-back}" \
-      --no-info "$@"
+  local binds='q:abort,-:abort'
+  local hint="↑↓ nav  enter select  -/q ${FZF_MENU_BACK:-back}"
+  local -a extra=()
+
+  if [[ -n "$FZF_MENU_HELP" && -f "$FZF_MENU_HELP" ]]; then
+    # execute() hands fzf's terminal to less and returns to the menu after,
+    # which is what makes ? feel like a peek rather than an exit.
+    binds+=",?:execute(less -R -- '$FZF_MENU_HELP')"
+    hint+="  ?help"
+  fi
+  [[ -n "$FZF_MENU_EXPECT" ]] && extra+=(--expect="$FZF_MENU_EXPECT")
+
+  fzf --disabled --bind "$binds" \
+      --header="${title}  │  ${hint}" \
+      --no-info "${extra[@]}" "$@"
 }
 
+# FZF_LIST_HINT replaces the middle of the hint for lists whose enter key does
+# something more specific than "select" — viewing a diff, opening an action
+# menu. The trailing `esc back` is not overridable: that is the half of the
+# contract that must be identical everywhere.
 __fzf_list() {
   local title="$1"; shift
-  fzf --header="${title}  │  type to filter  enter select  esc back" "$@"
+  fzf --header="${title}  │  ${FZF_LIST_HINT:-type to filter  enter select}  esc back" "$@"
 }
 
 # eza: modern ls replacement with git integration and icons.
@@ -438,8 +470,13 @@ h() {
     gprune             Fetch + delete branches with gone remotes
 
   GitHub TUI                                              [gh, fzf, jq]
-    gh-tui              All of GitHub in a TUI
-    gh-ui               Alias for gh-tui (the old name)
+    gh-tui             All of GitHub in a TUI  (? in any screen for help)
+    gh-ui              Alias for gh-tui (the old name)
+
+  GitHub Actions (plain output, pipeable)                  [gh, jq]
+    gha                Workflow status for HEAD
+    gha-fail           Only the failures
+    gha-open           Open the Actions tab in a browser
 
   Utilities
     port <num>         What's running on this port?
@@ -648,177 +685,39 @@ gprune — clean up stale local branches
     2. Run `gprune` to clean up your local copy
 HELP
       ;;
-    gh-tui)
+    gh-tui|gh-ui|gha|gha-fail|gha-open)
       cat <<'HELP'
-gh-tui — GitHub in a TUI
+GitHub — one TUI, plus three plain commands
 
-  gh-tui             Opens interactive menu with live preview pane
+  gh-tui      Everything GitHub, in one interactive hub  (gh-ui is an alias)
+                Pull Requests · CI/Actions · Secrets · Environments · Branches
 
-  Top-level menu provides access to:
-    Pull Requests     List, filter, create, manage PRs (gpr)
-    CI / Actions      Workflow status, logs, rerun (gha-ui)
-    Secrets           Repo & environment secrets (ghsecrets)
-    Environments      Create, configure, delete (ghenv)
-    Branches          Rulesets, required checks, defaults (ghbranch)
+  gha         Workflow status for HEAD — name, pass/fail, link
+  gha-fail    The same, filtered to failures
+  gha-open    Open the Actions tab in a browser
 
-  The preview pane shows live data as you navigate:
-    Hover "Pull Requests" → see open PR titles + status
-    Hover "CI / Actions"  → see workflow pass/fail for HEAD
-    Hover "Branches"      → see branch list with protection status
+  The three gha commands are plain output you can pipe. Everything
+  interactive lives behind gh-tui.
 
-  All individual commands still work as standalone shortcuts.
+  Press ? in any gh-tui screen for that screen's help — what each action
+  does, what the preview pane shows, and the keys it accepts. That help
+  used to live here, which meant reading it required already knowing to
+  type `h gh-tui`, and kept it drifting out of step with the screens it
+  described. It now sits next to what it documents.
 
-GitHub Actions — CI/CD observability + log viewer
+  Navigation, everywhere:
+    Menus:  ↑↓ nav   enter select   -/q back   ? help
+    Lists:  type to filter   enter select   esc back
+    Pagers: r refresh   -/q back
 
-  gha             Show workflow status for current HEAD commit
-                  Displays: name, pass/fail/running, link
+  The hub prefetches its preview panes once per session; press r to
+  refresh them.
 
-  gha-fail        Same as gha but filtered to failures only
-                  Quick way to see what broke
+  Your prompt also shows CI status on the right:
+    [5/5 ✅ 1d]  5 of 5 passed, last run a day ago
+    [3/5 ❌ 2h]  3 of 5 passed, 2 hours ago
+    [5/5 ⏳ now] still running
 
-  gha-open        Opens the Actions tab in your browser
-                  Fallback when you need the full GitHub UI
-
-  gha-ui          Interactive workflow picker with action menu
-                  Choose scope: current HEAD or recent runs.
-                  Pick a workflow, then choose:
-
-    📋 Smart log view
-       Shows all steps with status, duration, and dot-fill alignment.
-       Passing steps are COLLAPSED (header only).
-       Failed steps are AUTO-EXPANDED with their full log output
-       shown inline beneath the step header, bordered with │.
-       Summary line shows pass/fail/skip counts.
-       Output goes through less for scrolling.
-       After scrolling: r to refresh (re-fetches), -/q to go back.
-
-    🔍 Browse steps interactively
-       fzf list of all steps with ✅/❌/⏭ status.
-       Preview pane shows that step's log output as you arrow
-       through — no need to select first. ENTER opens the full
-       log in less. esc returns to the step list.
-       After exiting: r to refresh (re-fetches), -/q to go back.
-
-    🌐 Open in browser
-       Falls back to the GitHub Actions UI
-
-    🔁 Rerun this workflow
-       Triggers a rerun of the selected workflow
-
-  Navigation (consistent across all interactive commands):
-    Menus:  ↑↓ navigate  enter select  -/q back  (like nvim)
-    Lists:  type to search  enter select  esc back
-    Pagers: r refresh  -/q back
-
-  Your prompt also shows CI status on the right side:
-    [5/5 ✅ 1d]  = 5 of 5 passed, last run 1 day ago
-    [3/5 ❌ 2h]  = 3 of 5 passed (failures), 2 hours ago
-    [5/5 ⏳ now]  = workflows still running
-
-
-gpr — interactive PR management
-
-  gpr              Filter picker → list PRs → pick one → action menu
-                   Filters: all open, needs my review, my PRs,
-                   recently closed, recently merged
-  gpr create       Create a new PR from current branch
-  gpr mine         Show only PRs you authored (shortcut)
-
-  The PR list shows: number, review status, title, author,
-  branch, changes (+/-), and date. The preview pane (right side)
-  shows full PR details as you navigate.
-
-  After selecting a PR, you get an action menu:
-
-    👁  View details        Full PR info in terminal
-    📥 Checkout locally     Switch to the PR's branch
-    📝 View diff            Colored diff in pager
-    📊 View file changes    Browse individual changed files
-    💬 Add comment          Inline or open your editor
-    ✅ Approve              With optional message
-    🔄 Request changes      Opens editor for feedback
-    🏷  Manage labels        Add/remove from available labels
-    👤 Request reviewers    Pick from collaborators
-    ✏️  Edit title/body      Rename or rewrite description
-    🔀 Merge                Pick strategy (squash/merge/rebase)
-    ❌ Close PR             Close without merging
-    🌐 Open in browser      Fallback to GitHub UI
-    🔍 View CI checks       See pass/fail status
-
-  Most actions loop back to the menu so you can do multiple
-  things without re-running the command.
-
-
-ghsecrets — manage repository & environment secrets
-
-  ghsecrets        Opens interactive secrets screen
-
-  Menu options:
-    🔑 List repo secrets            Names + last updated (values hidden)
-    ➕ Set repo secret              Prompts for name, then secure value input
-    🗑  Delete repo secret           Pick from list, confirm delete
-    🌍 List environment secrets     Pick env first, then see its secrets
-    ➕ Set environment secret       Pick env, then name + value
-    🗑  Delete environment secret    Pick env, pick secret, confirm
-
-  Important: GitHub NEVER reveals secret values — not even via API.
-  You can set, list (names only), and delete. If you need to see
-  a value, you must re-set it.
-
-  Secret names are auto-uppercased (GitHub convention).
-
-  Navigation: -/q back  │  r refresh on list views
-
-
-
-ghbranch — branches & rulesets
-
-  ghbranch         Opens interactive branch screen
-
-  Menu options:
-    📋 List branches                Shows all with 🛡 for ruled branches
-    🛡  View effective rules        What actually governs a branch, across
-                                    every ruleset targeting it — plus the
-                                    bypass list, which decides whether any
-                                    of it is a wall or just guidance
-    📜 Manage rulesets              Pick a ruleset, then:
-                                      • Enforcement (active/evaluate/disabled)
-                                      • Require branches up to date (strict)
-                                      • Required checks — add/remove, picked
-                                        from names CI actually reported
-                                      • Bypass mode (pull_request/always)
-    🗑  Delete remote branch         With safety check (won't delete default)
-    ⭐ Set default branch            Change repo's default branch
-    ⚠️  Legacy classic protection    Read + delete only, for migrating off it
-
-  Rulesets, not classic branch protection. The classic API 404s on a repo
-  protected by a ruleset, which is how the old version managed to call main
-  protected on one screen and unprotected on the next.
-
-  Nothing here creates a classic rule — a branch with both is a branch where
-  "why was this rejected" has two possible answers.
-
-  Writes need admin. Rulesets update with PUT, not PATCH (PATCH 404s and
-  looks like a permissions error).
-
-  Navigation: -/q back  │  r refresh on list views
-
-ghenv — environment management
-
-  ghenv            Opens interactive environment screen
-
-  Menu options:
-    📋 List environments            Names + creation dates
-    🔍 View environment details     Protection rules + secrets
-    ➕ Create environment           Just name it
-    ⏱  Set wait timer               Delay before deployment (minutes)
-    👤 Set required reviewers       Pick from collaborators or type username
-    🗑  Delete environment           Removes env AND all its secrets
-
-  Environments are used for deployment targets (staging, production).
-  Each can have its own secrets, wait timers, and required reviewers.
-
-  Navigation: -/q back  │  r refresh on list views
   Depends on: gh, fzf, jq
 HELP
       ;;

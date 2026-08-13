@@ -1,94 +1,69 @@
 # The GitHub TUI
 
-**Status:** working and parked. Next thing to work on, not the current one.
-**Code:** `bash/bash_github_tui` (~1,800 lines)
-**Blocked on:** one decision, below.
+**Status:** active. `gh-tui` is the single entry point.
+**Code:** `bash/bash_github_tui`
 
 ## What exists
 
-`gh-tui` is a unified hub with a live preview pane. Five screens hang off it,
-each also callable directly for now:
+`gh-tui` is a hub with a live preview pane. Five screens hang off it — Pull
+Requests, CI/Actions, Secrets, Branches, Environments — reached through the hub
+rather than as separate commands. `gh-ui` is an alias for `gh-tui`.
 
-| command     | screen                                            |
-|-------------|---------------------------------------------------|
-| `gpr`       | PR list → pick → act (merge, review, labels, …)   |
-| `gha-ui`    | workflow picker → action menu → smart log view    |
-| `ghsecrets` | repo and environment secrets                      |
-| `ghbranch`  | branches and rulesets, with effective-rule view   |
-| `ghenv`     | environments, reviewers, wait timers              |
+Press `?` in any screen for that screen's help.
 
-`gh-ui` remains as an alias for `gh-tui`. The name was renamed *to* `gh-tui`
-because that is what this file's header and `h` had both been advertising while
-the function was actually called `gh-ui` — the documented command did not exist
-and the real one was undocumented.
+## The question that was open, and how it resolved
 
-## The three-file split
+Shell history recorded zero uses of the five screens, which read at first like a
+verdict: replace it with [forgit](https://github.com/wfxr/forgit) or
+[neogit](https://github.com/NeogitOrg/neogit).
 
-`bash_git` (git porcelain) → `bash_github` (plain `gh`, shared helpers) →
-`bash_github_tui` (everything interactive), sourced in that order.
+It isn't. Both are git-only. Neither touches the GitHub API, so Secrets,
+Branches/rulesets and Environments have no equivalent in either — the closest
+thing to a competitor for the PR screen specifically is
+[octo.nvim](https://github.com/pwntester/octo.nvim). And neither tool had been
+tried, so the zero measures habit, not preference.
 
-The rule that makes it real: **only this file may invoke fzf**, and CI checks
-it. That is not tidiness. It is what lets this entire layer be replaced or
-deleted as a unit without touching the two files below it, which matters given
-the open question.
+So the work became *make it worth reaching for* rather than *replace or keep*.
+Three things were in the way, all now fixed:
 
-## The open question, which gates everything else
+**It stalled.** The hub re-ran an 8-call prefetch on every menu render, because
+navigation was a tail call back into `gh-tui`. A `gh` round trip is ~0.34s, so
+backing out of a screen cost about a second of refetching data it already had —
+on the screen you pass through most. The prefetch now runs once per session;
+`r` refreshes it.
 
-**Where do you actually do git?**
+**The stack grew as you used it.** Every menu was tail-recursive: `gh-tui`
+called itself, `_gpr_actions` had 12 self-calls, `ghsecrets` 8. Six menus are
+now `while` loops. Measured: stack depth is constant at 3 across renders, where
+it previously climbed by one per navigation.
 
-Three implementations of "interactive git" are starred or installed:
-[forgit](https://github.com/wfxr/forgit) (bash, fzf, maintained, 5k stars),
-[neogit](https://github.com/NeogitOrg/neogit) (nvim, Magit-like), and this.
-Shell history recorded **zero** uses of `gpr`, `ghsecrets`, `ghbranch`, `ghenv`
-and `gha-ui`, against 8 for `gha` and 3 for `gh-ui`.
+**It didn't explain itself.** 174 of `h`'s 471 lines documented these screens
+from another file, reachable only if you already knew to type `h gh-tui`. That
+help now lives in the screens behind `?`, and `h` is 333 lines.
 
-That is one machine's history and `HISTFILE` only flushes on exit, so it is a
-signal and not a verdict. But it should be answered before more is built here:
+## Conventions this file follows
 
-- **"I type `git` and use the GitHub web UI"** → this layer is a deletion, and
-  `bash_git` + `bash_github` already hold everything that gets used.
-- **"In the editor"** → neogit replaces the git half; the GitHub API screens
-  (`ghsecrets`, `ghbranch`, `ghenv`) have no neovim equivalent and stay.
-- **"In the terminal, I just never built the habit"** → forgit is the
-  maintained version of the git half. The GitHub screens remain genuinely
-  yours; forgit does not touch the GitHub API.
+- **Only this file may invoke fzf.** `bash_git` is git porcelain, `bash_github`
+  is plain `gh` plus shared helpers, this is everything interactive. CI checks
+  it. That boundary is what keeps this layer replaceable as a unit.
+- **`gh-tui` is the only public function here.** CI checks that too.
+- **`__` is a helper shared across files, `_` is private to this one.** CI
+  rejects a `__` name defined here.
+- **Menus and lists go through `__fzf_menu` / `__fzf_list`** in
+  `bash_productivity`, which own the keybindings and the header hint. Seven fzf
+  calls remain hand-written where they genuinely differ (multi-select, preview
+  windows); the other 27 do not.
 
-Worth noting that the GitHub API screens are the part with no off-the-shelf
-competitor, and also the part with no recorded use. The `gha`/`gha-fail` pair,
-which does get used, is already out of this file.
+## Still open
 
-## Ideas to bring in
-
-- **`__fzf_list` for the remaining screens.** 16 fzf calls are left here; 9 are
-  the plain list shape and would convert directly. The 18 menu sites are done.
-  The rest are genuinely special (multi-select, preview windows) and should
-  stay hand-written.
-- **forgit's patterns**, whatever the decision above. Its diff/add/checkout
-  previews are better than these, and reading them costs nothing.
-- **Clickable arrows and X close buttons.** Recorded from the original header
-  so it isn't lost — fzf can bind mouse events, so this is possible, though it
-  works against the nvim-like keyboard contract and should not quietly become
-  the primary affordance.
-- **A `?` key binding** that shows the current screen's help inline. This is
-  where the GitHub half of `h` should end up: help for an interactive tool
-  belongs in the tool, not in a heredoc in another file. Doing this deletes a
-  large block of `h` rather than moving it.
-
-## Things to change
-
-- **`git/GITHUB_TOOLS.md` has nine demo placeholders**, every one still
-  `asciinema.org/a/XXXXXX`, plus a recording guide. Demos were never recorded,
-  for screens that have never been used. If the layer is cut, that file and the
-  recording guide go with it. If it stays, record them or delete the
-  placeholders — an unfilled template reads as neglect either way.
-- **`_gha_*` and `_gpr_*` helpers use single-underscore prefixes** while the
-  shared ones in `bash_github` use double. Nothing depends on the distinction;
-  pick one when this file is next opened properly.
-
-## Why it is parked rather than cut
-
-It works, it is isolated behind an enforced boundary, and it is ~1,800 lines
-that would be tedious to rewrite and trivial to delete. Deleting it is a
-one-line change to `deps.conf` plus one `git rm` on the day the question above
-is answered. Until then, keeping it costs a `source` of a file that parses in
-milliseconds and is covered by CI like everything else.
+- **Clickable arrows and X close buttons.** fzf can bind mouse events. It cuts
+  against the nvim-like keyboard contract, so it should be a deliberate
+  decision rather than something that accretes.
+- **forgit's previews.** Its diff/add/checkout previews are better than these
+  and worth reading regardless of whether it gets adopted.
+- **Demos.** `git/GITHUB_TOOLS.md` carried nine `asciinema.org/a/XXXXXX`
+  placeholders and a recording guide through several refactors without a single
+  recording being made. Both are gone; the walkthrough prose stayed. Recording
+  is worth revisiting once the screens stop moving — `vhs` is the modern
+  single-binary option and, unlike asciinema or terminalizer, needs no Python
+  or node.

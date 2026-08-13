@@ -225,16 +225,18 @@ aren't (fork instead — the layout is built for it). See
 
 **[Full walkthrough → git/GITHUB_TOOLS.md](git/GITHUB_TOOLS.md)** — walkthroughs and demos for the interactive GitHub tools.
 
-Start with `gh-ui` for the unified hub, or jump directly to:
+`gh-tui` is the way in. Press `?` in any screen for that screen's help.
 
 | Command | What |
 | ------- | ---- |
-| `gh-ui`     | Unified interactive GitHub hub |
-| `gpr`       | PR management with filters |
-| `gha-ui`    | Workflow run picker with smart log view |
-| `ghsecrets` | Repository secrets |
-| `ghbranch`  | Branch management |
-| `ghenv`     | Environment management |
+| `gh-tui`   | Everything GitHub, in one hub (`gh-ui` is an alias) |
+| `gha`      | Workflow status for HEAD — plain, pipeable output |
+| `gha-fail` | The same, filtered to failures |
+| `gha-open` | Open the Actions tab in a browser |
+
+Inside `gh-tui`: Pull Requests, CI/Actions, Secrets, Environments and
+Branches. Those screens are reached through the hub rather than as separate
+commands, so there is one name to remember instead of six.
 
 ## Layout
 
@@ -304,8 +306,9 @@ still stands alone.
 | `bash/bashrc`                 | Shell options, PATH, package managers, sources theme + productivity   |
 | `bash/bash_theme`             | Prompt, colors, LS_COLORS, man page colors                            |
 | `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
-| `bash/bash_git`               | GitHub Actions tools (`gha`, `gha-ui`, `gha-fail`, `gha-open`)        |
-| `bash/bash_github`            | Unified GitHub hub (`gh-ui`) + `gpr`, `ghsecrets`, `ghbranch`, `ghenv` |
+| `bash/bash_git`               | Git aliases and `gprune`                                             |
+| `bash/bash_github`            | Plain `gh` commands (`gha`, `gha-fail`, `gha-open`) + shared helpers |
+| `bash/bash_github_tui`        | `gh-tui` and its screens — the only file that may invoke fzf         |
 | `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
 | `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
 | `wezterm/wezterm.lua`         | Terminal on Linux/macOS — declares the `mux` domain                   |

@@ -206,6 +206,33 @@ jobs:
           done
           exit $bad
 
+      # gh-tui is the single public entry to the interactive layer. The five
+      # screens behind it (gpr, gha-ui, ghsecrets, ghbranch, ghenv) used to sit
+      # next to it as top-level commands, which left six names competing for
+      # one job and meant the hub had to be discovered rather than being the
+      # obvious door.
+      #
+      # This also keeps the prefix rule true: `__` is a helper shared across
+      # files, `_` is private to this one. Every screen is now `_`-prefixed,
+      # which is what stops the help check above from demanding an `h` entry
+      # for something you cannot type.
+      - name: bash_github_tui exposes only gh-tui
+        run: |
+          public=$(grep -oE '^[a-zA-Z][a-zA-Z0-9_-]*\(\)' bash/bash_github_tui | tr -d '()')
+          if [ "$public" != "gh-tui" ]; then
+            echo "bash_github_tui must define exactly one public function (gh-tui); found:"
+            echo "$public"
+            exit 1
+          fi
+          # Every double-underscore name it uses must come from another file.
+          bad=0
+          for n in $(grep -ohE '__[a-z_]+' bash/bash_github_tui | sort -u); do
+            if grep -q "^$n()" bash/bash_github_tui; then
+              echo "$n is private to bash_github_tui but uses the shared '__' prefix"; bad=1
+            fi
+          done
+          exit $bad
+
       # The [bash] file split is a rule, not a preference: bash_github holds
       # plain gh commands and shared helpers, bash_github_tui holds everything
       # interactive. Keeping fzf on one side of that line is what lets the TUI

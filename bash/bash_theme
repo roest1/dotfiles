@@ -79,7 +79,7 @@ __git_right() {
 }
 
 # ─── Shared time helpers ─────────────────────────────────────────────
-# Used by PS1, gha-ui, gh-ui, gpr for consistent timestamps.
+# Used by PS1 and by the gh-tui screens for consistent timestamps.
 
 # __parse_iso_epoch <iso_timestamp>
 # Converts ISO 8601 timestamp to epoch. Handles GNU + BSD date.
