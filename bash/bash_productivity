@@ -10,34 +10,18 @@
 # See all custom commands:
 #   h           Show quick reference
 #   h <command> Show detailed help for a command
+#
+#   TODO:
+#   use cloc: https://github.com/AlDanial/cloc
+
+# ─── Dependencies ──────────────────────────────────────────────────────
 
 # ─── zoxide (smarter cd) ──────────────────────────────────────────────────────
-# Learns from your cd habits. After a few days, `z proj` jumps to ~/projects.
-#
-# How it works: every time you `cd` somewhere, zoxide records the path and
-# how often you visit it. `z` uses frecency (frequency + recency) to rank
-# matches. It's a drop-in `cd` replacement — you don't change any habits,
-# you just type less over time.
-#
-# Depends on: zoxide (brew install zoxide)
 if command -v zoxide &>/dev/null; then
   eval "$(zoxide init bash)"
 fi
 
 # ─── fzf (fuzzy everything) ───────────────────────────────────────────────────
-# Transforms three built-in keybindings:
-#   Ctrl+R  → fuzzy search command history (instead of reverse-i-search)
-#   Ctrl+T  → fuzzy file picker, inserts path at cursor
-#   Alt+C   → fuzzy cd into a subdirectory
-#
-# How it works: fzf reads lines from stdin (or a command), presents a
-# fuzzy-searchable list, and outputs the selection. The keybindings above
-# are shell integrations that pipe history/files/dirs into fzf automatically.
-#
-# FZF_DEFAULT_COMMAND controls what `fzf` lists when run with no input.
-# We point it at `fd` so it respects .gitignore and skips .git/.
-#
-# Depends on: fzf (brew install fzf), optionally fd for faster file listing
 if command -v fzf &>/dev/null; then
   eval "$(fzf --bash 2>/dev/null)" || source /usr/share/bash-completion/completions/fzf 2>/dev/null
   export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
@@ -52,58 +36,76 @@ if command -v fzf &>/dev/null; then
   unset _fd
 fi
 
-# ─── Git aliases ──────────────────────────────────────────────────────────────
-# Muscle-memory shortcuts. `gs` instead of `git status`, etc.
-# --force-with-lease is a safer force push (fails if remote has new commits).
-# `gb` sorts branches by most recently committed — your active branches first.
-alias gs='git status -sb'
-alias ga='git add'
-alias gaa='git add -A'
-alias gc='git commit -m'
-alias gca='git commit --amend --no-edit'
-alias gp='git push'
-alias gpf='git push --force-with-lease'
-alias gl='git log --oneline -20'
-alias gll='git log --oneline --graph --all -30'
-alias gd='git diff'
-alias gds='git diff --staged'
-alias gco='git checkout'
-alias gcb='git checkout -b'
-alias gb='git branch --sort=-committerdate'
-alias gst='git stash'
-alias gstp='git stash pop'
+# ─── The two fzf shapes ───────────────────────────────────────────────────────
+#
+# Every interactive screen in this repo is one of two things, and the
+# difference is whether typing filters or acts:
+#
+#   menu   a fixed set of choices. --disabled turns the query off, so plain
+#          keys are commands: q and - go back, like nvim.
+#   list   an open set to search. Typing filters, esc goes back.
+#
+# The keybindings and the header hint live HERE, once, rather than at each
+# call site. They were previously repeated at 18 of them — identical strings
+# that had to be kept identical by hand, which is not a convention so much as
+# an ongoing opportunity to drift. Adding a key to the menu contract is now
+# one edit, and CI checks that no screen hand-rolls its own.
+#
+# Chrome (height, layout, border) is FZF_DEFAULT_OPTS above and applies to
+# Ctrl+R and Ctrl+T too. The binds deliberately are NOT there: --disabled is
+# what makes q mean "quit" rather than the letter q, and forcing that globally
+# would break typing the letter q into history search.
+#
+# Both read choices on stdin. Pass extra fzf flags after the title:
+#   printf '%s\n' a b c | __fzf_menu "Pick one" --height=5
+#
+# Three optional variables, each set for a single call rather than exported.
+# They live here so a screen cannot invent its own spelling of the same idea:
+#
+#   FZF_MENU_BACK   last word of the hint, for a top-level screen that exits
+#                   rather than returns:
+#                     FZF_MENU_BACK=exit __fzf_menu "GitHub — $repo"
+#
+#   FZF_MENU_HELP   path to a file shown by `?`. The binding and the ` ?help`
+#                   hint appear together, so a screen cannot advertise help it
+#                   doesn't have or have help nobody can find:
+#                     FZF_MENU_HELP="$f" __fzf_menu "Pull Requests"
+#
+#   FZF_MENU_EXPECT comma-separated keys that should end the menu and report
+#                   themselves. Output becomes two lines — the key (empty for a
+#                   plain enter) then the selection — so only call sites that
+#                   set it need to handle that. gh-tui uses it for `r`, which
+#                   nothing else needs and which the pagers already spell the
+#                   same way.
+__fzf_menu() {
+  local title="$1"; shift
+  local binds='q:abort,-:abort'
+  local hint="↑↓ nav  enter select  -/q ${FZF_MENU_BACK:-back}"
+  local -a extra=()
 
-# gprune: fetch + prune remotes + delete local branches whose remote is gone
-gprune() {
-  echo "⏳ Fetching and pruning remote tracking refs..."
-  git fetch --prune
-
-  local gone_branches
-  gone_branches=$(git for-each-ref --format '%(refname:short) %(upstream:track)' refs/heads \
-    | awk '$2 == "[gone]" { print $1 }')
-
-  if [[ -z "$gone_branches" ]]; then
-    echo "✅ No stale branches to clean up"
-    return
+  if [[ -n "$FZF_MENU_HELP" && -f "$FZF_MENU_HELP" ]]; then
+    # execute() hands fzf's terminal to less and returns to the menu after,
+    # which is what makes ? feel like a peek rather than an exit.
+    binds+=",?:execute(less -R -- '$FZF_MENU_HELP')"
+    hint+="  ?help"
   fi
+  [[ -n "$FZF_MENU_EXPECT" ]] && extra+=(--expect="$FZF_MENU_EXPECT")
 
-  echo ""
-  echo "Branches with deleted remotes:"
-  echo "$gone_branches" | sed 's/^/  /'
-  echo ""
-  read -rp "Delete these local branches? (y/N): " confirm
-  if [[ "$confirm" =~ ^[yY]$ ]]; then
-    echo "$gone_branches" | while IFS= read -r branch; do
-      git branch -D "$branch" && echo "  🗑  Deleted: $branch"
-    done
-    echo "✅ Done"
-  fi
+  fzf --disabled --bind "$binds" \
+      --header="${title}  │  ${hint}" \
+      --no-info "${extra[@]}" "$@"
 }
 
-# ─── Better defaults ──────────────────────────────────────────────────────────
+# FZF_LIST_HINT replaces the middle of the hint for lists whose enter key does
+# something more specific than "select" — viewing a diff, opening an action
+# menu. The trailing `esc back` is not overridable: that is the half of the
+# contract that must be identical everywhere.
+__fzf_list() {
+  local title="$1"; shift
+  fzf --header="${title}  │  ${FZF_LIST_HINT:-type to filter  enter select}  esc back" "$@"
+}
+
 # eza: modern ls replacement with git integration and icons.
-# bat: cat with syntax highlighting and line numbers.
-# On Debian/Ubuntu, bat installs as `batcat` due to a name conflict.
 if command -v eza &>/dev/null; then
   alias ls='eza --icons --group-directories-first'
   alias ll='eza -la --icons --group-directories-first --git'
@@ -112,6 +114,8 @@ else
   alias ll='ls -alFh'
 fi
 
+# bat: cat with syntax highlighting and line numbers.
+# On Debian/Ubuntu, bat installs as `batcat` due to a name conflict.
 if command -v bat &>/dev/null; then
   alias cat='bat --plain --paging=never'
   alias catn='bat'
@@ -120,15 +124,18 @@ elif command -v batcat &>/dev/null; then
   alias catn='batcat'
 fi
 
-# ─── Directory shortcuts ──────────────────────────────────────────────────────
+# ─── Navigation ──────────────────────────────────────────────────────
 
 # mkcd: create directory and cd into it in one step
 mkcd() {
-  mkdir -p "$1" && cd "$1"
+  # `|| return` matters: without it a failed cd (permissions, a path component
+  # that exists as a file) still returns success, so `mkcd x && setup` would
+  # run setup in the wrong directory.
+  mkdir -p "$1" && cd "$1" || return
 }
 
-# up: go up N directories. `up 3` = cd ../../..
-up() {
+# back: go up N directories. `back 3` = cd ../../..
+back() {
   local d=""
   for ((i = 1; i <= ${1:-1}; i++)); do
     d="../$d"
@@ -136,44 +143,61 @@ up() {
   cd "$d" || return
 }
 
-# ─── Quick file search ────────────────────────────────────────────────────────
-
-# f: find file by name. No args → fzf picker → open in $EDITOR.
-# With args → fd search (respects .gitignore).
+# downloads: cd to the Windows Downloads folder, from inside WSL.
 #
-# Depends on: fzf, fd
-f() {
-  if [[ $# -eq 0 ]]; then
-    local file
-    file=$(fzf --preview 'head -50 {}' 2>/dev/null)
-    [[ -n "$file" ]] && "$EDITOR" "$file"
-  else
-    local _fd="fd"
-    command -v fd &>/dev/null || _fd="fdfind"
-    "$_fd" --type f "$1"
-  fi
-}
-
-# ─── Quick project stats ──────────────────────────────────────────────────────
-
-# lines: count lines of code by extension.
-# Uses git ls-files when inside a repo (skips generated/ignored files).
+# This is in the repo rather than in ~/.bash_local because nothing about it is
+# machine-specific — the path is *derived*, never written down. Hardcoding
+# /mnt/c/Users/<you>/Downloads would be a per-machine fact and would belong in
+# bash_local; asking Windows where its own Downloads folder is, is not.
 #
-# Usage: `lines` (total) or `lines py lua ts` (by extension)
-lines() {
-  if [[ $# -eq 0 ]]; then
-    if git rev-parse --is-inside-work-tree &>/dev/null; then
-      git ls-files | xargs wc -l 2>/dev/null | tail -1
-    else
-      find . -type f | head -500 | xargs wc -l 2>/dev/null | tail -1
-    fi
-  else
-    for ext in "$@"; do
-      local count
-      count=$(find . -name "*.${ext}" -not -path '*/.git/*' -not -path '*/node_modules/*' | xargs wc -l 2>/dev/null | tail -1)
-      echo "${ext}: ${count}"
-    done
+# Three things it does not assume:
+#
+#   The username. /mnt/c/Users on this machine contains both `Riley` and
+#   `Riley Oest`, so globbing for a likely-looking directory picks wrong. The
+#   registry is the only unambiguous answer.
+#
+#   That Downloads is under %USERPROFILE%. OneDrive relocates the known folder,
+#   and after that `$USERPROFILE\Downloads` is either stale or absent. The
+#   Shell Folders key tracks the move; it is queried rather than guessed. (Use
+#   "Shell Folders", not "User Shell Folders" — the latter returns unexpanded
+#   %USERPROFILE% strings.)
+#
+#   The C: mount point. `wslpath -u 'C:\Windows\System32'` resolves it, so a
+#   non-default `root=` in /etc/wsl.conf still works. Absolute paths to the
+#   .exe files are needed because appendWindowsPath=false is a common setting
+#   and is the case here — cmd.exe is not on PATH.
+#
+# The lookup is ~30ms and runs on first use only, never at shell startup.
+# WIN_DOWNLOADS doubles as the cache and as the override: set it in
+# ~/.bash_local and detection is skipped entirely.
+downloads() {
+  if [[ -z "$WIN_DOWNLOADS" ]]; then
+    grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null || {
+      echo "downloads: only meaningful under WSL" >&2
+      return 1
+    }
+
+    local sys win
+    sys=$(wslpath -u 'C:\Windows\System32' 2>/dev/null)
+
+    # {374DE290-...} is the Downloads known-folder GUID.
+    win=$("$sys/reg.exe" query \
+            'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders' \
+            /v '{374DE290-123F-4565-9164-39C4925E467B}' 2>/dev/null \
+          | tr -d '\r' | awk '/REG_SZ/ { sub(/.*REG_SZ[[:space:]]+/, ""); print }')
+
+    # Key missing or renamed: fall back to the default location.
+    [[ -z "$win" ]] && win=$("$sys/cmd.exe" /c 'echo %USERPROFILE%\Downloads' 2>/dev/null | tr -d '\r')
+
+    [[ -n "$win" ]] && WIN_DOWNLOADS=$(wslpath -u "$win" 2>/dev/null)
   fi
+
+  [[ -d "$WIN_DOWNLOADS" ]] || {
+    echo "downloads: couldn't locate the Windows Downloads folder" >&2
+    echo "  set WIN_DOWNLOADS in ~/.bash_local to point at it" >&2
+    return 1
+  }
+  cd "$WIN_DOWNLOADS" || return
 }
 
 # ─── Process management ──────────────────────────────────────────────────────
@@ -186,18 +210,8 @@ port() {
 
 # ─── Misc power tools ────────────────────────────────────────────────────────
 
-# c: clear alias
-c() {
-    clear
-}
-
-# ddiff: side-by-side colored diff of two files
-ddiff() {
-  diff --color=always -y --width="$(tput cols)" "$1" "$2" | less -R
-}
-
 # serve: quick HTTP server in current directory
-# Depends on: python3
+# Depends on: python3 # Maybe change this to uv? # This doesn't ever come into my workflow though
 serve() {
   local port="${1:-8000}"
   echo "Serving on http://localhost:${port}"
@@ -207,16 +221,24 @@ serve() {
 # loop: repeatedly run a command with a clear screen (like watch)
 # Usage: loop ls -la    (refreshes every 2s)
 #        LOOP_INTERVAL=5 loop df -h
+#        loop 'df -h | grep sda'
 loop() {
   while true; do
     clear
     echo "─── $(date) ───"
+    # eval is deliberate and stays. Running "$@" directly would be safer, but
+    # it would also drop the third usage above: a pipeline passed as one
+    # string is the main reason to reach for a watch-alike, and `"$@"` would
+    # try to exec a command literally named `df -h | grep sda`.
+    # shellcheck disable=SC2294
     eval "$@"
     sleep "${LOOP_INTERVAL:-2}"
   done
 }
 
 # findword: rg all occurences
+# I have used this a bit in the past and it was quite useful, but don't know if it should be replaced or 
+# consolidated by fzf -- rg is an optimization I should always be using over grep 
 findword() {
     local search_term="$1"
     shift
@@ -265,7 +287,6 @@ findword() {
     rg "${rg_args[@]}" "$search_term"
 }
 
-
 # extract: Universal archive extractor
 extract() {
     if [ -f "$1" ]; then
@@ -289,9 +310,6 @@ extract() {
 }
 
 # ─── 2csv / 2txt / 2xlsx — spreadsheet conversion ────────────────────────────
-#
-# One mnemonic, not three names: `2` + the format you want. The input type is
-# detected, so you never say it.
 #
 #   2csv  report.xlsx      2txt  report.xlsx      2xlsx  old.xls
 #
@@ -318,6 +336,7 @@ extract() {
 #
 # So duckdb needs a second engine bolted on for .xls and a flag to stop it
 # corrupting ids. One tool that's correct by default beats two that aren't.
+#
 # If you ever want to *filter or join* during conversion rather than dump a
 # sheet, that's duckdb's job and worth reaching for separately.
 #
@@ -414,19 +433,20 @@ _sheet_convert() {
     return $rc
 }
 
-# `2` + the format you want. Function names may begin with a digit in bash.
+# Function names may begin with a digit in bash.
 2csv()  { _sheet_convert csv  "$@"; }
 2txt()  { _sheet_convert txt  "$@"; }
 2xlsx() { _sheet_convert xlsx "$@"; }
 
 # edit/reload dotfiles (symlinked by install.sh)
-dotfiles-edit() {
+edit-dotfiles() {
     local dotdir
     dotdir="$(cd "$(dirname "$(readlink -f ~/.bashrc 2>/dev/null || readlink ~/.bashrc)")" && pwd)"
     "$EDITOR" "$dotdir"
 }
 
 reload() {
+    # shellcheck source=/dev/null  # runtime path, not resolvable at lint time
     source ~/.bashrc
     echo "Reloaded ~/.bashrc"
 }
@@ -458,8 +478,22 @@ dtest() {
 # `h` shows a quick reference of all custom commands.
 # `h <command>` shows detailed help for a specific command.
 #
-# This reads from the comments in THIS file, so it's always in sync.
-# No separate docs to maintain.
+# HAND-MAINTAINED. This used to claim it read from the comments in this file
+# and was "always in sync"; it never did, and it wasn't. Adding or renaming a
+# command means editing the heredocs below in the same commit — the last alias
+# cull correctly dropped the removed ones and then missed gpf, gcob and gbd on
+# the way back in, which is what hand-maintained documentation does.
+#
+# Two categories have already left, and that is the direction of travel:
+#
+#   h deps   defers to `make check`, because deps.conf is the manifest and a
+#            second copy of the tool list here had silently drifted.
+#   screens  the interactive GitHub tools document themselves in their own
+#            fzf headers via __fzf_menu, not here.
+#
+# What is left is help for plain commands, which is the only genuinely
+# doc-shaped thing. Generating it from structured comments is possible but not
+# yet worth the machinery — delete unused commands first and see what remains.
 
 h() {
   if [[ $# -eq 0 ]]; then
@@ -472,59 +506,43 @@ h() {
   Navigation
     z <partial>        Smart cd (learns your habits)       [zoxide]
     mkcd <dir>         mkdir + cd in one step
-    up [N]             Go up N directories (default: 1)
+    back [N]           Go up N directories (default: 1)
+    downloads          cd to the Windows Downloads folder  [WSL]
 
   File Search
-    f                  Fuzzy find file → open in nvim      [fzf, fd]
-    f <pattern>        Search files by name                [fd]
-    findword <str>     Grep for whole-word matches         [rg]
+    fzf                Fuzzy everything                   [fzf, fd]
     extract <file>     Auto-extract any archive format
+    findword
 
   Spreadsheets  ("2" + the format you want)                [qsv]
     2csv <file>...     → .csv     reads xlsx/xlsm/xlsb/xls/ods/csv/tsv
     2txt <file>...     → .txt     tab-delimited
     2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2csv
 
-  Project Info
-    lines              Total lines of code (git-aware)
-    lines py lua       Lines by extension
-
   Git (aliases)
-    gs                 status -sb
-    ga / gaa           add / add -A
+    gs                 status
     gc "msg"           commit -m
-    gca                commit --amend --no-edit
-    gp / gpf           push / push --force-with-lease
-    gl / gll           log --oneline / log --graph --all
-    gd / gds           diff / diff --staged
-    gco / gcb          checkout / checkout -b
-    gb                 branch (sorted by recent use)
-    gst / gstp         stash / stash pop
+    gpusho / gpushfo   push origin / push --force-with-lease origin
+    gco / gcob         checkout / checkout -b
+    gb / gbd           branch / safe delete (-d) branch
+    gfetcho / gpullo   fetch origin / pull origin
     gprune             Fetch + delete branches with gone remotes
 
-  GitHub Hub                                               [gh, fzf, jq]
-    gh-ui              All GitHub tools in one menu (with preview)
+  GitHub TUI                                              [gh, fzf, jq]
+    gh-tui             All of GitHub in a TUI  (? in any screen for help)
 
-  GitHub Actions                                           [gh]
-    gha                Show workflow status for HEAD
-    gha-fail           Show only failed workflows
-    gha-ui             Workflow picker → logs/rerun/browse  [fzf]
-    gha-open           Open Actions tab in browser
-
-  GitHub Interactive (fzf-powered screens)                 [gh, fzf, jq]
-    gpr                PR management (filter → pick → act)
-    gpr create         Create PR from current branch
-    gpr mine           Show only your PRs
-    ghsecrets          Manage repo & environment secrets
-    ghbranch           Branches & rulesets (effective rules, checks)
-    ghenv              Environment management
+  GitHub Actions (one-shot, no TUI)                        [gh, jq]
+    gha                Workflow status for HEAD
 
   Utilities
     port <num>         What's running on this port?
-    ddiff <a> <b>      Side-by-side colored diff
     serve [port]       HTTP server in current dir (default: 8000)
     loop <cmd>         Repeat command every 2s (like watch)
-    c                  clear
+
+  .NET
+    dclean             Remove bin/ and obj/ recursively
+    dbuild             dotnet build
+    dtest              dotnet test
 
   Better Defaults (aliased)
     ls                 eza with icons + dirs first          [eza]
@@ -538,13 +556,8 @@ h() {
     Ctrl+T             Fuzzy file picker (inserts path)
     Alt+C              Fuzzy cd into subdirectory
 
-  Interactive Navigation (gh-ui, gpr, ghsecrets, ghbranch, ghenv, gha-ui)
-    Menus:  ↑↓ navigate  enter select  -/q back   (nvim-like)
-    Lists:  type to filter  enter select  esc back
-    Pagers: r refresh (re-fetches)  -/q back
-
   Dotfiles
-    dotfiles-edit      Open dotfiles dir in nvim
+    edit-dotfiles      Open dotfiles dir in nvim
     reload             Re-source ~/.bashrc
 
   Neovim (see :help dotfiles-commands)
@@ -562,7 +575,7 @@ HELP
   case "$1" in
     z|zoxide)
       cat <<'HELP'
-z — smart directory jumper (zoxide)
+z — zoxide (smarter cd)
 
   z <partial>     Jump to best-matching directory
   z proj          → ~/projects (if you cd there often)
@@ -571,27 +584,88 @@ z — smart directory jumper (zoxide)
 
   How it works:
     zoxide hooks into `cd` and records every directory you visit.
-    It ranks them by "frecency" (frequency × recency). When you
-    type `z foo`, it picks the highest-ranked dir containing "foo".
-    After a week of normal use, it knows your entire workflow.
+    It ranks them by "frecency" (frequency × recency). 
+    It's a drop-in `cd` rplacement - you don't change any habits,
+    you just type less over time.
 
   Install: brew install zoxide
 HELP
       ;;
-    f)
+    downloads)
       cat <<'HELP'
-f — quick file finder
+downloads — jump to the Windows Downloads folder (WSL only)
 
-  f               Fuzzy-pick a file, open in nvim
-  f <pattern>     List files matching pattern (fd search)
+  downloads
 
-  No args: launches fzf with a file preview. Select a file and it
-  opens in nvim. Great for "I know the file exists but forget where."
+  Asks Windows where its Downloads folder actually is, rather than assuming
+  /mnt/c/Users/<you>/Downloads. Two reasons that matters:
 
-  With args: runs `fd --type f <pattern>` which respects .gitignore
-  and searches recursively from the current directory.
+    OneDrive relocates the folder. After that, %USERPROFILE%\Downloads is
+    stale or gone, and only the registry knows where it went.
 
-  Depends on: fzf, fd
+    Usernames are not guessable. /mnt/c/Users here holds both `Riley` and
+    `Riley Oest`; a glob picks the wrong one.
+
+  The lookup costs ~30ms and happens once per shell, on first use — never at
+  startup. To override it (unusual mount root, a Downloads folder somewhere
+  else entirely), set this in ~/.bash_local:
+
+    WIN_DOWNLOADS=/mnt/d/Downloads
+
+  Off WSL it says so and does nothing.
+HELP
+      ;;
+    mkcd)
+      cat <<'HELP'
+mkcd — create and enter directory
+
+  mkcd my/new/dir
+
+  Equivalent to: mkdir -p my/new/dir && cd my/new/dir
+  Creates intermediate directories as needed.
+HELP
+      ;;
+    back)
+      cat <<'HELP'
+back — go up N directories
+
+  back        Go up 1 directory  (cd ..)
+  back 3      Go up 3 directories (cd ../../..)
+
+  Faster than typing ../../../ especially deep in a tree.
+HELP
+      ;;
+    fzf)
+      cat <<'HELP'
+      fzf — (fuzzy everything)
+
+  fzf <pattern>     List files matching pattern (fd search)
+
+  Transforms three built-in keybindings:
+    Ctrl+R  → fuzzy search command history (instead of reverse-i-search)
+    Ctrl+T  → fuzzy file picker, inserts path at cursor
+    Alt+C   → fuzzy cd into a subdirectory
+
+  How it works: fzf reads lines from stdin (or a command), presents a
+    fuzzy-searchable list, and outputs the selection. The keybindings above
+    are shell integrations that pipe history/files/dirs into fzf automatically.
+ 
+  FZF_DEFAULT_COMMAND controls what `fzf` lists when run with no input.
+  We point it at `fd` so it respects .gitignore and skips .git/.
+
+  Depends on: fzf (brew install fzf), optionally fd for faster file listing
+HELP
+      ;;
+    extract)
+      cat <<'HELP'
+extract — universal archive extractor
+
+  extract <file>
+
+  Detects format and extracts: .tar.gz, .tar.bz2, .zip, .rar,
+  .gz, .bz2, .7z, .tgz, .tbz2, .Z
+
+  No flags to remember — just `extract whatever.tar.gz`.
 HELP
       ;;
     findword)
@@ -611,18 +685,6 @@ findword — whole-word grep across project
     findword "useState" -I 'dist|coverage'
 
   Depends on: rg (ripgrep)
-HELP
-      ;;
-    extract)
-      cat <<'HELP'
-extract — universal archive extractor
-
-  extract <file>
-
-  Detects format and extracts: .tar.gz, .tar.bz2, .zip, .rar,
-  .gz, .bz2, .7z, .tgz, .tbz2, .Z
-
-  No flags to remember — just `extract whatever.tar.gz`.
 HELP
       ;;
     2csv|2txt|2xlsx|qsv)
@@ -669,17 +731,84 @@ HELP
   Depends on: qsv   (make install bash)
 HELP
       ;;
-    lines)
+    g|git|gs|gc|gp|gpf|gco|gcob|gb|gbd|gfo|gpo)
       cat <<'HELP'
-lines — count lines of code
+Git aliases — short forms for daily git commands
 
-  lines              Total lines across all tracked files
-  lines py           Lines in .py files
-  lines lua py ts    Lines per extension
+  gs          git status
+  gc "msg"    git commit -m "msg"
+  gpusho      git push origin
+  gpushfo     git push --force-with-lease origin
+  gco <br>    git checkout <branch>
+  gcob <br>   git checkout -b <branch>      (create + switch)
+  gb          git branch
+  gbd         git branch -d
+  gfetcho     git fetch origin
+  gpullo      git pull origin
 
-  Inside a git repo, uses `git ls-files` so it only counts
-  tracked files (skips build artifacts, node_modules, etc).
-  Outside git, scans up to 500 files from current directory.
+HELP
+      ;;
+    gprune)
+      cat <<'HELP'
+gprune — clean up stale local branches
+
+  gprune
+
+  Fetches from origin and prunes remote tracking refs, then finds
+  local branches whose upstream remote has been deleted (e.g., after
+  a PR merge on GitHub). Shows the list and asks for confirmation
+  before deleting.
+
+  Safe: only deletes branches whose remote is already gone.
+  Uses git branch -D (force) since the remote was merged/deleted.
+
+  Typical workflow:
+    1. Merge PR on GitHub (deletes remote branch)
+    2. Run `gprune` to clean up your local copy
+HELP
+      ;;
+    gh-tui|gha)
+      cat <<'HELP'
+GitHub — one TUI, plus one one-shot
+
+  gh-tui      Everything GitHub, in one interactive hub
+              Pull Requests · CI/Actions · Secrets · Environments · Branches
+
+  gha         Workflow status for HEAD — a bordered table of every
+              check with its status and how long it took, plus a
+              pass/fail/running summary and when the run finished
+              Each check name links to its job (ctrl-click in wezterm)
+
+  gha exists because checking CI is the thing done most often, and a
+  TUI trip is the wrong price for it. Everything else about Actions —
+  logs, reruns, the browser tab — is behind gh-tui's CI / Actions
+  screen. gha-fail and gha-open used to live out here; they were
+  `gha | grep ❌` and a URL, and neither was ever run.
+
+  Piped or redirected, gha drops the borders and colour and emits
+  plain status/name/url columns, so `gha | grep ❌` is still the
+  answer gha-fail used to give.
+
+  Press ? in any gh-tui screen for that screen's help — what each action
+  does, what the preview pane shows, and the keys it accepts. That help
+  used to live here, which meant reading it required already knowing to
+  type `h gh-tui`, and kept it drifting out of step with the screens it
+  described. It now sits next to what it documents.
+
+  Navigation, everywhere:
+    Menus:  ↑↓ nav   enter select   -/q back   ? help
+    Lists:  type to filter   enter select   esc back
+    Pagers: r refresh   -/q back
+
+  The hub prefetches its preview panes once per session; press r to
+  refresh them.
+
+  Your prompt also shows CI status on the right:
+    [5/5 ✅ 1d]  5 of 5 passed, last run a day ago
+    [3/5 ❌ 2h]  3 of 5 passed, 2 hours ago
+    [5/5 ⏳ now] still running
+
+  Depends on: gh, fzf, jq
 HELP
       ;;
     port)
@@ -715,325 +844,22 @@ loop — repeat a command (like watch)
   Ctrl+C to stop.
 HELP
       ;;
-    ddiff)
-      cat <<'HELP'
-ddiff — side-by-side diff
-
-  ddiff file1.txt file2.txt
-
-  Colored side-by-side diff that fills terminal width.
-  Output goes through less for scrolling.
-HELP
-      ;;
-    mkcd)
-      cat <<'HELP'
-mkcd — create and enter directory
-
-  mkcd my/new/dir
-
-  Equivalent to: mkdir -p my/new/dir && cd my/new/dir
-  Creates intermediate directories as needed.
-HELP
-      ;;
-    up)
-      cat <<'HELP'
-up — go up N directories
-
-  up        Go up 1 directory  (cd ..)
-  up 3      Go up 3 directories (cd ../../..)
-
-  Faster than typing ../../../ especially deep in a tree.
-HELP
-      ;;
-    gprune)
-      cat <<'HELP'
-gprune — clean up stale local branches
-
-  gprune
-
-  Fetches from origin and prunes remote tracking refs, then finds
-  local branches whose upstream remote has been deleted (e.g., after
-  a PR merge on GitHub). Shows the list and asks for confirmation
-  before deleting.
-
-  Safe: only deletes branches whose remote is already gone.
-  Uses git branch -D (force) since the remote was merged/deleted.
-
-  Typical workflow:
-    1. Merge PR on GitHub (deletes remote branch)
-    2. Run `gprune` to clean up your local copy
-HELP
-      ;;
-    git|gs|ga|gc|gp|gd|gl|gco|gcb|gb|gst|gstp|gaa|gca|gpf|gll|gds)
-      cat <<'HELP'
-Git aliases — short forms for daily git commands
-
-  gs          git status -sb            (short status + branch)
-  ga <file>   git add <file>
-  gaa         git add -A                (stage everything)
-  gc "msg"    git commit -m "msg"
-  gca         git commit --amend --no-edit  (amend last commit)
-  gp          git push
-  gpf         git push --force-with-lease   (safe force push)
-  gl          git log --oneline -20
-  gll         git log --oneline --graph --all -30  (visual history)
-  gd          git diff                  (unstaged changes)
-  gds         git diff --staged         (staged changes)
-  gco <br>    git checkout <branch>
-  gcb <br>    git checkout -b <branch>  (create + switch)
-  gb          git branch --sort=-committerdate  (recent first)
-  gst         git stash
-  gstp        git stash pop
-
-  Note: --force-with-lease (gpf) is safer than --force because
-  it refuses to push if the remote has commits you haven't pulled.
-  Use it instead of --force when rewriting history.
-HELP
-      ;;
-    gh-ui)
-      cat <<'HELP'
-gh-ui — unified GitHub command hub
-
-  gh-ui             Opens interactive menu with live preview pane
-
-  Top-level menu provides access to:
-    Pull Requests     List, filter, create, manage PRs (gpr)
-    CI / Actions      Workflow status, logs, rerun (gha-ui)
-    Secrets           Repo & environment secrets (ghsecrets)
-    Environments      Create, configure, delete (ghenv)
-    Branches          Rulesets, required checks, defaults (ghbranch)
-
-  The preview pane shows live data as you navigate:
-    Hover "Pull Requests" → see open PR titles + status
-    Hover "CI / Actions"  → see workflow pass/fail for HEAD
-    Hover "Branches"      → see branch list with protection status
-
-  All individual commands still work as standalone shortcuts.
-
-  Depends on: gh, fzf, jq
-HELP
-      ;;
-    gha|gha-fail|gha-ui|gha-open)
-      cat <<'HELP'
-GitHub Actions — CI/CD observability + log viewer
-
-  gha             Show workflow status for current HEAD commit
-                  Displays: name, pass/fail/running, link
-
-  gha-fail        Same as gha but filtered to failures only
-                  Quick way to see what broke
-
-  gha-open        Opens the Actions tab in your browser
-                  Fallback when you need the full GitHub UI
-
-  gha-ui          Interactive workflow picker with action menu
-                  Choose scope: current HEAD or recent runs.
-                  Pick a workflow, then choose:
-
-    📋 Smart log view
-       Shows all steps with status, duration, and dot-fill alignment.
-       Passing steps are COLLAPSED (header only).
-       Failed steps are AUTO-EXPANDED with their full log output
-       shown inline beneath the step header, bordered with │.
-       Summary line shows pass/fail/skip counts.
-       Output goes through less for scrolling.
-       After scrolling: r to refresh (re-fetches), -/q to go back.
-
-    🔍 Browse steps interactively
-       fzf list of all steps with ✅/❌/⏭ status.
-       Preview pane shows that step's log output as you arrow
-       through — no need to select first. ENTER opens the full
-       log in less. esc returns to the step list.
-       After exiting: r to refresh (re-fetches), -/q to go back.
-
-    🌐 Open in browser
-       Falls back to the GitHub Actions UI
-
-    🔁 Rerun this workflow
-       Triggers a rerun of the selected workflow
-
-  Navigation (consistent across all interactive commands):
-    Menus:  ↑↓ navigate  enter select  -/q back  (like nvim)
-    Lists:  type to search  enter select  esc back
-    Pagers: r refresh  -/q back
-
-  Your prompt also shows CI status on the right side:
-    [5/5 ✅ 1d]  = 5 of 5 passed, last run 1 day ago
-    [3/5 ❌ 2h]  = 3 of 5 passed (failures), 2 hours ago
-    [5/5 ⏳ now]  = workflows still running
-
-  Depends on: gh, jq, fzf
-HELP
-      ;;
-    gpr)
-      cat <<'HELP'
-gpr — interactive PR management
-
-  gpr              Filter picker → list PRs → pick one → action menu
-                   Filters: all open, needs my review, my PRs,
-                   recently closed, recently merged
-  gpr create       Create a new PR from current branch
-  gpr mine         Show only PRs you authored (shortcut)
-
-  The PR list shows: number, review status, title, author,
-  branch, changes (+/-), and date. The preview pane (right side)
-  shows full PR details as you navigate.
-
-  After selecting a PR, you get an action menu:
-
-    👁  View details        Full PR info in terminal
-    📥 Checkout locally     Switch to the PR's branch
-    📝 View diff            Colored diff in pager
-    📊 View file changes    Browse individual changed files
-    💬 Add comment          Inline or open your editor
-    ✅ Approve              With optional message
-    🔄 Request changes      Opens editor for feedback
-    🏷  Manage labels        Add/remove from available labels
-    👤 Request reviewers    Pick from collaborators
-    ✏️  Edit title/body      Rename or rewrite description
-    🔀 Merge                Pick strategy (squash/merge/rebase)
-    ❌ Close PR             Close without merging
-    🌐 Open in browser      Fallback to GitHub UI
-    🔍 View CI checks       See pass/fail status
-
-  Most actions loop back to the menu so you can do multiple
-  things without re-running the command.
-
-  Depends on: gh, fzf, jq
-HELP
-      ;;
-    ghsecrets)
-      cat <<'HELP'
-ghsecrets — manage repository & environment secrets
-
-  ghsecrets        Opens interactive secrets screen
-
-  Menu options:
-    🔑 List repo secrets            Names + last updated (values hidden)
-    ➕ Set repo secret              Prompts for name, then secure value input
-    🗑  Delete repo secret           Pick from list, confirm delete
-    🌍 List environment secrets     Pick env first, then see its secrets
-    ➕ Set environment secret       Pick env, then name + value
-    🗑  Delete environment secret    Pick env, pick secret, confirm
-
-  Important: GitHub NEVER reveals secret values — not even via API.
-  You can set, list (names only), and delete. If you need to see
-  a value, you must re-set it.
-
-  Secret names are auto-uppercased (GitHub convention).
-
-  Navigation: -/q back  │  r refresh on list views
-  Depends on: gh, fzf
-HELP
-      ;;
-    ghbranch)
-      cat <<'HELP'
-ghbranch — branches & rulesets
-
-  ghbranch         Opens interactive branch screen
-
-  Menu options:
-    📋 List branches                Shows all with 🛡 for ruled branches
-    🛡  View effective rules        What actually governs a branch, across
-                                    every ruleset targeting it — plus the
-                                    bypass list, which decides whether any
-                                    of it is a wall or just guidance
-    📜 Manage rulesets              Pick a ruleset, then:
-                                      • Enforcement (active/evaluate/disabled)
-                                      • Require branches up to date (strict)
-                                      • Required checks — add/remove, picked
-                                        from names CI actually reported
-                                      • Bypass mode (pull_request/always)
-    🗑  Delete remote branch         With safety check (won't delete default)
-    ⭐ Set default branch            Change repo's default branch
-    ⚠️  Legacy classic protection    Read + delete only, for migrating off it
-
-  Rulesets, not classic branch protection. The classic API 404s on a repo
-  protected by a ruleset, which is how the old version managed to call main
-  protected on one screen and unprotected on the next.
-
-  Nothing here creates a classic rule — a branch with both is a branch where
-  "why was this rejected" has two possible answers.
-
-  Writes need admin. Rulesets update with PUT, not PATCH (PATCH 404s and
-  looks like a permissions error).
-
-  Navigation: -/q back  │  r refresh on list views
-  Depends on: gh, fzf, jq
-HELP
-      ;;
-    ghenv)
-      cat <<'HELP'
-ghenv — environment management
-
-  ghenv            Opens interactive environment screen
-
-  Menu options:
-    📋 List environments            Names + creation dates
-    🔍 View environment details     Protection rules + secrets
-    ➕ Create environment           Just name it
-    ⏱  Set wait timer               Delay before deployment (minutes)
-    👤 Set required reviewers       Pick from collaborators or type username
-    🗑  Delete environment           Removes env AND all its secrets
-
-  Environments are used for deployment targets (staging, production).
-  Each can have its own secrets, wait timers, and required reviewers.
-
-  Navigation: -/q back  │  r refresh on list views
-  Depends on: gh, fzf, jq
-HELP
-      ;;
     deps|dependencies)
-        echo -e "\033[1mChecking status of required tools...\033[0m"
-      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      
-      local tools=(zoxide fzf bat eza rg fd nvim dotnet gh jq)
-      local missing=()
-      
-      for cmd in "${tools[@]}"; do
-        local display_name=$cmd
-        local found=false
-        
-        # Special check logic for variations
-        if [[ "$cmd" == "bat" ]] && command -v batcat &>/dev/null; then
-          found=true
-        elif [[ "$cmd" == "fd" ]] && command -v fdfind &>/dev/null; then
-          found=true
-        elif [[ "$cmd" == "rg" ]] && command -v rg &>/dev/null; then
-          found=true
-        elif command -v "$cmd" &>/dev/null; then
-          found=true
-        fi
-
-        if [ "$found" = true ]; then
-          printf "  \033[32m%-10s ✅ Installed\033[0m\n" "$display_name"
-        else
-          printf "  \033[31m%-10s ❌ Missing\033[0m\n" "$display_name"
-          # Map 'rg' back to 'ripgrep' for the install hint
-          [[ "$cmd" == "rg" ]] && missing+=("ripgrep") || missing+=("$cmd")
-        fi
-      done
-
-      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      
-      if [ ${#missing[@]} -eq 0 ]; then
-        echo -e "\033[32mAll dependencies met! Your productivity is at 100%.\033[0m"
-      else
-        echo -e "\033[1;33mTo install missing tools:\033[0m"
-        echo "  brew install ${missing[*]}"
+      # No tool list here on purpose. deps.conf is the manifest and
+      # lib/manifest.sh is the only parser; a copy in this file is a second
+      # manifest that drifts silently. The previous one had — it listed dotnet
+      # (declared nowhere) and omitted qsv (declared), and it printed a
+      # `brew install` hint on Linux.
+      #
+      # `make check` already answers exactly this question. Defer to it.
+      if [[ -z "$DOTFILES_ROOT" ]]; then
+        echo "Can't locate the dotfiles repo — ~/.bashrc isn't a symlink into it." >&2
+        echo "Run 'make check' from your clone." >&2
+        return 1
       fi
-
-      cat <<'HELP'
-
-Tool Descriptions:
-  zoxide    Smart cd replacement (learns your habits)
-  fzf       Fuzzy finder (Ctrl+R history, Ctrl+T files)
-  bat       cat with syntax highlighting
-  eza       Modern ls with icons and git integration
-  rg/fd     High-speed search replacements for grep/find
-  gh        GitHub CLI (must run: gh auth login)
-  jq        JSON processor (used by GitHub interactive commands)
-HELP
+      make --no-print-directory -C "$DOTFILES_ROOT" check
+      echo
+      echo "Provenance and drift (declared vs. actual): make -C \"$DOTFILES_ROOT\" status"
       ;;
     *)
       echo "No help found for '$1'. Run 'h' to see all commands."

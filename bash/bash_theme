@@ -79,7 +79,7 @@ __git_right() {
 }
 
 # ─── Shared time helpers ─────────────────────────────────────────────
-# Used by PS1, gha-ui, gh-ui, gpr for consistent timestamps.
+# Used by PS1 and by the gh-tui screens for consistent timestamps.
 
 # __parse_iso_epoch <iso_timestamp>
 # Converts ISO 8601 timestamp to epoch. Handles GNU + BSD date.
@@ -192,7 +192,7 @@ __gh_actions() {
       result=$(gh api "repos/${repo}/commits/${sha}/check-runs" 2>/dev/null)
 
       if [[ -n "$result" ]]; then
-        local total succeeded failed running skipped last_run_iso last_run_epoch
+        local total succeeded failed running skipped last_run_iso
 
         total=$(echo "$result" | jq '.check_runs | length')
 

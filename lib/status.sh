@@ -28,12 +28,19 @@ DOTFILES_ROOT="$(cd "$HERE_STATUS/.." && pwd)"
 # shellcheck source=./manifest.sh
 source "$HERE_STATUS/manifest.sh"
 
-# Counted separately so the summary can print only the remediation that applies.
-# One combined counter made `make status bash nvim` advise "run 'make link'"
-# when every link was fine and the sole drift was an uninstalled tool.
+# STATUS_DRIFT is the total, and is what callers outside this file read
+# (ci.yml asserts on it after calling status_links alone). The two halves are
+# tracked separately so the summary can name the half that actually drifted —
+# it used to print both remediation lines for any drift at all, so a machine
+# with one mismatched tool provider was told to re-run `make link` about links
+# that were every one of them fine. A status command that misreports which
+# thing is wrong is worse than no status command.
+STATUS_DRIFT=0
 STATUS_DRIFT_LINKS=0
 STATUS_DRIFT_TOOLS=0
-STATUS_DRIFT=0
+
+_drift_link() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
+_drift_tool() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
@@ -100,14 +107,14 @@ status_links() {
         printf "  ✓ %-38s\n" "${dest/#$HOME/\~}"
       else
         printf "  ✗ %-38s points at %s\n" "${dest/#$HOME/\~}" "${actual/#$HOME/\~}"
-        STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1))
+        _drift_link
       fi
     elif [[ -e "$dest" ]]; then
       printf "  ✗ %-38s is a real file, not a link into this repo\n" "${dest/#$HOME/\~}"
-      STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1))
+      _drift_link
     else
       printf "  · %-38s not linked (run: make link)\n" "${dest/#$HOME/\~}"
-      STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1))
+      _drift_link
     fi
   done < <(manifest_lines link "$@")
 }
@@ -126,19 +133,20 @@ status_tools() {
 
     if [[ "$actual" == "absent" ]]; then
       printf "  · %-14s not installed (declared %s)\n" "$cmd" "$provider"
-      STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1))
+      _drift_tool
     elif provider_satisfies "$provider" "$actual"; then
       printf "  ✓ %-14s %s\n" "$cmd" "$actual"
     else
       printf "  ✗ %-14s declared %-12s actual %-8s %s\n" \
         "$cmd" "$provider" "$actual" "$(command -v "$cmd" | sed "s|^$HOME|~|")"
-      STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1))
+      _drift_tool
     fi
   done < <(manifest_lines tool "$@")
 }
 
 # ── Everything ───────────────────────────────────────────────────────────────
 status_all() {
+  STATUS_DRIFT=0
   STATUS_DRIFT_LINKS=0
   STATUS_DRIFT_TOOLS=0
   echo ""
@@ -156,10 +164,10 @@ status_all() {
     echo "$STATUS_DRIFT item(s) out of sync"
     echo ""
     if [[ $STATUS_DRIFT_LINKS -gt 0 ]]; then
-      echo "  ✗ links  — run 'make link' to repoint them"
+      echo "  ✗ links ($STATUS_DRIFT_LINKS) — run 'make link' to repoint them"
     fi
     if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
-      echo "  ✗ tools  — the manifest declares a provider that didn't install it."
+      echo "  ✗ tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."
       echo "             Either fix deps.conf to match reality, or uninstall and"
       echo "             re-run 'make install' to get the declared one."
     fi

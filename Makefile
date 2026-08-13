@@ -48,7 +48,7 @@ $(eval $(ARGS):;@:)
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status sync test shell update sections $(SECTIONS)
+.PHONY: help install link check status sync test shell update sections mise-lock $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -84,6 +84,14 @@ status: ## Sync status: is the machine what deps.conf says? (declared vs. actual
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
+
+# deps.conf declares the tool set; this derives the version pins from it and
+# turns them into a checksummed, per-platform lockfile. Same arrangement as
+# nvim/lsp-servers: one authored file, one generated file, CI asserting both
+# still agree. Run after adding or removing a mise-provided tool, or to bump.
+mise-lock: ## Regenerate mise.toml from deps.conf and refresh mise.lock
+	@bash "$(DOTFILES_DIR)/tools/gen-mise.sh"
+	@cd "$(DOTFILES_DIR)" && mise lock
 
 test: ## Run the Lua unit tests (no plugins, no network)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not installed — skipping"; exit 0; }
