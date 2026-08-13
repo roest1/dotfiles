@@ -522,10 +522,10 @@ h() {
   Git (aliases)
     gs                 status
     gc "msg"           commit -m
-    gp / gpf           push / push --force-with-lease
+    gpusho / gpushfo   push origin / push --force-with-lease origin
     gco / gcob         checkout / checkout -b
     gb / gbd           branch / safe delete (-d) branch
-    gfo / gpo          fetch / pull (origin)
+    gfetcho / gpullo   fetch origin / pull origin
     gprune             Fetch + delete branches with gone remotes
 
   GitHub TUI                                              [gh, fzf, jq]
@@ -731,20 +731,20 @@ HELP
   Depends on: qsv   (make install bash)
 HELP
       ;;
-    git|gs|gc|gp|gpf|gco|gcob|gb|gbd|gfo|gpo)
+    g|git|gs|gc|gp|gpf|gco|gcob|gb|gbd|gfo|gpo)
       cat <<'HELP'
 Git aliases — short forms for daily git commands
 
   gs          git status
   gc "msg"    git commit -m "msg"
-  gp          git push
-  gpf         git push --force-with-lease   (safe force push)
+  gpusho      git push origin
+  gpushfo     git push --force-with-lease origin
   gco <br>    git checkout <branch>
   gcob <br>   git checkout -b <branch>      (create + switch)
   gb          git branch
   gbd         git branch -d
-  gfo         git fetch origin
-  gpo         git pull origin
+  gfetcho     git fetch origin
+  gpullo      git pull origin
 
 HELP
       ;;

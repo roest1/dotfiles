@@ -9,8 +9,8 @@
 # Muscle-memory shortcuts. `gs` instead of `git status`, etc.
 alias gs='git status'
 alias gc='git commit -m'
-alias gp='git push'
-alias gpf='git push --force-with-lease'
+alias gpusho='git push origin'
+alias gpushfo='git push --force-with-lease origin'
 alias gco='git checkout'
 alias gcob='git checkout -b'
 
@@ -41,8 +41,8 @@ gb() {
 }
 alias gbd='git branch -d'
 
-alias gfo='git fetch origin'
-alias gpo='git pull origin'
+alias gfetcho='git fetch origin'
+alias gpullo='git pull origin'
 
 # gprune: fetch + prune remotes + delete local branches whose remote is gone
 gprune() {
