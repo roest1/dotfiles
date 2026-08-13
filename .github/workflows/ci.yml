@@ -270,22 +270,42 @@ jobs:
             echo "$hbody" | grep -qw -- "$c" || { echo "undocumented in h: $c"; bad=1; }
           done
 
-          # ...and the reverse. Anything h presents as a runnable command must
-          # actually resolve once the configs are sourced.
+          # ...and the reverse: h must not document something that no longer
+          # exists anywhere.
           #
+          # This is a STATIC check against the sources, not a runtime one.
+          # Sourcing the configs and asking `type -t` looks more direct and is
+          # wrong: half these commands are defined behind `command -v` guards
+          # so the shell degrades gracefully on a machine without eza or bat,
+          # which means a runner with neither legitimately has no `lt` and no
+          # `catn`. Testing runtime presence would make this check assert that
+          # the runner has every optional tool installed — a different, false
+          # claim. What we actually want to know is whether the definition is
+          # still in the repo.
+          #
+          # A documented command is legitimate if the configs define it (as a
+          # function or an alias, at any indentation — the tool-dependent
+          # aliases are nested inside their guards) or if deps.conf declares it
+          # as a tool, which covers the external commands h explains, like fzf.
+          defines=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
+                         bash/bash_productivity bash/bash_git bash/bash_github \
+                         bash/bash_github_tui | tr -d '()'
+                       grep -hE '^[[:space:]]*alias ' \
+                         bash/bash_productivity bash/bash_git bash/bash_github_tui \
+                         | sed 's/.*alias //;s/=.*//'
+                       manifest_lines tool | cut -f3
+                     } | sort -u )
+
           # Scoped to the QUICK REFERENCE (the no-args heredoc), not the whole
           # function: the detailed pages are prose, and an indented sentence
           # starting with a lowercase word is indistinguishable from a command
-          # column entry. Two spaces after the name is what separates the
-          # command column from a sentence.
+          # column entry. Two spaces after the name separates the command
+          # column from a sentence.
           quickref=$(sed -n '/^h() {/,/^    return$/p' bash/bash_productivity)
           listed=$(echo "$quickref" | sed -n 's/^    \([a-z][a-z0-9-]*\)  \+.*/\1/p' | sort -u)
           for c in $listed; do
-            bash -c "source bash/bash_productivity; source bash/bash_git;
-                     source bash/bash_github; source bash/bash_github_tui
-                     shopt -s expand_aliases
-                     type -t '$c' >/dev/null 2>&1" \
-              || { echo "h documents '$c', which is not defined"; bad=1; }
+            echo "$defines" | grep -qx -- "$c" \
+              || { echo "h documents '$c', which nothing defines or declares"; bad=1; }
           done
           exit $bad
 
