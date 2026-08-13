@@ -41,6 +41,9 @@ gb() {
 }
 alias gbd='git branch -d'
 
+alias gfo='git fetch origin'
+alias gpo='git pull origin'
+
 # gprune: fetch + prune remotes + delete local branches whose remote is gone
 gprune() {
   echo "⏳ Fetching and pruning remote tracking refs..."

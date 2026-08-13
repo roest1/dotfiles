@@ -7,8 +7,14 @@
 #
 # Commands:
 #   gha           Workflow status for HEAD
-#   gha-fail      Only the failed runs
-#   gha-open      Open the Actions tab in a browser
+#
+# `gha` is the no-TUI one-shot: the answer on stdout without entering a
+# screen. Everything else about Actions — logs, reruns, the browser tab —
+# lives behind gh-tui's CI / Actions screen.
+#
+# It draws a table on a TTY and plain columns when piped. Rendering it is
+# most of the code below, and almost all of that is width arithmetic —
+# see the comments at each padding site for why printf cannot do it.
 #
 # THE RULE FOR THIS FILE: nothing here invokes fzf. Anything interactive
 # belongs in bash_github_tui, which is sourced after this one and may use
@@ -60,13 +66,33 @@ __gh_default_branch() {
 }
 
 # ─── Quick status ─────────────────────────────────────────────────
+#
+# Uses __duration_str and __relative_time from bash_theme, which bashrc
+# sources first. The gh-tui screens already depend on them the same way.
 
-gha() { # gha: show most recent workflows ran
-  local repo sha
-  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  sha=$(git rev-parse HEAD)
+# Horizontal rule: _gha_rule <left> <mid> <right> <w>...
+_gha_rule() {
+  local l="$1" m="$2" r="$3"; shift 3
+  local out="$l" w pad first=1
+  for w in "$@"; do
+    printf -v pad '%*s' "$w" ''
+    (( first )) || out+="$m"
+    out+="${pad// /─}"
+    first=0
+  done
+  printf '%s%s\n' "$out" "$r"
+}
 
-  gh api "repos/$repo/commits/$sha/check-runs" \
+gha() { # gha: workflow status for HEAD, as a table
+  local repo sha rows
+  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+  if [[ -z "$repo" ]]; then
+    echo "❌ Not a GitHub repository" >&2
+    return 1
+  fi
+  sha=$(git rev-parse HEAD 2>/dev/null) || return 1
+
+  rows=$(gh api "repos/$repo/commits/$sha/check-runs" 2>/dev/null \
     | jq -r '
       .check_runs[]
       | [
@@ -77,20 +103,131 @@ gha() { # gha: show most recent workflows ran
                elif .conclusion == "skipped" then "⏭"
                else "❓" end)
            else "⏳" end),
+          (.started_at // "-"),
+          (.completed_at // "-"),
           .html_url
         ]
       | @tsv
-    ' | while IFS=$'\t' read -r name status url; do
-        printf "%-40s %s  %s\n" "$name" "$status" "$url"
-      done
-}
+    ')
+  # The "-" sentinels above are load-bearing. Tab is an IFS *whitespace*
+  # character, so `read` collapses a run of them: a genuinely empty
+  # completed_at would merge two delimiters, shift html_url into $completed,
+  # and leave $url empty. Emitting a placeholder keeps the fields aligned.
 
-gha-fail() { # gha-fail: Failed runs
-  gha | grep "❌"
-}
+  if [[ -z "$rows" ]]; then
+    echo "No checks reported for HEAD ($(git rev-parse --short HEAD))"
+    return
+  fi
 
-gha-open() { # gha-open: Open github actions in browser
-  local url
-  url=$(gh repo view --json url -q .url)
-  _open_url "$url/actions"
+  # Piped or redirected: plain TSV, no borders and no escapes. This is the
+  # half of the deleted gha-fail that was worth keeping — `gha | grep ❌`
+  # still works, and a table full of box-drawing characters would not.
+  if [[ ! -t 1 ]]; then
+    while IFS=$'\t' read -r name status started completed url; do
+      printf '%s\t%s\t%s\n' "$status" "$name" "$url"
+    done <<< "$rows"
+    return
+  fi
+
+  local cols name_w=5 max_w
+  cols=$(tput cols 2>/dev/null || echo 80)
+  # Table is name_w + 24: two borders around three cells, one space of
+  # padding either side of the name, plus the fixed 8 and 10 below.
+  max_w=$(( cols - 24 )); (( max_w < 12 )) && max_w=12
+
+  local name
+  while IFS=$'\t' read -r name _; do
+    (( ${#name} > name_w )) && name_w=${#name}
+  done <<< "$rows"
+  (( name_w > max_w )) && name_w=$max_w
+
+  local dim=$'\033[38;5;240m' bold=$'\033[1m' red=$'\033[31m' off=$'\033[0m'
+
+  # OSC 8 makes each check name a hyperlink to its job page — which is how
+  # the url column earned its way out of the table without taking the link
+  # with it. The sequences occupy no columns, so the padding below is still
+  # measured on the bare name.
+  #
+  # No capability probe exists for this, and none is needed: a terminal that
+  # parses OSC at all swallows a sequence it doesn't implement, so the name
+  # renders plain rather than as garbage. TERM=dumb is the case that isn't
+  # true of, and it is also the one where the table itself is already wrong.
+  local hyper=1
+  [[ "$TERM" == "dumb" || -z "$TERM" ]] && hyper=0
+
+  printf '%s' "$dim"; _gha_rule '┌' '┬' '┐' $(( name_w + 2 )) 8 10
+  printf '│%s %s%-*s%s %s│%s Status %s│%s Duration %s│%s\n' \
+    "$off" "$bold" "$name_w" "Check" "$off" "$dim" "$off" "$dim" "$off" "$dim" "$off"
+  printf '%s' "$dim"; _gha_rule '├' '┼' '┤' $(( name_w + 2 )) 8 10
+
+  local status started completed url dur latest="" ok=0 bad=0 running=0 skipped=0
+  while IFS=$'\t' read -r name status started completed url; do
+    case "$status" in
+      "✅") (( ok++ )) ;;
+      "❌") (( bad++ )) ;;
+      "⏳") (( running++ )) ;;
+      "⏭") (( skipped++ )) ;;
+    esac
+    [[ "$completed" != "-" && "$completed" > "$latest" ]] && latest="$completed"
+
+    # ASCII dash, not an em dash: printf pads %8s to a byte count, and a
+    # 3-byte "—" would come out two columns narrow.
+    dur="-"
+    [[ "$started" != "-" && "$completed" != "-" ]] \
+      && dur=$(__duration_str "$started" "$completed")
+
+    # Truncate rather than let a long name break the border alignment.
+    local shown="$name"
+    (( ${#shown} > name_w )) && shown="${shown:0:name_w-1}…"
+
+    # Pad by hand, from ${#} (characters), because printf's %-*s pads to a
+    # byte count — any non-ASCII in a check name would over-pad the cell.
+    local npad
+    printf -v npad '%*s' $(( name_w - ${#shown} )) ''
+
+    # Same reason, worse trap: ✅ ❌ ⏳ are East-Asian Wide (two columns) but
+    # one character and three bytes, so neither %s width is right. ⏭ is
+    # Neutral — one column — so it needs a space the others don't. This is
+    # the fact bash_theme's __count_emoji encodes for the prompt.
+    local sw=2
+    [[ "$status" == "⏭" ]] && sw=1
+    local lpad rpad
+    printf -v lpad '%*s' $(( (8 - sw) / 2 )) ''
+    printf -v rpad '%*s' $(( 8 - sw - (8 - sw) / 2 )) ''
+
+    local tint="" untint=""
+    [[ "$status" == "❌" ]] && { tint="$red"; untint="$off"; }
+
+    # The link wraps the name only, never the padding that follows it —
+    # otherwise hovering underlines a run of trailing blanks out to the border.
+    local link_on="" link_off=""
+    if (( hyper )) && [[ -n "$url" ]]; then
+      link_on=$'\033]8;;'"$url"$'\033\\'
+      link_off=$'\033]8;;\033\\'
+    fi
+
+    printf '%s│%s %s%s%s%s%s%s %s│%s%s%s%s%s│%s %8s %s│%s\n' \
+      "$dim" "$off" "$tint" "$link_on" "$shown" "$link_off" "$npad" "$untint" \
+      "$dim" "$off" "$lpad" "$status" "$rpad" \
+      "$dim" "$off" "$dur" "$dim" "$off"
+  done <<< "$rows"
+
+  printf '%s' "$dim"; _gha_rule '└' '┴' '┘' $(( name_w + 2 )) 8 10
+  printf '%s' "$off"
+
+  # Summary, in the prompt's vocabulary. Only the non-zero categories.
+  # Built by concatenation rather than "${parts[*]}" with a two-space IFS:
+  # [*] joins on the FIRST character of IFS, so that silently gives one.
+  local summary=""
+  (( ok > 0 ))      && summary+="✅ $ok passed   "
+  (( bad > 0 ))     && summary+="❌ $bad failed   "
+  (( running > 0 )) && summary+="⏳ $running running   "
+  (( skipped > 0 )) && summary+="⏭ $skipped skipped   "
+  summary="${summary%   }"
+
+  local age=""
+  [[ -n "$latest" ]] && age=$(__relative_time "$latest")
+
+  printf '  %s%s%s%s\n' "$summary" \
+    "${age:+   $dim·$off   }" "${age}" "${age:+ ago}"
 }

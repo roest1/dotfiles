@@ -11,7 +11,7 @@
 # and the ideas not yet brought in. Keep that file and this header in step.
 #
 # Commands:
-#   gh-tui        All GitHub features in a tui   (gh-ui is an alias)
+#   gh-tui        All GitHub features in a tui
 #
 # To dissolve into gh-tui — these are the screens, reachable directly for now:
 #   _gpr           Interactive PR management (list → pick → act)
@@ -22,7 +22,7 @@
 #   _ghenv         Environment management
 #   _gha_ui        Interactive workflow picker → action menu → logs
 #
-# The non-interactive gh commands (gha, gha-fail, gha-open) and the shared
+# The non-interactive gh command (gha) and the shared
 # helpers (__gh_check, __gh_repo, __gh_default_branch, _open_url) live in
 # bash_github, which is sourced first. Everything here may use them. This file
 # is the only one of the three that may invoke fzf, and CI enforces that — it
@@ -62,18 +62,19 @@ gh-tui — GitHub in a TUI
   gh-tui             Opens interactive menu with live preview pane
 
   Top-level menu provides access to:
-    Pull Requests     List, filter, create, manage PRs (gpr)
-    CI / Actions      Workflow status, logs, rerun (gha-ui)
-    Secrets           Repo & environment secrets (ghsecrets)
-    Environments      Create, configure, delete (ghenv)
-    Branches          Rulesets, required checks, defaults (ghbranch)
+    Pull Requests     List, filter, create, manage PRs
+    CI / Actions      Workflow status, logs, rerun, browser tab
+    Secrets           Repo & environment secrets
+    Environments      Create, configure, delete
+    Branches          Rulesets, required checks, defaults
 
   The preview pane shows live data as you navigate:
     Hover "Pull Requests" → see open PR titles + status
     Hover "CI / Actions"  → see workflow pass/fail for HEAD
     Hover "Branches"      → see branch list with protection status
 
-  All individual commands still work as standalone shortcuts.
+  gh-tui is the only entry point here. The one command outside it is
+  `gha`, which prints HEAD's check status and exits.
 HELP
 }
 
@@ -81,18 +82,17 @@ _gh_help_actions() {
   cat <<'HELP'
 GitHub Actions — CI/CD observability + log viewer
 
-  gha             Show workflow status for current HEAD commit
-                  Displays: name, pass/fail/running, link
+  gha             Workflow status for HEAD, as a table: check name,
+                  status, duration, and a summary line. Names are
+                  hyperlinks to the job — ctrl-click them in wezterm.
+                  The one-shot, outside the TUI — everything below is here
 
-  gha-fail        Same as gha but filtered to failures only
-                  Quick way to see what broke
+  This screen         Choose a scope:
+    📌 Current commit (HEAD)        The same checks gha prints, pickable
+    📋 Recent workflow runs         Last 15 runs, any branch
+    🌐 Open Actions tab in browser  The repo's Actions tab
 
-  gha-open        Opens the Actions tab in your browser
-                  Fallback when you need the full GitHub UI
-
-  gha-ui          Interactive workflow picker with action menu
-                  Choose scope: current HEAD or recent runs.
-                  Pick a workflow, then choose:
+                  Pick a workflow from either list, then choose:
 
     📋 Smart log view
        Shows all steps with status, duration, and dot-fill alignment.
@@ -254,8 +254,9 @@ _gha_ui() { # _gha_ui: interactive workflow picker → action menu → logs
   scope=$(printf '%s\n' \
     "📌 Current commit (HEAD)" \
     "📋 Recent workflow runs" \
+    "🌐 Open Actions tab in browser" \
     | FZF_MENU_HELP="$(_gh_help_file actions)" __fzf_menu "GitHub Actions" \
-        --height=5)
+        --height=6)
 
   [[ -z "$scope" ]] && return
 
@@ -265,6 +266,13 @@ _gha_ui() { # _gha_ui: interactive workflow picker → action menu → logs
       ;;
     *"Recent"*)
       _gha_ui_recent
+      ;;
+    *"Open Actions tab"*)
+      # The repo-level tab, not a single run's page — that one is in the
+      # action menu, and only exists once you've picked a run.
+      local url
+      url=$(gh repo view --json url -q .url 2>/dev/null)
+      [[ -n "$url" ]] && _open_url "$url/actions"
       ;;
   esac
 }
@@ -692,12 +700,6 @@ _gh_pick_branch() {
 # ─────────────────────────────────────────────────────────────────
 #  gh-tui — Unified GitHub Hub
 # ─────────────────────────────────────────────────────────────────
-
-# Renamed from gh-ui, which is what the function was actually called while
-# this file's own header, and `h`, both documented it as gh-tui — so the
-# published name did not exist and the existing one was undocumented. gh-ui
-# stays as an alias because it is in muscle memory and in shell history.
-alias gh-ui='gh-tui'
 
 # Fills $2 with the preview panes the hub menu shows. Eight gh calls, run in
 # parallel inside one subshell so job-control notices don't leak to the

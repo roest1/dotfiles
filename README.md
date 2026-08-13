@@ -230,9 +230,7 @@ aren't (fork instead — the layout is built for it). See
 | Command | What |
 | ------- | ---- |
 | `gh-tui`   | Everything GitHub, in one hub (`gh-ui` is an alias) |
-| `gha`      | Workflow status for HEAD — plain, pipeable output |
-| `gha-fail` | The same, filtered to failures |
-| `gha-open` | Open the Actions tab in a browser |
+| `gha`      | Workflow status for HEAD as a table, names linked to their jobs |
 
 Inside `gh-tui`: Pull Requests, CI/Actions, Secrets, Environments and
 Branches. Those screens are reached through the hub rather than as separate
@@ -307,7 +305,7 @@ still stands alone.
 | `bash/bash_theme`             | Prompt, colors, LS_COLORS, man page colors                            |
 | `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
 | `bash/bash_git`               | Git aliases and `gprune`                                             |
-| `bash/bash_github`            | Plain `gh` commands (`gha`, `gha-fail`, `gha-open`) + shared helpers |
+| `bash/bash_github`            | Plain `gh` (`gha`) + the helpers shared with the TUI                  |
 | `bash/bash_github_tui`        | `gh-tui` and its screens — the only file that may invoke fzf         |
 | `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
 | `bash/bash_password_commands` | Sensitive commands (untracked)                                        |

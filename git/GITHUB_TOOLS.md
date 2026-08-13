@@ -7,9 +7,7 @@ Interactive GitHub management from the terminal — no browser needed for most w
 | Command     | What it does                                      |
 | ----------- | ------------------------------------------------- |
 | `gh-tui`    | **The hub** → every screen below, with preview    |
-| `gha`       | Quick workflow status (non-interactive, pipeable) |
-| `gha-fail`  | The same, filtered to failures                    |
-| `gha-open`  | Open the Actions tab in a browser                 |
+| `gha`       | HEAD's checks as a table, names linked to their jobs |
 
 The screens — PRs, CI/Actions, Secrets, Branches, Environments — are reached
 through the hub rather than as separate commands. Press `?` in any of them for
