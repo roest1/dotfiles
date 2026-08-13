@@ -236,8 +236,30 @@ mise_install() {
 # version too old to run the config — Ubuntu 24.04's neovim 0.9.5 against a
 # config that needs 0.10+. The caller decides it's unusable; this just installs
 # over it. See the version floor in nvim/deps.sh for the only current use.
+# The pinned "name@version" for a tool, from the repo's generated mise.toml.
+# Empty if the tool isn't pinned there.
+#
+# Two names are tried because mise's registry name matches neither field of a
+# deps.conf tool line consistently: `nvim neovim` is `neovim` to mise (the
+# package field), while `tree-sitter tree-sitter-cli` is `tree-sitter` (the
+# command) — `tree-sitter-cli` is cargo's and dnf's name and mise has no such
+# entry, so the old `mise use -g "${pkg:-$cmd}@latest"` could never have
+# installed it. tools/gen-mise.sh resolves the name against the registry and
+# writes the winner here, so this just has to find it.
+_mise_pin() {
+  local cmd="$1" pkg="${2:-}" root candidate version
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  [[ -f "$root/mise.toml" ]] || return 0
+  for candidate in "${pkg:-$cmd}" "$cmd"; do
+    [[ -z "$candidate" ]] && continue
+    version="$(sed -n "s/^${candidate} = \"\(.*\)\"\$/\1/p" "$root/mise.toml" | head -1)"
+    [[ -n "$version" ]] && { echo "${candidate}@${version}"; return 0; }
+  done
+  return 0
+}
+
 mise_install_forced() {
-  local tool="${2:-$1}"
+  local cmd="$1" pkg="${2:-}" spec
 
   if ! command -v mise >/dev/null 2>&1; then
     echo "  ➡️  Installing mise..."
@@ -245,11 +267,24 @@ mise_install_forced() {
     export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
   fi
 
-  command -v mise >/dev/null 2>&1 || { echo "  ⚠️  mise unavailable — skipping $tool"; return 1; }
+  command -v mise >/dev/null 2>&1 || { echo "  ⚠️  mise unavailable — skipping ${pkg:-$cmd}"; return 1; }
 
-  echo "  ➡️  Installing $tool via mise..."
-  mise use -g "$tool@latest" 2>/dev/null || {
-    echo "  ⚠️  mise use -g $tool failed"
+  # Pinned wins. `@latest` is the fallback, not the default, and it announces
+  # itself: an unpinned install is how two machines built a month apart ended
+  # up with different software and nothing in the repo recording which.
+  spec="$(_mise_pin "$cmd" "$pkg")"
+  if [[ -z "$spec" ]]; then
+    spec="${pkg:-$cmd}@latest"
+    echo "  ⚠️  ${pkg:-$cmd} is not pinned in mise.toml — installing unpinned"
+    echo "      (run 'make mise-lock' to pin it)"
+  fi
+
+  echo "  ➡️  Installing $spec via mise..."
+  # -g so the tool is on PATH everywhere, not only inside this repo. The repo's
+  # mise.toml is the source of the version; the global config is where it's
+  # applied.
+  mise use -g "$spec" 2>/dev/null || {
+    echo "  ⚠️  mise use -g $spec failed"
     return 1
   }
   export PATH="$HOME/.local/share/mise/shims:$PATH"
