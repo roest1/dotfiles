@@ -143,6 +143,63 @@ back() {
   cd "$d" || return
 }
 
+# downloads: cd to the Windows Downloads folder, from inside WSL.
+#
+# This is in the repo rather than in ~/.bash_local because nothing about it is
+# machine-specific — the path is *derived*, never written down. Hardcoding
+# /mnt/c/Users/<you>/Downloads would be a per-machine fact and would belong in
+# bash_local; asking Windows where its own Downloads folder is, is not.
+#
+# Three things it does not assume:
+#
+#   The username. /mnt/c/Users on this machine contains both `Riley` and
+#   `Riley Oest`, so globbing for a likely-looking directory picks wrong. The
+#   registry is the only unambiguous answer.
+#
+#   That Downloads is under %USERPROFILE%. OneDrive relocates the known folder,
+#   and after that `$USERPROFILE\Downloads` is either stale or absent. The
+#   Shell Folders key tracks the move; it is queried rather than guessed. (Use
+#   "Shell Folders", not "User Shell Folders" — the latter returns unexpanded
+#   %USERPROFILE% strings.)
+#
+#   The C: mount point. `wslpath -u 'C:\Windows\System32'` resolves it, so a
+#   non-default `root=` in /etc/wsl.conf still works. Absolute paths to the
+#   .exe files are needed because appendWindowsPath=false is a common setting
+#   and is the case here — cmd.exe is not on PATH.
+#
+# The lookup is ~30ms and runs on first use only, never at shell startup.
+# WIN_DOWNLOADS doubles as the cache and as the override: set it in
+# ~/.bash_local and detection is skipped entirely.
+downloads() {
+  if [[ -z "$WIN_DOWNLOADS" ]]; then
+    grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null || {
+      echo "downloads: only meaningful under WSL" >&2
+      return 1
+    }
+
+    local sys win
+    sys=$(wslpath -u 'C:\Windows\System32' 2>/dev/null)
+
+    # {374DE290-...} is the Downloads known-folder GUID.
+    win=$("$sys/reg.exe" query \
+            'HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders' \
+            /v '{374DE290-123F-4565-9164-39C4925E467B}' 2>/dev/null \
+          | tr -d '\r' | awk '/REG_SZ/ { sub(/.*REG_SZ[[:space:]]+/, ""); print }')
+
+    # Key missing or renamed: fall back to the default location.
+    [[ -z "$win" ]] && win=$("$sys/cmd.exe" /c 'echo %USERPROFILE%\Downloads' 2>/dev/null | tr -d '\r')
+
+    [[ -n "$win" ]] && WIN_DOWNLOADS=$(wslpath -u "$win" 2>/dev/null)
+  fi
+
+  [[ -d "$WIN_DOWNLOADS" ]] || {
+    echo "downloads: couldn't locate the Windows Downloads folder" >&2
+    echo "  set WIN_DOWNLOADS in ~/.bash_local to point at it" >&2
+    return 1
+  }
+  cd "$WIN_DOWNLOADS" || return
+}
+
 # ─── Process management ──────────────────────────────────────────────────────
 
 # port: show what's running on a given port.
@@ -450,6 +507,7 @@ h() {
     z <partial>        Smart cd (learns your habits)       [zoxide]
     mkcd <dir>         mkdir + cd in one step
     back [N]           Go up N directories (default: 1)
+    downloads          cd to the Windows Downloads folder  [WSL]
 
   File Search
     fzf                Fuzzy everything                   [fzf, fd]
@@ -533,6 +591,30 @@ z — zoxide (smarter cd)
     you just type less over time.
 
   Install: brew install zoxide
+HELP
+      ;;
+    downloads)
+      cat <<'HELP'
+downloads — jump to the Windows Downloads folder (WSL only)
+
+  downloads
+
+  Asks Windows where its Downloads folder actually is, rather than assuming
+  /mnt/c/Users/<you>/Downloads. Two reasons that matters:
+
+    OneDrive relocates the folder. After that, %USERPROFILE%\Downloads is
+    stale or gone, and only the registry knows where it went.
+
+    Usernames are not guessable. /mnt/c/Users here holds both `Riley` and
+    `Riley Oest`; a glob picks the wrong one.
+
+  The lookup costs ~30ms and happens once per shell, on first use — never at
+  startup. To override it (unusual mount root, a Downloads folder somewhere
+  else entirely), set this in ~/.bash_local:
+
+    WIN_DOWNLOADS=/mnt/d/Downloads
+
+  Off WSL it says so and does nothing.
 HELP
       ;;
     mkcd)
