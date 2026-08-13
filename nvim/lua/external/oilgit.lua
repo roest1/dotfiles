@@ -163,6 +163,55 @@ local function refresh(bufnr)
   end)
 end
 
+-- Re-apply after oil re-renders. A render replaces every line
+-- (`nvim_buf_set_lines(0, -1)`), which does not delete our extmarks but
+-- collapses them onto a single position, so the counts disappear from the
+-- display. oil announces only the *first* render (`OilEnter`); the re-render
+-- after `:w`, the one its fs_event watcher fires on an external change, and the
+-- deferred one a hidden buffer gets on `BufEnter` all arrive silently.
+--
+-- Hooking `OilActionsPost` is not enough and is why this looked intermittent:
+-- it fires *before* `rerender_all_oil_buffers`, so a fast `git` landed its
+-- extmarks just in time for the render to collapse them, while a slow one
+-- happened to apply afterwards and survived. Watching the lines themselves is
+-- the invariant — the marks are stale exactly when the buffer is rewritten.
+--
+-- Debounced, since a rename typed into the buffer fires on_lines per keystroke
+-- and each refresh costs two git invocations. Setting extmarks does not fire
+-- on_lines, so this cannot feed itself.
+local pending = {}
+
+local function schedule_refresh(bufnr)
+  if not enabled then
+    return
+  end
+  local token = (pending[bufnr] or 0) + 1
+  pending[bufnr] = token
+  vim.defer_fn(function()
+    if pending[bufnr] == token then
+      pending[bufnr] = nil
+      refresh(bufnr)
+    end
+  end, 50)
+end
+
+-- Attaches once per buffer: `vim.b` and the attachment both survive the
+-- `:edit!` that oil's refresh action uses, which fires OilEnter a second time.
+local function watch(bufnr)
+  if vim.b[bufnr].oil_git_watching then
+    return
+  end
+  vim.b[bufnr].oil_git_watching = true
+  vim.api.nvim_buf_attach(bufnr, false, {
+    on_lines = function(_, buf)
+      schedule_refresh(buf)
+    end,
+    on_detach = function(_, buf)
+      pending[buf] = nil
+    end,
+  })
+end
+
 local function each_oil_buf(fn)
   for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].filetype == 'oil' then
@@ -177,26 +226,18 @@ function M.setup()
 
   vim.api.nvim_create_autocmd('ColorScheme', { group = group, callback = set_highlights })
 
-  -- Fires after each directory finishes rendering (covers floats too).
+  -- Fires once per buffer, after its first render (covers floats too). Every
+  -- later render is picked up by the on_lines watch instead — including the
+  -- ones after `:w` and after a create/delete/move, which change the counts.
   vim.api.nvim_create_autocmd('User', {
     group = group,
     pattern = 'OilEnter',
     callback = function(ev)
       local bufnr = ev.data and ev.data.buf
       if bufnr then
+        watch(bufnr)
         refresh(bufnr)
       end
-    end,
-  })
-
-  -- Fires after file create/delete/move, which can change counts.
-  vim.api.nvim_create_autocmd('User', {
-    group = group,
-    pattern = 'OilActionsPost',
-    callback = function()
-      vim.schedule(function()
-        each_oil_buf(refresh)
-      end)
     end,
   })
 
