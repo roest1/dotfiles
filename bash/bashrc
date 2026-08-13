@@ -133,6 +133,10 @@ fi
 # neovim, override it in ~/.bash_local, which is sourced next and wins:
 #   export EDITOR=vim
 export EDITOR=nvim
+# sudoedit/`sudo -e` consults SUDO_EDITOR first, then VISUAL, then EDITOR. It
+# runs the editor as the *invoking* user, so an unqualified `nvim` resolves
+# against your own PATH — no need for an absolute path here.
+export SUDO_EDITOR=nvim
 
 # Machine-local config (env vars needed before package managers init)
 [[ -f ~/.bash_local ]] && source ~/.bash_local
