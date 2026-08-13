@@ -101,7 +101,11 @@ jobs:
     name: manifest parses
     runs-on: ubuntu-latest
     steps:
+      # Full history: the alias-to-function check below compares against the
+      # merge base, which a shallow clone doesn't have.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       # Regression guard: ARGS was once a blocklist, so any goal not in it got a
       # stub rule that silently overrode the real target — `make help` printed
       # "overriding recipe for target 'help'" and ran the wrong recipe.
@@ -201,8 +205,46 @@ jobs:
           bad=0
           for f in bash/bash_theme bash/bash_productivity bash/bash_git \
                    bash/bash_github bash/bash_github_tui; do
-            out=$(bash -c "source $f" 2>&1)
+            # expand_aliases because that is how these files are really read.
+            # Without it bash skips alias expansion entirely, which is a
+            # different parser and hides a whole class of failure — see the
+            # alias-to-function check below.
+            out=$(bash -c "shopt -s expand_aliases; source $f" 2>&1)
             [ -z "$out" ] || { echo "$f is noisy when sourced:"; echo "$out"; bad=1; }
+          done
+          exit $bad
+
+      # `reload` re-sources these files into a LIVE shell, so a name that used
+      # to be an alias and is now a function breaks on upgrade: bash expands the
+      # stale alias while parsing and `f() {` becomes a syntax error, reported
+      # against a line with nothing wrong on it.
+      #
+      # This actually happened. `gb` was `alias gb='git branch --sort=...'`; it
+      # became a function, and the first `reload` after pulling failed with
+      # "syntax error near unexpected token `('" at `gb() {`. Nothing caught it:
+      # `bash -n` and a non-interactive `source` do not expand aliases, so the
+      # parse that fails is one CI never ran.
+      #
+      # The fix is an `unalias` before the definition — the same guard `bashrc`
+      # already uses for `alert`, where the stale alias comes from Ubuntu's
+      # default bashrc instead of from our own history. This asserts the guard
+      # exists for every name that made that transition.
+      - name: Aliases turned into functions are unaliased first
+        run: |
+          base=$(git merge-base origin/main HEAD 2>/dev/null) || base=""
+          if [ -z "$base" ]; then echo "no merge base; skipping"; exit 0; fi
+
+          old_aliases=$(for f in $(git ls-tree -r --name-only "$base" -- bash/); do
+                          git show "$base:$f" 2>/dev/null
+                        done | grep -hE '^[[:space:]]*alias ' | sed 's/.*alias //;s/=.*//' | sort -u)
+          bad=0
+          for fn in $(grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' bash/bash_* | tr -d '()' | sort -u); do
+            echo "$old_aliases" | grep -qx -- "$fn" || continue
+            grep -qE "^[[:space:]]*unalias .*\b${fn}\b" bash/bash_* || {
+              echo "'$fn' was an alias and is now a function, with no 'unalias $fn' guard"
+              echo "  a reload in a shell running the older config will fail to parse it"
+              bad=1
+            }
           done
           exit $bad
 

@@ -13,6 +13,21 @@ alias gp='git push'
 alias gpf='git push --force-with-lease'
 alias gco='git checkout'
 alias gcob='git checkout -b'
+
+# `gb` shipped as an alias (`git branch --sort=-committerdate`) before it became
+# this function. That matters because `reload` re-sources into a LIVE shell: if
+# `gb` is still an alias there from the previous version, bash expands it while
+# parsing and `gb() {` becomes a syntax error — reported against this line, with
+# nothing on it to explain why.
+#
+# Same reason `bashrc` unaliases `alert` before defining it, where the stale
+# alias comes from Ubuntu's default bashrc rather than from our own history.
+#
+# `bash -n` and a non-interactive `source` cannot reproduce it: alias expansion
+# is off unless `expand_aliases` is set, which is why CI passed and a `reload`
+# after `git pull` did not.
+unalias gb 2>/dev/null
+
 gb() {
   git for-each-ref --format='%(refname:short) %(ahead-behind:HEAD) %(HEAD)' refs/heads |
   awk 'BEGIN{w=6}
