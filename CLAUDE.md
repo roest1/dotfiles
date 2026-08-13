@@ -1,10 +1,19 @@
 # CLAUDE.md
 
-Guidance for Claude Code (claude.ai/code) when working in this repository.
-
 ## Overview
 
-Cross-platform dotfiles — terminal, editor and shell as one versioned unit (macOS + Linux/WSL + RHEL + the Windows host). Bash-based. A monorepo: the neovim config lives in `nvim/`, merged in from the former `roest1/nvim` repo with full history.
+Cross-platform dotfiles — terminal, editor and shell as one versioned unit. Installed personally on Linux Fedora, WSL Ubuntu, and SERHEL. Bash-based. Windows installation exists. A monorepo.
+
+**macOS is CI-tested, not daily-driven.** Nobody runs this on a Mac, so the
+support claim is exactly as strong as the `macos-latest` jobs — `link only
+(macos)` and `install (macos / brew)` — and no stronger. That is a real claim,
+not a hedge: those jobs link every `[bash]` config, install through brew, and
+assert idempotence and orphan pruning. It is also a rule for changes here. Mac
+behaviour that CI cannot exercise is unsupported, so prefer the portable
+construct over the one that needs a Mac to verify — plain `readlink` over GNU
+`readlink -f`, `sort -V` over anything BSD spells differently. If a Mac-only
+path genuinely can't be covered, say so at the call site rather than implying
+it works.
 
 ## Setup Workflow
 
@@ -13,6 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh |
 # or, already cloned:
 cd ~/dotfiles && make install
 ```
+
+or see Makefile and install.sh
 
 ## `deps.conf` is the source of truth
 
@@ -28,15 +39,7 @@ abstraction was removed deliberately because it earned nothing over a section he
 after the program. To skip a tool, comment its line; to skip a program, don't pass its
 section.
 
-```
-make install            # everything enabled
-make install nvim       # one section
-make link               # symlinks only: no sudo, no network
-make check              # verify enabled tools are present
-make status             # sync status: declared vs. actual (drift detection)
-./tools/adopt.sh <cmd>  # print a deps.conf line, provider + package resolved
-make test               # Lua unit tests (no plugins, no network)
-```
+see `make help`
 
 `make check` asks "does this command exist." `make status` asks "is this machine
 what the manifest says" — link targets and per-tool provenance. Prefer `status`
@@ -63,7 +66,7 @@ the same `deps.conf` from PowerShell, so the "nothing else enumerates links" rul
 holds across both. A section may declare `platform <linux|mac|windows>`, which makes it
 invisible everywhere else.
 
-The two parsers read that field with deliberately *opposite* defaults, and the asymmetry
+The two parsers read that field with deliberately _opposite_ defaults, and the asymmetry
 is the whole point. A section with no `platform` line means "every platform this entry
 point handles" — correct for `[bash]`, which really does run on Linux and macOS. The
 PowerShell side instead requires `platform windows` explicitly, because inheriting the
@@ -85,31 +88,10 @@ the rest — don't force an `if` into the manifest.
 
 ### Why not Nix
 
-Nix + home-manager genuinely solves provider resolution, pinning and provenance, and
-Fedora packages it with `nix-daemon` split out so single-user needs no daemon. It was
-deferred — and one of the three original reasons has since expired, which is worth
-recording rather than leaving a stale justification standing.
-
-**No longer true.** The strongest argument was that Mason kept the LSP layer imperative
-regardless, so Nix would buy a reproducible `neovim`/`stylua`/`ripgrep` while six language
-servers stayed mutable and still required node. **Mason is gone.** Every server is declared
-now — `deps.conf` for the native ones, `nvim/lsp-servers/package.json` pinned in `bun.lock`
-for the JS ones. That was the stated condition for revisiting, and it has been met.
-
-**Still true.**
-
-1. Steep learning curve on the repo that bootstraps every other machine. A half-understood
-   Nix config fails on a fresh machine, which is the worst possible moment to find out.
-2. `/nix` needs root — exactly the machine class `make link` exists for.
-
-**Current honest assessment:** the gap Nix would close is much narrower than it was.
-Versions are pinned in `bun.lock` and by mise, provenance is answerable through
-`make status`, and nothing installs itself imperatively at editor startup any more. Nix
-would still be stricter — a real closure rather than a manifest plus trust — but the
-remaining delta is now smaller than the cost of switching.
-
-The hedge stands: dependencies are *data*, so adopting Nix means writing a `nix` provider
-in `lib/providers.sh`, not a rewrite.
+Deferred. Dependencies are _data_, so adopting Nix means writing a `nix` provider in
+`lib/providers.sh`, not a rewrite — that is the only part of the decision that changes how
+you write code here. Reasoning, revisit conditions and current status:
+[`docs/decisions/nix.md`](docs/decisions/nix.md).
 
 ## Footguns
 
@@ -129,7 +111,7 @@ in `lib/providers.sh`, not a rewrite.
 
   **Never add a `node` shim** — aliasing node to bun makes incompatibilities surface as
   errors blaming the wrong tool. That is not hypothetical any more: prettier's
-  `--stdin-filepath` exits 0 and writes *nothing* under bun, while working correctly under
+  `--stdin-filepath` exits 0 and writes _nothing_ under bun, while working correctly under
   node, which is why `formatter.lua` uses `--write` on a temp file instead. Behind a shim
   that would have presented as "formatting silently does nothing" with no clue where to
   look. Don't "tidy" it back to stdin.
@@ -137,6 +119,7 @@ in `lib/providers.sh`, not a rewrite.
   CI guards both: the manifest may not declare node/npm/pip, and no shim may exist. The JS
   server args are not uniform (`bash-language-server` wants `start`, not `--stdio`);
   `nvim/lsp-servers/verify.ts` proves each with a real LSP handshake.
+
 - **`wezterm/wezterm.lua` is load-bearing beyond wezterm.** It declares the `mux` unix
   domain that the Jarvis sidecar connects to (`JARVIS_WEZTERM_DOMAIN` defaults to `'mux'`
   in `jarvis-ui/server/workerSession.ts`). Don't replace it with a stock config.
@@ -145,16 +128,17 @@ in `lib/providers.sh`, not a rewrite.
   to be merged back in. It configures `wezterm.exe` on the Windows host, whose purpose is
   to get you into WSL; it declares no `unix_domains`, because that socket path is a Linux
   path belonging to a process inside the guest.
+
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
-  writes an *LX symlink*; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
-  Ordinary file *writes* to `/mnt/c` are fine — this is specific to symlinks. Nor will
+  writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
+  Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will
   `wezterm.exe` load a config over `\\wsl.localhost\...`; the maintainer has said the WSL
   filesystem isn't visible to the host that way. Hence a second clone on `C:` and a
   PowerShell installer, rather than teaching `install.sh` to reach across.
 - **`.ps1` files must be pure ASCII.** Windows PowerShell 5.1 reads a `.ps1` without a BOM
   as ANSI (cp1252), not UTF-8. An em dash (`E2 80 94`) decodes as three cp1252 characters
   ending in `0x94`, which in cp1252 is `"` — and PowerShell treats that as a **string
-  delimiter**. A single em dash inside a *comment* opened a string that swallowed the rest
+  delimiter**. A single em dash inside a _comment_ opened a string that swallowed the rest
   of the file; the error it reported was a bogus "invalid variable reference" 200 lines
   away, in a comment that was never the problem. Don't chase the reported line — check for
   non-ASCII first. CI enforces this in the `shellcheck` job. A UTF-8 BOM would also work,
@@ -167,87 +151,17 @@ in `lib/providers.sh`, not a rewrite.
   a top-level `exit` under `irm | iex` terminates the user's shell. Nothing on Linux can
   parse any of this; the `windows` CI job is the only thing that checks it.
 
-## Architecture
-
-```
-bash/
-  bashrc                    Main entrypoint (~/.bashrc). OS detection, history,
-                            shell options, PATH (dotnet, java, homebrew, cargo, mise,
-                            bun), package managers, sources custom configs.
-  bash_theme                Prompt (PS1 + right-aligned PROMPT_COMMAND), LS_COLORS,
-                            conda env display, git branch/dirty/sync indicators,
-                            GitHub Actions status in prompt (background-cached).
-  bash_productivity         CLI tools: aliases (git, ls/cat/bat/eza), zoxide, fzf,
-                            utility functions (mkcd, up, f, findword, lines, port,
-                            serve, loop, extract, ddiff, c, etc.), .NET aliases
-                            (dclean, dbuild, dtest), help system (`h`).
-  bash_git                  GitHub Actions commands: gha, gha-fail, gha-open, gha-ui
-                            (interactive workflow picker with smart log view;
-                            scope: HEAD or recent runs).
-  bash_github               Unified hub (gh-ui) + interactive GitHub management via fzf:
-                            gpr (PR management with filters), ghsecrets, ghbranch, ghenv.
-                            ghbranch drives RULESETS, not classic branch protection —
-                            the classic API 404s on a ruleset-protected repo, which had
-                            it calling main protected on one screen and unprotected on
-                            the next. Reads /rules/branches/{b} (effective rules across
-                            every ruleset); writes /rulesets/{id} with PUT, not PATCH.
-  bash_profile              Login-shell shim — generated by install.sh if missing,
-                            just sources .bashrc. Tracked — keep it a pure shim.
-                            Tool installers (rustup, bun) append PATH lines here
-                            through the ~ symlink, showing up as uncommitted changes
-                            in this repo; move them to the package-manager section
-                            of bashrc (guarded) so non-login shells get them too.
-git/
-  gitconfig                 Global git config (user, credential, lfs)
-  README.md                 GitHub tips and tricks reference
-  GITHUB_TOOLS.md           Interactive tools walkthrough + demo recording guide
-  GITHUB_SETUP.md           Standing reference for new-repo settings and the
-                            ruleset. Records what this repo's own config is and
-                            why — keep it in step when those settings change.
-nvim/lsp-servers/           JS language servers + prettier, installed by bun.
-                            bun.lock is the source of truth; yarn.lock is
-                            generated output that exists only so GitHub's
-                            dependency graph can read the tree (it has no
-                            bun.lock parser). CI asserts the two agree.
-install.sh                  Symlinks all dotfiles into ~. Backs up existing files.
-                            Generates bash_profile shim if missing. Safe to re-run.
-bootstrap.ps1               Windows entry point: `irm ... | iex`. Clones to
-                            %USERPROFILE%\dotfiles, hands off to windows/install.ps1.
-windows/
-  install.ps1               Reads the same deps.conf; links `platform windows`
-                            sections and installs their `winget` tools.
-  deps.ps1                  Platform fixups, the PowerShell analogue of a
-                            section's deps.sh: 0xProto Nerd Font (per-user, no
-                            admin), elevation-helper reporting.
-  README.md                 Developer Mode, the CTRL+SHIFT+O picker, elevation,
-                            and why the config can't be shared with WSL.
-.githooks/
-  pre-commit                Refuses to commit machine-local or secret files.
-                            Wired up by install.sh via core.hooksPath (repo-
-                            local, never --global), so it arrives with a clone.
-  secret-patterns           The path patterns, read by BOTH the hook and the
-                            CI step that checks the same thing — one source of
-                            truth so the local and remote guards can't drift.
-deps.conf                   THE MANIFEST — every link and dependency, one file.
-lib/                        manifest.sh (parser), providers.sh (dispatch),
-                            pkg.sh (installers), run.sh (section runner),
-                            status.sh (declared-vs-actual drift).
-Makefile                    Reads sections from deps.conf; install, link, check.
-.github/workflows/ci.yml    Portability (link-only + install on 3 platforms) plus
-                            the supply-chain jobs: bun audit, the Socket scan, and
-                            the neovim floor / mise-fallback check.
-README.md                   Setup instructions + file reference
-CONTRIBUTING.md             How to add a tool without breaking the manifest
-```
-
 ## Key Conventions
 
 - **OS portability:** `_OS=mac|linux` detected in `bashrc`. Mac/Linux differences (homebrew paths, `date` flags, `stat` flags) are handled inline with conditionals.
-- **Bash version:** macOS ships bash 3.2. `bash/deps.sh` installs bash 5 via homebrew. Bash 4+ features (`dirspell`, `globstar`) are guarded with `BASH_VERSINFO` checks.
+- **Bash version:** `bash/deps.sh` installs bash 5 via homebrew. Bash 4+ features (`dirspell`, `globstar`) are guarded with `BASH_VERSINFO` checks.
 - **Tool dependencies:** `zoxide`, `fzf`, `bat`, `eza`, `fd`, `ripgrep`, `gh`, `jq`. All optional — features degrade gracefully via `command -v` guards. Declared in `deps.conf`'s `[bash]` section, installed via brew/apt/dnf. Some tools have alternate binary names on RHEL/Debian (`bat` → `batcat`, `fd` → `fdfind`) — handled with fallback checks.
 - **Symlink pattern:** `install.sh` symlinks `bash/*` to `~/.*` (e.g. `bash/bashrc` → `~/.bashrc`), driven entirely by the `link` lines in `deps.conf`. It hard-codes no filenames — adding or renaming a config file is a manifest edit and nothing else. Renames are safe because `install.sh` **prunes orphans**: a symlink pointing into this repo whose target no longer exists is removed, so the retired name can't survive next to the new one. That test is structural on purpose — don't replace it with a list of old names, which would need maintaining and would silently stop covering the next rename.
-- **Navigation UX:** All interactive fzf commands use consistent keybindings — menus (`-`/`q` back), lists (type to filter, `esc` back), pagers (`r` refresh, `-`/`q` back).
-- **Machine-local config:** `~/.bash_local` (per-machine paths and exports) and `~/.bash_password_commands` (secrets) are optional-sourced by `bashrc`. They live **in `$HOME`, never in the work tree** — do not "tidy" them back into `bash/` with a `.gitignore` entry, which is how they used to be. Outside the tree, git cannot see them; inside it, protection is a rule that `git add -f` overrides and that a `.gitignore` rewrite silently deletes. They're also the only configs not declared in `deps.conf`, and must stay that way: the manifest describes what *every* machine gets.
+- **Navigation UX:** All interactive fzf commands use consistent keybindings — menus (`-`/`q` back), lists (type to filter, `esc` back), pagers (`r` refresh, `-`/`q` back). This is not a convention to remember: the menu contract lives in `__fzf_menu` (`bash/bash_productivity`), every screen calls it, and CI rejects a hand-rolled `fzf --disabled`. It used to be 18 copies of the same `--bind` string.
+- **`h` is hand-maintained, and CI keeps it honest.** Adding, renaming or removing a command means editing `h` in the same commit. A CI step asserts both directions — every public function and alias is named in `h`, and every command in `h`'s quick reference actually resolves. Both had already drifted: `h` advertised `gh-tui` while the function was `gh-ui`, and kept a full help page for `lines` after it was deleted.
+- **The `[bash]` file split is enforced, not conventional.** `bash_git` (git porcelain) → `bash_github` (plain `gh` + shared helpers) → `bash_github_tui` (everything interactive), sourced in that order. Only the TUI file may invoke fzf, and CI checks it — that boundary is what keeps the interactive layer replaceable as a unit. It is currently working and parked; see [`docs/decisions/github-tui.md`](docs/decisions/github-tui.md) for the plan and the open question that gates it.
+- **`mise.toml` and `mise.lock` are generated.** `deps.conf` is still the only place tools are declared; `tools/gen-mise.sh` derives the mise-provided subset from it and `mise lock` adds per-platform checksums. Run `make mise-lock` after touching a mise tool. Don't hand-edit the tool list (versions are fine to edit — regenerating preserves them).
+- **Machine-local config:** `~/.bash_local` (per-machine paths and exports) and `~/.bash_password_commands` (secrets) are optional-sourced by `bashrc`. They live **in `$HOME`, never in the work tree** — do not "tidy" them back into `bash/` with a `.gitignore` entry, which is how they used to be. Outside the tree, git cannot see them; inside it, protection is a rule that `git add -f` overrides and that a `.gitignore` rewrite silently deletes. They're also the only configs not declared in `deps.conf`, and must stay that way: the manifest describes what _every_ machine gets.
 
 ## When Editing
 
