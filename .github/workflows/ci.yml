@@ -258,6 +258,10 @@ jobs:
       # `lines` after the function was deleted.
       - name: Every command is documented in h, and h documents nothing missing
         run: |
+          # Each `run:` is a fresh shell, so the parser has to be sourced here
+          # even though earlier steps in this job already did it.
+          source lib/manifest.sh
+
           defined=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
                          bash/bash_productivity bash/bash_git bash/bash_github \
                          bash/bash_github_tui | tr -d '()'
