@@ -115,10 +115,7 @@ in `lib/providers.sh`, not a rewrite.
 
 - **`make` never reads `.bashrc`** (non-interactive, non-login), so the Makefile sets
   `PATH` explicitly to include `~/.local/bin`, `~/.local/share/mise/shims`, `~/.cargo/bin`
-  and `~/.bun/bin`. Without it `make check` reports false MISSINGs. (It also still lists
-  `~/.npm-global/bin`, which is vestigial — nothing installs there now that npm is gone.
-  Harmless, since a missing directory on `PATH` costs nothing, but it can go with the
-  `npm` provider whenever that's cleaned up.)
+  and `~/.bun/bin`. Without it `make check` reports false MISSINGs.
 - **`EDITOR` is set unconditionally to `nvim`**, before `bash_local` is sourced. It
   cannot be `${EDITOR:-nvim}`: Fedora's `/etc/profile.d/nano-default-editor.sh` sets
   `EDITOR=/usr/bin/nano` first, so a `:-` default silently loses. Per-machine overrides go
