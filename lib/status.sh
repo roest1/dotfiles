@@ -28,6 +28,11 @@ DOTFILES_ROOT="$(cd "$HERE_STATUS/.." && pwd)"
 # shellcheck source=./manifest.sh
 source "$HERE_STATUS/manifest.sh"
 
+# Counted separately so the summary can print only the remediation that applies.
+# One combined counter made `make status bash nvim` advise "run 'make link'"
+# when every link was fine and the sole drift was an uninstalled tool.
+STATUS_DRIFT_LINKS=0
+STATUS_DRIFT_TOOLS=0
 STATUS_DRIFT=0
 
 # ── Provenance ───────────────────────────────────────────────────────────────
@@ -95,14 +100,14 @@ status_links() {
         printf "  ✓ %-38s\n" "${dest/#$HOME/\~}"
       else
         printf "  ✗ %-38s points at %s\n" "${dest/#$HOME/\~}" "${actual/#$HOME/\~}"
-        STATUS_DRIFT=$((STATUS_DRIFT + 1))
+        STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1))
       fi
     elif [[ -e "$dest" ]]; then
       printf "  ✗ %-38s is a real file, not a link into this repo\n" "${dest/#$HOME/\~}"
-      STATUS_DRIFT=$((STATUS_DRIFT + 1))
+      STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1))
     else
       printf "  · %-38s not linked (run: make link)\n" "${dest/#$HOME/\~}"
-      STATUS_DRIFT=$((STATUS_DRIFT + 1))
+      STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1))
     fi
   done < <(manifest_lines link "$@")
 }
@@ -121,25 +126,27 @@ status_tools() {
 
     if [[ "$actual" == "absent" ]]; then
       printf "  · %-14s not installed (declared %s)\n" "$cmd" "$provider"
-      STATUS_DRIFT=$((STATUS_DRIFT + 1))
+      STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1))
     elif provider_satisfies "$provider" "$actual"; then
       printf "  ✓ %-14s %s\n" "$cmd" "$actual"
     else
       printf "  ✗ %-14s declared %-12s actual %-8s %s\n" \
         "$cmd" "$provider" "$actual" "$(command -v "$cmd" | sed "s|^$HOME|~|")"
-      STATUS_DRIFT=$((STATUS_DRIFT + 1))
+      STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1))
     fi
   done < <(manifest_lines tool "$@")
 }
 
 # ── Everything ───────────────────────────────────────────────────────────────
 status_all() {
-  STATUS_DRIFT=0
+  STATUS_DRIFT_LINKS=0
+  STATUS_DRIFT_TOOLS=0
   echo ""
   echo "sync status — deps.conf vs. this machine"
   echo "==========================================="
   status_links "$@"
   status_tools "$@"
+  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS ))
 
   echo ""
   echo "==========================================="
@@ -148,10 +155,14 @@ status_all() {
   else
     echo "$STATUS_DRIFT item(s) out of sync"
     echo ""
-    echo "  ✗ links  — run 'make link' to repoint them"
-    echo "  ✗ tools  — the manifest declares a provider that didn't install it."
-    echo "             Either fix deps.conf to match reality, or uninstall and"
-    echo "             re-run 'make install' to get the declared one."
+    if [[ $STATUS_DRIFT_LINKS -gt 0 ]]; then
+      echo "  ✗ links  — run 'make link' to repoint them"
+    fi
+    if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
+      echo "  ✗ tools  — the manifest declares a provider that didn't install it."
+      echo "             Either fix deps.conf to match reality, or uninstall and"
+      echo "             re-run 'make install' to get the declared one."
+    fi
   fi
   echo ""
   return $(( STATUS_DRIFT > 0 ? 1 : 0 ))
