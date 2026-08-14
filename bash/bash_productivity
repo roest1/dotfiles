@@ -732,7 +732,7 @@ HELP
   Depends on: qsv   (make install bash)
 HELP
       ;;
-    g*)
+    gs*|gc*|gpush*|gb*|gfetch*|gpull*)
       cat <<'HELP'
 Git aliases — short forms for daily git commands
 
