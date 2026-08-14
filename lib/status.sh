@@ -38,13 +38,15 @@ source "$HERE_STATUS/manifest.sh"
 STATUS_DRIFT=0
 STATUS_DRIFT_LINKS=0
 STATUS_DRIFT_TOOLS=0
+STATUS_DRIFT_STALE=0
 
-_drift_link() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
-_drift_tool() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
+_drift_link()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
+_drift_tool()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
+_drift_stale() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_STALE=$((STATUS_DRIFT_STALE + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
-# Returns one of: pkg cargo uv mise bun manual unknown
+# Returns one of: pkg cargo uv mise mise-stale bun manual unknown
 provider_of() {
   local cmd="$1"
   local path resolved
@@ -55,6 +57,15 @@ provider_of() {
   # Ask the tool managers directly — authoritative, unlike path guessing.
   if command -v mise >/dev/null 2>&1; then
     if mise which "$cmd" >/dev/null 2>&1; then echo "mise"; return; fi
+
+    # A mise shim on PATH that `mise which` disowns is a *stale pin*, not a
+    # foreign install. mise.toml names a version that was never installed
+    # here, so the shim resolves to nothing mise will run — while `command -v`
+    # still answers yes, which is why `make install` skips it (mise_install
+    # short-circuits on exactly that). Distinguished because the remedy is
+    # `mise install`; the old answer fell through to "manual" and sent you to
+    # uninstall/reinstall a tool that was never manually installed.
+    if [[ "$path" == */mise/shims/* ]]; then echo "mise-stale"; return; fi
   fi
   if command -v uv >/dev/null 2>&1; then
     if uv tool list 2>/dev/null | grep -qE "^${cmd}\b|^- ${cmd}\b"; then echo "uv"; return; fi
@@ -78,6 +89,24 @@ provider_of() {
     /usr/bin/*|/usr/local/bin/*|/opt/homebrew/*) echo "pkg" ;;
     *) echo "manual" ;;
   esac
+}
+
+# Wanted and installed versions for a stale pin, tab-separated.
+#
+# `mise ls <tool>` marks the pinned-but-absent version "(missing)"; anything
+# else it lists is on disk. Both halves are worth printing — "pinned 22.0.1,
+# active 21.1.0" says what one `mise install` will do, where a bare ✗ doesn't.
+_mise_pin_versions() {
+  local cmd="$1" want="" have="" line ver
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    ver="$(printf '%s\n' "$line" | awk '{print $2}')"
+    case "$line" in
+      *"(missing)"*) want="${want:+$want,}$ver" ;;
+      *)             have="${have:+$have,}$ver" ;;
+    esac
+  done < <(mise ls "$cmd" 2>/dev/null)
+  printf '%s\t%s' "$want" "$have"
 }
 
 # Does the actual provider satisfy the declared spec? A `||` chain is satisfied
@@ -121,7 +150,7 @@ status_links() {
 
 # ── Tools ────────────────────────────────────────────────────────────────────
 status_tools() {
-  local section provider cmd pkg current="" actual
+  local section provider cmd pkg current="" actual want have
   # shellcheck disable=SC2034  # pkg is read to consume the 4th field
   while IFS=$'\t' read -r section provider cmd pkg; do
     [[ -z "$section" ]] && continue
@@ -134,6 +163,11 @@ status_tools() {
     if [[ "$actual" == "absent" ]]; then
       printf "  · %-14s not installed (declared %s)\n" "$cmd" "$provider"
       _drift_tool
+    elif [[ "$actual" == "mise-stale" ]]; then
+      IFS=$'\t' read -r want have <<<"$(_mise_pin_versions "$cmd")"
+      printf "  ✗ %-14s pinned %s not installed (active: %s)\n" \
+        "$cmd" "${want:-?}" "${have:-none}"
+      _drift_stale
     elif provider_satisfies "$provider" "$actual"; then
       printf "  ✓ %-14s %s\n" "$cmd" "$actual"
     else
@@ -149,12 +183,13 @@ status_all() {
   STATUS_DRIFT=0
   STATUS_DRIFT_LINKS=0
   STATUS_DRIFT_TOOLS=0
+  STATUS_DRIFT_STALE=0
   echo ""
   echo "sync status — deps.conf vs. this machine"
   echo "==========================================="
   status_links "$@"
   status_tools "$@"
-  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS ))
+  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE ))
 
   echo ""
   echo "==========================================="
@@ -165,6 +200,11 @@ status_all() {
     echo ""
     if [[ $STATUS_DRIFT_LINKS -gt 0 ]]; then
       echo "  ✗ links ($STATUS_DRIFT_LINKS) — run 'make link' to repoint them"
+    fi
+    if [[ $STATUS_DRIFT_STALE -gt 0 ]]; then
+      echo "  ✗ pins ($STATUS_DRIFT_STALE) — mise.toml pins a version this machine never installed."
+      echo "             Run 'mise install'. 'make install' will NOT fix it: the old"
+      echo "             shim is still on PATH, so mise_install short-circuits."
     fi
     if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
       echo "  ✗ tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."
