@@ -84,8 +84,15 @@ else
   shopt -u nullglob
 fi
 
-# Nothing shell-shaped in this commit is a pass, not an error.
-(( ${#files[@]} )) || exit 0
+# Nothing shell-shaped in this commit is a pass, not an error — but say so
+# out loud. shellcheck prints nothing when it is happy, so a silent exit 0
+# is indistinguishable from having checked nothing at all, and "the globs
+# stopped matching" would then read as "the code is clean". The CI step
+# that shares secret-patterns echoes its findings for the same reason.
+if (( ${#files[@]} == 0 )); then
+  echo "lint: no shell sources among the given paths — nothing to check"
+  exit 0
+fi
 
 if ! command -v shellcheck >/dev/null 2>&1; then
   echo "lint: shellcheck not found." >&2
@@ -96,5 +103,9 @@ fi
 # A file can match two patterns once the globs overlap, and shellcheck
 # would then report the same finding twice.
 IFS=$'\n' read -r -d '' -a files < <(printf '%s\n' "${files[@]}" | sort -u && printf '\0')
+
+# Printed before the run, not after, because exec replaces this process.
+# It is the receipt: a green check that says "0 files" is a bug report.
+echo "lint: shellcheck --severity=$SEVERITY over ${#files[@]} file(s)"
 
 exec shellcheck --severity="$SEVERITY" "${files[@]}"
