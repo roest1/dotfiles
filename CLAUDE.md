@@ -50,6 +50,15 @@ correctly — nothing distinguishes a dotfiles dependency from a project-scoped
 tool — and suppressing it required naming unrelated projects in `deps.conf`.
 The repo describes itself and nothing else; don't reintroduce an ignore list.
 
+It also does not report **duplicate** installs, and that one is a gap rather than a
+principle. A `||` chain is satisfied by any member, so a tool installed by two providers
+reads `✓` while PATH order alone decides which copy runs — and the dormant copy is
+typically older than the pinned one. Unlike "installed but not declared", this *is*
+computable: the tool is already in the manifest, so the question is only how many copies
+of a declared tool exist. `mise prune` handles mise's own superseded versions; nothing
+handles the cross-provider case. Evidence and the open design questions:
+[`docs/decisions/tool-duplication.md`](docs/decisions/tool-duplication.md).
+
 When adding a tool, add a `tool` line to the right section. **Don't add install logic** —
 `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`,
 `uv_install`, `mise_install`, `cargo_install`, `ensure_symlink`), and
