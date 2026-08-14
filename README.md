@@ -48,7 +48,7 @@ exec bash
 | 🌍 / 🔒 | repo is public / private |
 | 🛡️ | branch has protection rules |
 | `2 staged  1 unstaged  2 untracked` | working tree |
-| 🔼2&nbsp;&nbsp;🔽3 | commits to push / to pull — both at once means diverged |
+| 🔼2&nbsp;🔽3 | commits to push / to pull — both at once means diverged |
 | `2 conflicting` | that pull would conflict, in 2 files |
 | `[11/11 ✅ 22h]` | GitHub Actions for this commit, last run 22h ago |
 

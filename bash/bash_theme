@@ -25,7 +25,7 @@
 #   🔒  Private or internal repo    🛡️   Branch has protection rules
 #
 # Diverged has no glyph of its own: it renders as both arrows at once
-# (🔼2  🔽3), which is unmistakable and cannot be read in the wrong order.
+# (🔼2 🔽3), which is unmistakable and cannot be read in the wrong order.
 # When diverged, `2 conflicting` in bold red says merging those commits
 # would conflict, and in how many files. Its ABSENCE means the merge is
 # clean — or that the answer is still being computed, for one prompt.
@@ -517,7 +517,7 @@ __repo_meta_segment() {
 
 # ─── Will the pull fight you? ───────────────────────────────────────
 #
-# 🔼2  🔽3 says the pull is not a fast-forward. It does not say whether
+# 🔼2 🔽3 says the pull is not a fast-forward. It does not say whether
 # merging those commits will conflict, which is the part that decides
 # whether you deal with it now or after lunch. `git merge-tree` answers
 # exactly that: it performs the merge in memory and reports the result,
@@ -769,13 +769,20 @@ __prompt_render() {
   # signal, and the counts cannot be read in the wrong order the way a
   # single 🔄2/3 could be.
   if (( ahead )); then
-    r_sync+="🔼${ahead}  "
-    (( w_sync += ${#ahead} + 4 ))
+    r_sync="🔼${ahead}"
+    (( w_sync = ${#ahead} + 2 ))
   fi
   if (( behind )); then
-    r_sync+="🔽${behind}  "
-    (( w_sync += ${#behind} + 4 ))
+    # ONE space between the arrows, where every other gap on this line is
+    # two. Two made them read as two separate segments; they are one fact
+    # about one relationship, and the tighter gap is what says so.
+    [[ -n "$r_sync" ]] && { r_sync+=" "; (( ++w_sync )); }
+    r_sync+="🔽${behind}"
+    (( w_sync += ${#behind} + 2 ))
   fi
+  # The two-space separator every right-side segment ends with, added once
+  # for the pair rather than once per arrow.
+  [[ -n "$r_sync" ]] && { r_sync+="  "; (( w_sync += 2 )); }
 
   # The bracketed slot reports this repo's relationship with its remote.
   # Usually that is CI status; when there is nothing to have a
