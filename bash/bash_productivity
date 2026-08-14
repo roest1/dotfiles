@@ -550,8 +550,8 @@ compress() {
 _sheet_convert() {
     local target="$1"; shift
     local cmd="2${target}" outdelim="" sheet="" force=0 f ext out rc=0
-    local columnar="" outext="$target" script=""
-    local files=() sheetarg=()
+    local columnar="" outext="$target" script="" codec=""
+    local files=() sheetarg=() uvargs=() codecarg=()
 
     case "$target" in
         csv)     outdelim=',' ;;
@@ -580,6 +580,11 @@ _sheet_convert() {
             echo "$cmd: cannot find tabular.py (looked in $script)" >&2
             return 127
         fi
+        # tabular.py declares only polars (215M cached), which covers parquet
+        # and feather. pickle additionally needs pandas and pyarrow, taking the
+        # environment to 476M — layered on here rather than in the script's
+        # header so 2parquet and 2feather never pay for it.
+        [[ "$target" == "pickle" ]] && uvargs=(--with pandas --with pyarrow)
     elif ! command -v qsv &>/dev/null; then
         echo "$cmd: qsv not installed — run: make install bash" >&2
         return 127
@@ -589,6 +594,11 @@ _sheet_convert() {
         case "$1" in
             -s|--sheet) sheet="$2"; shift 2 ;;
             -f|--force) force=1; shift ;;
+            -c|--compression)
+                if [[ -z "$columnar" ]]; then
+                    echo "$cmd: -c only applies to 2parquet and 2feather" >&2; return 2
+                fi
+                codec="$2"; shift 2 ;;
             -h|--help)  echo "usage: $cmd [-s <sheet>] [-f] <file>..." >&2; return 0 ;;
             --)         shift; while [[ $# -gt 0 ]]; do files+=("$1"); shift; done ;;
             -*)         echo "$cmd: unknown flag '$1'" >&2; return 2 ;;
@@ -609,6 +619,7 @@ _sheet_convert() {
         return 2
     fi
     [[ -n "$sheet" ]] && sheetarg=(--sheet "$sheet")
+    [[ -n "$codec" ]] && codecarg=("$codec")
 
     for f in "${files[@]}"; do
         if [[ ! -f "$f" ]]; then
@@ -657,12 +668,12 @@ _sheet_convert() {
                     if ! qsv excel --quiet "${sheetarg[@]}" --output "$tmp" "$f"; then
                         rm -f "$tmp"; rc=1; continue
                     fi
-                    uv run --quiet "$script" "$tmp" "$out" "$target" || rc=1
+                    uv run --quiet "${uvargs[@]}" "$script" "$tmp" "$out" "$target" "${codecarg[@]}" || rc=1
                     rm -f "$tmp"
                     [[ $rc -eq 0 ]] || continue
                     ;;
                 *)
-                    uv run --quiet "$script" "$f" "$out" "$target" \
+                    uv run --quiet "${uvargs[@]}" "$script" "$f" "$out" "$target" "${codecarg[@]}" \
                         || { rc=1; continue; }
                     ;;
             esac
@@ -1006,7 +1017,24 @@ HELP
   2pickle  <file>...    → .pkl        pandas DataFrame
 
   Same flags as 2csv: -f to overwrite, -s <sheet> to pick one sheet out
-  of a workbook.
+  of a workbook. Plus -c to choose a codec:
+
+    2parquet -c <zstd|snappy|gzip|lz4|brotli|uncompressed>   default zstd
+    2feather -c <uncompressed|lz4|zstd>                      default uncompressed
+
+  Measured on the 200k x 6 frame (12M as csv):
+
+    parquet  zstd 3.3M   gzip 3.3M   snappy 4.6M   uncompressed 8.0M
+    feather  zstd 5.8M   lz4  8.9M   uncompressed 18M
+
+  The defaults differ because the formats are for different jobs. Parquet
+  is what you store or hand to someone, so it defaults to zstd — the same
+  codec `compress` reaches for, and polars' own default. Feather is Arrow
+  IPC, whose point is being memory-mappable and read back at once;
+  compressing it trades away the property you chose it for. That is the
+  whole reason the same frame is 3.3M as parquet and 18M as feather. Pass
+  -c zstd if you want a feather file small enough to move around, but
+  consider whether you wanted parquet.
 
   Reads everything 2csv reads — xlsx, xlsm, xlsb, legacy .xls, ods, csv,
   tsv — plus .parquet, .feather, .arrow and .ipc, so these also convert
@@ -1024,7 +1052,12 @@ HELP
   A different engine from the rest of the family. 2csv/2txt are one qsv
   call; these run bash/tabular.py through `uv run`, which builds a cached
   Python environment from the script's own PEP 723 header. First run
-  downloads polars and pandas (a few seconds), then it is ~0.2s warm.
+  downloads (a few seconds), then it is ~0.2s warm.
+
+  2parquet and 2feather need only polars — 215M cached. 2pickle also
+  needs pandas and pyarrow, which takes it to 476M; those are layered on
+  for that one command rather than declared in the header, so the other
+  two never pay for them.
 
   Excel is still read by qsv, not by python. _sheet_convert flattens a
   workbook to a temp CSV first, because calamine reads legacy BIFF .xls
