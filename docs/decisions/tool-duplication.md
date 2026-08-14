@@ -64,9 +64,16 @@ mise lua-language-server@3.18.2 [dryrun]  uninstall
 mise qsv@21.1.0 [dryrun]  uninstall
 ```
 
-That is 347M of superseded mise versions on this machine (qsv 21.1.0 alone is 303M).
-`mise prune` is safe, already available, and worth running after any version bump. It
-belongs in the workflow regardless of what else gets built.
+Run it as **`mise prune --tools`**, not bare `mise prune`. Bare `prune` does two unrelated
+jobs — it prunes tracked *configuration links* and unused *tool versions* — and the
+config half runs first. The tool half is behind a confirmation prompt, so in any
+non-interactive context (a script, a `make` recipe, an agent shell) bare `prune` silently
+does the config half only, reports "pruned configuration links", and removes nothing. It
+looks like it worked. `mise ls --prunable` is the honest check before and after; add `-y`
+when running unattended.
+
+Doing that here reclaimed 324M, taking `~/.local/share/mise/installs` from 842M to 518M
+(qsv 21.1.0 alone was 303M). Worth running after any version bump.
 
 **It cannot see the other half.** `~/.cargo/bin/stylua`, linuxbrew's `tree-sitter`,
 `/usr/bin/shellcheck` and `~/.bun/bin/bun` are outside mise entirely. Nothing in this repo
