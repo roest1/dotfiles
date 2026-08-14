@@ -30,6 +30,37 @@ back to copying the config instead of linking it.
 **[windows/README.md](windows/README.md)** — the picker, elevation, and why the
 Windows config can't be shared with the one inside WSL.
 
+## Just want a cool PS1?
+
+![The bash prompt: user@host, path, repo visibility, branch, branch protection, and GitHub Actions status](docs/images/prompt.png)
+
+Take the prompt on its own. It is one self-contained file — no framework, no
+plugin manager, nothing else from this repo:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bash/bash_theme -o ~/.bash_theme
+echo 'source ~/.bash_theme' >> ~/.bashrc
+exec bash
+```
+
+| | |
+|---|---|
+| 🌍 / 🔒 | repo is public / private |
+| 🛡️ | branch has protection rules |
+| `2 staged  1 modified  2 untracked` | working tree |
+| 🔼2&nbsp;&nbsp;🔽3 | commits to push / to pull — both at once means diverged |
+| `2 conflicting` | that pull would conflict, in 2 files |
+| `[11/11 ✅ 22h]` | GitHub Actions for this commit, last run 22h ago |
+
+Bash 3.2+, so macOS's system bash is fine. `git` is the only hard requirement;
+`gh` and `jq` add the bracketed CI status and the 🌍/🔒/🛡️ markers. Every tool
+is behind a `command -v` guard, so a missing one drops its segment rather than
+breaking the prompt.
+
+It spends **one process per prompt** inside a repo and none outside one —
+anything needing the network, or a real merge, is read from a cache that a
+detached job refreshes. [`bash/bash_theme`](bash/bash_theme) explains why.
+
 ## Everything lives in `deps.conf`
 
 One file declares every config symlink and every dependency. **Toggling is
