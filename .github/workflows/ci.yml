@@ -596,8 +596,8 @@ jobs:
   # Excel input is deliberately not covered: it needs qsv, and the qsv half of
   # that path is exercised by 2csv already. What is new here is the python
   # engine.
-  columnar:
-    name: 2parquet / 2feather / 2pickle (ubuntu)
+  conversions:
+    name: 2* conversions (ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -612,6 +612,85 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # qsv only, not a bare `mise install`, which would pull neovim, bun and
+      # the rest of mise.toml for a job that needs one binary. The version still
+      # comes from the repo's pin, so this exercises the lockfile too.
+      - name: Install qsv
+        run: |
+          curl -fsSL https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install qsv
+
+      # 2csv and 2txt had no coverage either — this job was originally only
+      # about the python engine, and the older half of the family turned out to
+      # be just as untested. The xlsx fixture is built here rather than
+      # committed: a binary blob in the tree is a thing nobody can review, and
+      # generating it costs one uv call.
+      - name: 2csv / 2txt round-trip, including a real workbook
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+
+          cat > src.csv <<'CSV'
+          id,name,note,score
+          1,"alpha, inc",plain,1.5
+          2,"quote""d",café,2.5
+          3,gamma,tab-free,3.5
+          CSV
+
+          cat > mkxlsx.py <<'PY'
+          # /// script
+          # requires-python = ">=3.10"
+          # dependencies = ["polars>=1.0", "xlsxwriter>=3"]
+          # ///
+          import polars as pl
+          pl.read_csv("src.csv").write_excel("book.xlsx")
+          PY
+          uv run --quiet mkxlsx.py
+
+          shopt -s expand_aliases
+          source ~/.bash_productivity
+
+          2csv book.xlsx          # workbook -> csv, via qsv excel
+          2txt src.csv            # csv -> tab-delimited, via qsv fmt
+          test -f book.csv && test -f src.txt
+
+          cat > check.py <<'PY'
+          # /// script
+          # requires-python = ">=3.10"
+          # dependencies = ["polars>=1.0"]
+          # ///
+          import sys
+          import polars as pl
+
+          src = pl.read_csv("src.csv")
+          book = pl.read_csv("book.csv")
+          txt = pl.read_csv("src.txt", separator="\t")
+
+          bad = 0
+          if not book.equals(src):
+              print("FAIL: xlsx -> csv != source"); bad = 1
+          if not txt.equals(src):
+              print("FAIL: csv -> txt != source"); bad = 1
+          # Excel stores every number as a double. If the workbook path ever
+          # stops going through calamine, ids come back as 1.0 and this fires.
+          if not str(book["id"].dtype).lower().startswith("int"):
+              print(f"FAIL: xlsx id dtype is {book['id'].dtype}, expected int"); bad = 1
+          print("ALL PASS" if not bad else "FAILURES")
+          sys.exit(bad)
+          PY
+          uv run --quiet check.py
+
+          # The exact re-quoting bash_productivity claims for `qsv fmt`, which is
+          # the reason csv->txt is not `tr ',' '\t'`: a comma needs no quoting
+          # once the delimiter is a tab, but an embedded quote still does.
+          grep -q $'\talpha, inc\t' src.txt || {
+            echo "FAIL: quoted comma should lose its quotes in tab output"; cat src.txt; exit 1; }
+          grep -q 'quote""d' src.txt || {
+            echo "FAIL: embedded quote should stay quoted in tab output"; cat src.txt; exit 1; }
+          echo "ALL PASS"
 
       - name: Round-trip csv -> parquet/feather and back
         run: |
@@ -696,6 +775,56 @@ jobs:
           if 2pickle -f -c zstd big.csv 2>/dev/null; then
             echo "FAIL: pickle accepted a compression flag"; exit 1
           fi
+          echo "ALL PASS"
+
+      # The one path with two engines in it: qsv flattens the workbook to a
+      # temp CSV, python reads that. Worth its own step because a leaked or
+      # mis-cleaned temp file would not show up anywhere else.
+      - name: Excel -> parquet, the two-engine path
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+
+          cat > src.csv <<'CSV'
+          id,name
+          1,"alpha, inc"
+          2,beta
+          CSV
+          cat > mk.py <<'PY'
+          # /// script
+          # requires-python = ">=3.10"
+          # dependencies = ["polars>=1.0", "xlsxwriter>=3"]
+          # ///
+          import polars as pl
+          pl.read_csv("src.csv").write_excel("book.xlsx")
+          PY
+          uv run --quiet mk.py
+
+          shopt -s expand_aliases
+          source ~/.bash_productivity
+          2parquet book.xlsx
+          test -f book.parquet
+
+          cat > check.py <<'PY'
+          # /// script
+          # requires-python = ">=3.10"
+          # dependencies = ["polars>=1.0"]
+          # ///
+          import sys
+          import polars as pl
+          src, got = pl.read_csv("src.csv"), pl.read_parquet("book.parquet")
+          if not got.equals(src):
+              print("FAIL: xlsx -> parquet != source"); sys.exit(1)
+          if not str(got["id"].dtype).lower().startswith("int"):
+              print(f"FAIL: id dtype is {got['id'].dtype}, expected int"); sys.exit(1)
+          print("ALL PASS")
+          PY
+          uv run --quiet check.py
+
+          # _sheet_convert makes the temp CSV with mktemp; it must clean up
+          # after itself whether the conversion succeeded or failed.
+          leaked=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name '2col.*' 2>/dev/null | wc -l)
+          [ "$leaked" -eq 0 ] || { echo "FAIL: $leaked temp file(s) leaked"; exit 1; }
           echo "ALL PASS"
 
   # no bun.lock parser, so it reads package.json, sees the 5 declared servers,
