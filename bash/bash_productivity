@@ -124,6 +124,36 @@ elif command -v batcat &>/dev/null; then
   alias catn='batcat'
 fi
 
+# clear: the screen, and only the screen.
+#
+# /usr/bin/clear sends \E[H\E[2J\E[3J. The first two home the cursor and
+# erase the display; the third is E3, "erase saved lines", which does not
+# clear the screen at all — it discards the terminal's entire scrollback
+# (Windows Terminal keeps 9001 lines by default, wezterm 3500).
+#
+# Ctrl-L has never done that. Readline's clear-screen uses the terminfo
+# `clear` capability, which is \E[H\E[2J with no E3 — the third sequence
+# comes from the clear *binary*, not the terminal database. So the command
+# and the keystroke used to disagree about whether your history survives,
+# and now they don't.
+#
+# The measured win is the fork: ~500us for the binary against ~30us for
+# the builtin. Whether E3 also costs the terminal real repaint time is
+# NOT established — `time clear` can't answer it, because it times the
+# write() to the pty and the terminal repaints asynchronously afterwards.
+# Keeping the scrollback is the point; the microseconds are a bonus.
+#
+# Any argument is forwarded to the real binary, so `clear -x` and friends
+# still work, and `command clear` still discards the scrollback on purpose.
+# shellcheck disable=SC2120  # args come from the user at a prompt, not a call site
+clear() {
+  if (( $# )); then
+    command clear "$@"
+  else
+    printf '\033[H\033[2J'
+  fi
+}
+
 # ─── Navigation ──────────────────────────────────────────────────────
 
 # mkcd: create directory and cd into it in one step
@@ -550,6 +580,7 @@ h() {
     lt                 eza tree (2 levels, git-aware)       [eza]
     cat                bat with syntax highlighting         [bat]
     catn               bat with line numbers + chrome       [bat]
+    clear              Screen only — keeps your scrollback
 
   Keyboard Shortcuts                                       [fzf]
     Ctrl+R             Fuzzy search command history
@@ -813,6 +844,30 @@ GitHub — one TUI, plus one one-shot
                  push and would nag on every new branch.
 
   Depends on: gh, fzf, jq
+HELP
+      ;;
+    clear)
+      cat <<'HELP'
+clear — clear the screen, keep the scrollback
+
+  clear              Home the cursor, erase the display
+  clear -x           Same, via the real binary
+  command clear      The old behaviour: also destroy the scrollback
+
+  /usr/bin/clear sends three sequences, not two. The third is E3,
+  "erase saved lines", which does not clear the screen — it discards
+  the terminal's entire scrollback buffer. Windows Terminal keeps
+  9001 lines by default; wezterm keeps 3500.
+
+  Ctrl-L never did this: readline uses the terminfo `clear`
+  capability, which is \E[H\E[2J with no E3. The extra sequence comes
+  from the binary, not the terminal database. So the command now
+  agrees with the keystroke, and emits those bytes from a shell
+  builtin (~30us) rather than a fork (~500us).
+
+  The point is your history, not the microseconds: scroll back with
+  your terminal's usual keys and the output that used to be thrown
+  away is still there.
 HELP
       ;;
     port)
