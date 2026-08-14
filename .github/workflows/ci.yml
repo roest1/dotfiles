@@ -616,12 +616,18 @@ jobs:
       # qsv only, not a bare `mise install`, which would pull neovim, bun and
       # the rest of mise.toml for a job that needs one binary. The version still
       # comes from the repo's pin, so this exercises the lockfile too.
+      #
+      # PATH gets the resolved bin directory, NOT the shim directory. The steps
+      # below run in a temp dir, where this repo's mise.toml is not active, and
+      # a shim outside its config errors with "No version is set for shim: qsv"
+      # — the same mise-shim-without-an-active-version failure `make status`
+      # reports as a stale pin. Resolving the real path here, while still in the
+      # repo, sidesteps cwd entirely.
       - name: Install qsv
         run: |
           curl -fsSL https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
           "$HOME/.local/bin/mise" install qsv
+          dirname "$("$HOME/.local/bin/mise" which qsv)" >> "$GITHUB_PATH"
 
       # 2csv and 2txt had no coverage either — this job was originally only
       # about the python engine, and the older half of the family turned out to
