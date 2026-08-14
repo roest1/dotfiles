@@ -103,7 +103,7 @@ jobs:
       - name: No target overrides its own recipe
         run: |
           fail=0
-          for t in help sections status check test sync link; do
+          for t in help sections status check test sync link lint; do
             if make $t 2>&1 | grep -qE "warning: (overriding|ignoring old) recipe"; then
               echo "make $t triggers a recipe override"; fail=1
             fi
