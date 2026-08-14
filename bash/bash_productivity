@@ -843,6 +843,18 @@ GitHub — one TUI, plus one one-shot
                  no upstream, which is the normal state before a first
                  push and would nag on every new branch.
 
+  and wraps the branch itself with what GitHub says about it:
+    🌍 main      the repo is public
+    🔒 main      the repo is private, or internal to an org
+    main 🛡️       the branch has protection rules, whether those come
+                 from a ruleset or from classic branch protection
+
+  Both are fetched in the background and cached for 5 minutes, so a repo
+  you have not been in for a while shows a bare branch for one prompt and
+  a decorated one from the next. Neither appears without a remote, while
+  detached (a sha cannot have protection rules), or where gh cannot see
+  the repo.
+
   Depends on: gh, fzf, jq
 HELP
       ;;
