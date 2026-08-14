@@ -30,19 +30,28 @@ previously claimed.
 Provenance is answerable through `make status`, and nothing installs itself imperatively
 at editor startup any more. Those hold.
 
-**Versions are only half-pinned.** `bun.lock` genuinely pins the JS servers. mise does
-not: `lib/pkg.sh` calls `mise use -g "$tool@latest"`, and the resolved versions land in
-`~/.config/mise/config.toml` — untracked, machine-local, outside the repo. Two machines
-provisioned a month apart get different versions with nothing in the repo recording it.
+**Versions are pinned now.** This section previously said they were not, and that a
+generated `mise.toml`, a committed `mise.lock` and a CI check asserting the two agree
+would be the fix. That landed. `mise.lock` records resolved versions, checksums and
+per-platform URLs across 11 platforms, and `tools/gen-mise.sh --check` runs in CI. The
+`mise use -g "$tool@latest"` path this warned about is gone: `lib/pkg.sh` reads the pin
+and only falls back to `@latest` with a warning telling you to run `make mise-lock`.
 
-The fix is `mise lock`, which records resolved versions, checksums and per-platform URLs,
-following the `bun.lock` / `yarn.lock` precedent already set on the nvim side: a
-generated `mise.toml` derived from `deps.conf`, a committed `mise.lock`, and a CI check
-asserting the two agree. Until that lands, treat "pinned" as a claim about `bun.lock`
-only.
+Two caveats keep it from being a closed question.
+
+`make install` does not enforce a pin it already has. `mise_install` short-circuits on
+`command -v`, so a machine holding an older version of a pinned tool keeps it — the shim
+is on PATH, the check passes, and the pin is never consulted. `make status` names this
+case (`pinned X not installed`) and the remedy is `mise install`, but the install path
+itself does not self-heal.
+
+And pinning a version does not remove the versions it replaced, or the copies other
+providers installed — see [`tool-duplication.md`](tool-duplication.md). `mise.lock` says
+which version should win; PATH order decides which one does.
 
 With the lockfile in place, the remaining delta to Nix is sandboxing and a true
-dependency closure — real, but smaller than the cost of switching.
+dependency closure — real, but smaller than the cost of switching. Duplicate installs are
+a genuine instance of that gap rather than a hypothetical one.
 
 ## The hedge
 
