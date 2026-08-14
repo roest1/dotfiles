@@ -188,7 +188,8 @@ gha() { # gha: workflow status for HEAD, as a table
     # Same reason, worse trap: ✅ ❌ ⏳ are East-Asian Wide (two columns) but
     # one character and three bytes, so neither %s width is right. ⏭ is
     # Neutral — one column — so it needs a space the others don't. This is
-    # the fact bash_theme's __count_emoji encodes for the prompt.
+    # the same fact bash_theme's prompt encodes, where the right side adds 2
+    # per emoji to its running width as it builds the string.
     local sw=2
     [[ "$status" == "⏭" ]] && sw=1
     local lpad rpad

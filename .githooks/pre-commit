@@ -2,7 +2,9 @@
 set -euo pipefail
 
 #####################################################################
-# Refuse to commit machine-local or secret-bearing files.
+# Two checks, for two different reasons.
+#
+# 1. Refuse to commit machine-local or secret-bearing files.
 #
 # This is the SECOND line of defence, not the first. The first is that
 # ~/.bash_local and ~/.bash_password_commands live in $HOME, outside
@@ -14,15 +16,29 @@ set -euo pipefail
 # inside the repo months from now, when the reasoning above has been
 # forgotten.
 #
+# Patterns live in .githooks/secret-patterns, shared with the CI step
+# that checks the same thing, so the two cannot drift apart.
+#
+# 2. Run shellcheck over the shell files being committed.
+#
+# That one is a CONVENIENCE, not a gate, and the difference is worth
+# keeping straight. The secret guard belongs here because a published
+# secret cannot be un-published — a local check buys something CI
+# structurally cannot. A lint failure is entirely reversible; CI would
+# catch it either way. This just saves the round trip of finding out
+# from a red run.
+#
+# Which files, and at what severity, is tools/lint.sh — the same script
+# CI runs with no arguments to sweep the whole tree. Neither side keeps
+# its own list.
+#
 # Installed by install.sh via `git config core.hooksPath .githooks`,
 # so it is version-controlled and arrives with a clone rather than
 # being something each machine has to remember.
-#
-# Patterns live in .githooks/secret-patterns, shared with the CI step
-# that checks the same thing, so the two cannot drift apart.
 #####################################################################
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
 PATTERN_FILE="$HERE/secret-patterns"
 
 # A missing pattern file must not silently disable the guard. Failing the
@@ -42,23 +58,71 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   patterns+="${patterns:+|}$line"
 done < "$PATTERN_FILE"
 
-[[ -z "$patterns" ]] && exit 0
-
 # --diff-filter=AM: only additions and modifications. Deleting one of these is
 # exactly what you should always be able to commit.
 staged=$(git diff --cached --name-only --diff-filter=AM || true)
 [[ -z "$staged" ]] && exit 0
 
-bad=$(printf '%s\n' "$staged" | grep -E "$patterns" || true)
-[[ -z "$bad" ]] && exit 0
+# Both checks run before anything exits, so one commit does not hide the
+# other's findings behind two round trips.
+fail=0
 
-echo ""
-echo "pre-commit: refusing to commit files that must never be tracked here:"
-printf '  %s\n' $bad
-echo ""
-echo "Machine-local and secret files belong in \$HOME, outside the work tree."
-echo "See README.md -> Machine-local config."
-echo ""
-echo "If this is genuinely wrong, bypass with: git commit --no-verify"
-echo ""
-exit 1
+# ─── 1. Secrets and machine-local files ────────────────────────────
+if [[ -n "$patterns" ]]; then
+  bad=$(printf '%s\n' "$staged" | grep -E "$patterns" || true)
+  if [[ -n "$bad" ]]; then
+    echo ""
+    echo "pre-commit: refusing to commit files that must never be tracked here:"
+    printf '  %s\n' $bad
+    echo ""
+    echo "Machine-local and secret files belong in \$HOME, outside the work tree."
+    echo "See README.md -> Machine-local config."
+    fail=1
+  fi
+fi
+
+# ─── 2. shellcheck ─────────────────────────────────────────────────
+#
+# Skipped rather than failed when shellcheck is absent: this half is a
+# convenience, and a machine that has not run `make install bash` should
+# still be able to commit. CI has no such allowance — tools/lint.sh
+# treats a missing shellcheck as an error when it runs there.
+#
+# Note this lints the WORKTREE file, not the staged blob. If you `git add`
+# a file and then keep editing it, this checks bytes you are not
+# committing. Reading the blob instead (`git show :path`) would deprive
+# the linter of the filename it needs for shebang detection and for
+# following `source`, which is the worse trade.
+#
+# (Saying "the linter" there is not stylistic. A comment line whose first
+# word after the `# ` is that tool's own name gets parsed as a DIRECTIVE
+# rather than as prose, and fails with SC1072/SC1073. This hook's very
+# first run caught exactly that, in this comment block.)
+if command -v shellcheck >/dev/null 2>&1; then
+  # Built as an array rather than split on whitespace, so a path with a
+  # space in it stays one path.
+  staged_files=()
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && staged_files+=("$f")
+  done <<< "$staged"
+
+  if (( ${#staged_files[@]} )); then
+    # lint.sh filters the list down to the shell sources itself and exits
+    # 0 when there are none, so every commit can hand it everything.
+    if ! "$ROOT/tools/lint.sh" "${staged_files[@]}"; then
+      echo ""
+      echo "pre-commit: shellcheck found problems in the files above."
+      echo "Same check CI runs, so this will fail there too."
+      fail=1
+    fi
+  fi
+fi
+
+if (( fail )); then
+  echo ""
+  echo "If this is genuinely wrong, bypass with: git commit --no-verify"
+  echo ""
+  exit 1
+fi
+
+exit 0
