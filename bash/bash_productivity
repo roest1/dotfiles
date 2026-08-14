@@ -124,6 +124,36 @@ elif command -v batcat &>/dev/null; then
   alias catn='batcat'
 fi
 
+# clear: the screen, and only the screen.
+#
+# /usr/bin/clear sends \E[H\E[2J\E[3J. The first two home the cursor and
+# erase the display; the third is E3, "erase saved lines", which does not
+# clear the screen at all — it discards the terminal's entire scrollback
+# (Windows Terminal keeps 9001 lines by default, wezterm 3500).
+#
+# Ctrl-L has never done that. Readline's clear-screen uses the terminfo
+# `clear` capability, which is \E[H\E[2J with no E3 — the third sequence
+# comes from the clear *binary*, not the terminal database. So the command
+# and the keystroke used to disagree about whether your history survives,
+# and now they don't.
+#
+# The measured win is the fork: ~500us for the binary against ~30us for
+# the builtin. Whether E3 also costs the terminal real repaint time is
+# NOT established — `time clear` can't answer it, because it times the
+# write() to the pty and the terminal repaints asynchronously afterwards.
+# Keeping the scrollback is the point; the microseconds are a bonus.
+#
+# Any argument is forwarded to the real binary, so `clear -x` and friends
+# still work, and `command clear` still discards the scrollback on purpose.
+# shellcheck disable=SC2120  # args come from the user at a prompt, not a call site
+clear() {
+  if (( $# )); then
+    command clear "$@"
+  else
+    printf '\033[H\033[2J'
+  fi
+}
+
 # ─── Navigation ──────────────────────────────────────────────────────
 
 # mkcd: create directory and cd into it in one step
@@ -681,14 +711,15 @@ h() {
   Spreadsheets  ("2" + the format you want)                [qsv]
     2csv <file>...     → .csv     reads xlsx/xlsm/xlsb/xls/ods/csv/tsv
     2txt <file>...     → .txt     tab-delimited
-    2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2csv
+    2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2*
 
   Git (aliases)
-    gs                 status
-    gc "msg"           commit -m
+    gstatus / gs       status
+    gcommit / gc "msg" commit -m
     gpusho / gpushfo   push origin / push --force-with-lease origin
-    gco / gcob         checkout / checkout -b
-    gb / gbd           branch / safe delete (-d) branch
+    gchecko / gcheckob checkout / checkout -b
+    gbranch / gb       branch
+    gbranchd / gbd     safe delete (-d) branch
     gfetcho / gpullo   fetch origin / pull origin
     gprune             Fetch + delete branches with gone remotes
 
@@ -714,6 +745,7 @@ h() {
     lt                 eza tree (2 levels, git-aware)       [eza]
     cat                bat with syntax highlighting         [bat]
     catn               bat with line numbers + chrome       [bat]
+    clear              Screen only — keeps your scrollback
 
   Keyboard Shortcuts                                       [fzf]
     Ctrl+R             Fuzzy search command history
@@ -890,7 +922,7 @@ findword — whole-word grep across project
   Depends on: rg (ripgrep)
 HELP
       ;;
-    2csv|2txt|2xlsx|qsv)
+    2*|qsv)
       cat <<'HELP'
 2csv / 2txt / 2xlsx — spreadsheet conversion
 
@@ -934,20 +966,20 @@ HELP
   Depends on: qsv   (make install bash)
 HELP
       ;;
-    g|git|gs|gc|gp|gpf|gco|gcob|gb|gbd|gfo|gpo)
+    gs*|gc*|gpush*|gb*|gfetch*|gpull*)
       cat <<'HELP'
 Git aliases — short forms for daily git commands
 
-  gs          git status
-  gc "msg"    git commit -m "msg"
-  gpusho      git push origin
-  gpushfo     git push --force-with-lease origin
-  gco <br>    git checkout <branch>
-  gcob <br>   git checkout -b <branch>      (create + switch)
-  gb          git branch
-  gbd         git branch -d
-  gfetcho     git fetch origin
-  gpullo      git pull origin
+  gstatus / gs          git status
+  gcommit / gc "msg"    git commit -m "msg"
+  gpusho                git push origin
+  gpushfo               git push --force-with-lease origin
+  gchecko <br>          git checkout <branch>
+  gcheckob <br>         git checkout -b <branch>
+  gbranch / gb          git branch
+  gbranchd / gbd        git branch -d
+  gfetcho               git fetch origin
+  gpullo                git pull origin
 
 HELP
       ;;
@@ -1010,8 +1042,48 @@ GitHub — one TUI, plus one one-shot
     [5/5 ✅ 1d]  5 of 5 passed, last run a day ago
     [3/5 ❌ 2h]  3 of 5 passed, 2 hours ago
     [5/5 ⏳ now] still running
+    [no origin]  no remote configured at all — nothing in this repo is
+                 pushed anywhere. Not shown merely because a branch has
+                 no upstream, which is the normal state before a first
+                 push and would nag on every new branch.
+
+  and wraps the branch itself with what GitHub says about it:
+    🌍 main      the repo is public
+    🔒 main      the repo is private, or internal to an org
+    main 🛡️       the branch has protection rules, whether those come
+                 from a ruleset or from classic branch protection
+
+  Both are fetched in the background and cached for 5 minutes, so a repo
+  you have not been in for a while shows a bare branch for one prompt and
+  a decorated one from the next. Neither appears without a remote, while
+  detached (a sha cannot have protection rules), or where gh cannot see
+  the repo.
 
   Depends on: gh, fzf, jq
+HELP
+      ;;
+    clear)
+      cat <<'HELP'
+clear — clear the screen, keep the scrollback
+
+  clear              Home the cursor, erase the display
+  clear -x           Same, via the real binary
+  command clear      The old behaviour: also destroy the scrollback
+
+  /usr/bin/clear sends three sequences, not two. The third is E3,
+  "erase saved lines", which does not clear the screen — it discards
+  the terminal's entire scrollback buffer. Windows Terminal keeps
+  9001 lines by default; wezterm keeps 3500.
+
+  Ctrl-L never did this: readline uses the terminfo `clear`
+  capability, which is \E[H\E[2J with no E3. The extra sequence comes
+  from the binary, not the terminal database. So the command now
+  agrees with the keystroke, and emits those bytes from a shell
+  builtin (~30us) rather than a fork (~500us).
+
+  The point is your history, not the microseconds: scroll back with
+  your terminal's usual keys and the output that used to be thrown
+  away is still there.
 HELP
       ;;
     port)
