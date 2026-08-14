@@ -807,6 +807,10 @@ GitHub — one TUI, plus one one-shot
     [5/5 ✅ 1d]  5 of 5 passed, last run a day ago
     [3/5 ❌ 2h]  3 of 5 passed, 2 hours ago
     [5/5 ⏳ now] still running
+    [no origin]  no remote configured at all — nothing in this repo is
+                 pushed anywhere. Not shown merely because a branch has
+                 no upstream, which is the normal state before a first
+                 push and would nag on every new branch.
 
   Depends on: gh, fzf, jq
 HELP

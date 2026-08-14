@@ -53,6 +53,7 @@ __C_BRANCH=$'\033[38;5;215m'
 __C_STAGED=$'\033[38;5;150m'
 __C_MODIFIED=$'\033[38;5;203m'
 __C_GH=$'\033[38;5;250m'
+__C_WARN=$'\033[38;5;214m'
 __C_OFF=$'\033[0m'
 
 # \001 and \002 are what bash's \[ and \] decode to: "readline, the bytes
@@ -286,6 +287,57 @@ __gh_segment() {
   __gh_w=$(( ${#s} + ${#t} + ${#skipped_str} + ${#age} + 7 ))
 }
 
+# ─── Is there a repo here at all? ───────────────────────────────────
+#
+# Forking git only to have it walk up the tree and fail costs ~700us on
+# the Linux filesystem and ~1.6ms under /mnt, where every stat crosses
+# drvfs. Walking the same parents in bash costs 7us in a repo and 287us
+# in the worst /mnt case, so this is worth doing before the fork.
+#
+# It deliberately answers a slightly different question from git's, and
+# is therefore only ever used to SKIP work, never to claim a repo exists.
+# The two ways it disagrees, both measured against real repos:
+#
+#   inside a .git directory  it says yes where git says no. Harmless —
+#                            git is forked, fails, and its answer wins.
+#   GIT_DIR / GIT_WORK_TREE  it would say no where git says yes, which
+#                            would silently drop the branch. Shells
+#                            spawned from git hooks have these set, so
+#                            they bypass the fast path entirely.
+#
+# Sets __GIT_TOPLEVEL as a side effect, which saves asking git for it.
+__in_git_tree() {
+  __GIT_TOPLEVEL=""
+  # Let git answer whenever the environment overrides where the repo is.
+  [[ -n "$GIT_DIR" || -n "$GIT_WORK_TREE" ]] && return 0
+  local d="$PWD"
+  while :; do
+    # -e, not -d: in a linked worktree or a submodule, .git is a file.
+    [[ -e "$d/.git" ]] && { __GIT_TOPLEVEL="$d"; return 0; }
+    [[ -z "$d" || "$d" == / ]] && return 1
+    d="${d%/*}"
+    [[ -z "$d" ]] && d=/
+  done
+}
+
+# __repo_has_remote <toplevel>
+# True if .git/config declares any remote at all. Read with the `read`
+# builtin (22us) rather than `git remote` (716us, a fork).
+#
+# Only reached when the branch has no upstream, so the common case pays
+# nothing. Anything it cannot read counts as "has a remote", because the
+# warning this drives should never fire on a guess.
+__repo_has_remote() {
+  local cfg="$1/.git/config" line
+  # .git is a file in a worktree or submodule, so config lives elsewhere;
+  # no toplevel at all means GIT_DIR is in play. Both stay quiet.
+  [[ -n "$1" && -f "$cfg" ]] || return 0
+  while IFS= read -r line; do
+    [[ "$line" == '[remote '* ]] && return 0
+  done < "$cfg"
+  return 1
+}
+
 # ─── The prompt ─────────────────────────────────────────────────────
 #
 # Sets __PS1_CONDA and __PS1_GIT for PS1 to read, then prints the right
@@ -295,6 +347,7 @@ __gh_segment() {
 __prompt_render() {
   local st line xy ab
   local head="" oid="" staged=0 modified=0 untracked=0 ahead=0 behind=0
+  local upstream=0
 
   __PS1_CONDA=""
   if [[ -n "$CONDA_DEFAULT_ENV" ]]; then
@@ -305,6 +358,10 @@ __prompt_render() {
   # the branch, and the early return below is the path that does it.
   __PS1_GIT=""
 
+  # Skip the fork entirely in directories with no repo above them — see
+  # __in_git_tree for why it is safe to trust a "no" here.
+  __in_git_tree || return
+
   # The one process this prompt spends. --no-optional-locks keeps it from
   # taking the index lock, so pressing Enter cannot contend with a rebase
   # running in another terminal.
@@ -314,6 +371,7 @@ __prompt_render() {
     case "$line" in
       '# branch.oid '*)  oid="${line#'# branch.oid '}" ;;
       '# branch.head '*) head="${line#'# branch.head '}" ;;
+      '# branch.upstream '*) upstream=1 ;;
       '# branch.ab '*)   ab="${line#'# branch.ab '}"      # "+2 -3"
                          ahead="${ab%% *}";  ahead="${ahead#+}"
                          behind="${ab##* }"; behind="${behind#-}" ;;
@@ -365,13 +423,27 @@ __prompt_render() {
     (( w += ${#behind} + 4 ))
   fi
 
-  local now
-  # $EPOCHSECONDS is a bash 5 builtin; macOS /bin/bash is 3.2.
-  if (( BASH_VERSINFO[0] >= 5 )); then now="$EPOCHSECONDS"; else now=$(date +%s); fi
+  # The bracketed slot reports this repo's relationship with its remote.
+  # Usually that is CI status; when there is nothing to have a
+  # relationship WITH, it says so instead, and there is no point asking
+  # GitHub about a repo GitHub has never heard of.
+  #
+  # Keyed on "no remote configured", NOT on "no upstream". A branch you
+  # have created and not yet pushed has no upstream and is completely
+  # normal — warning about that would nag on every new branch. No remote
+  # at all is the condition worth surfacing: nothing here is backed up.
+  if (( upstream == 0 )) && ! __repo_has_remote "$__GIT_TOPLEVEL"; then
+    right+="${__C_WARN}[no origin]${__C_OFF}"
+    (( w += 11 ))
+  else
+    local now
+    # $EPOCHSECONDS is a bash 5 builtin; macOS /bin/bash is 3.2.
+    if (( BASH_VERSINFO[0] >= 5 )); then now="$EPOCHSECONDS"; else now=$(date +%s); fi
 
-  __gh_segment "$oid" "$now"
-  right+="$__gh_out"
-  (( w += __gh_w ))
+    __gh_segment "$oid" "$now"
+    right+="$__gh_out"
+    (( w += __gh_w ))
+  fi
 
   # $COLUMNS is maintained by bash itself (bashrc sets `shopt -s
   # checkwinsize`), which is why this does not shell out to `tput cols`.
