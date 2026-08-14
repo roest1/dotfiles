@@ -82,6 +82,12 @@ check: ## Verify enabled tools are present (optionally: make check <section>...)
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
 
+# No file list here either — tools/lint.sh holds it, and .githooks/pre-commit
+# and the CI job call the same script. This is the whole-tree sweep, which is
+# what CI runs; the hook passes only what is staged.
+lint: ## Run shellcheck over every shell source (same check CI runs)
+	@bash "$(DOTFILES_DIR)/tools/lint.sh"
+
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
 
