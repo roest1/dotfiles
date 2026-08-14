@@ -5,7 +5,7 @@
 #####################################################################
 #
 # Prompt layout:
-#   (base) riley@host ~/path 🌍 branch 🛡️   2 staged  3 modified  1 untracked  🔼2 [5/5 ✅ 1d]
+#   (base) riley@host ~/path 🌍 branch 🛡️   2 staged  3 unstaged  1 untracked  🔼2 [5/5 ✅ 1d]
 #   $
 #
 # Left side (PS1): conda env, user@host, path, repo visibility, git
@@ -14,7 +14,7 @@
 #
 # The three dirty-state counts are words rather than glyphs, and share one
 # vocabulary on purpose: they answer the same question at three stages of
-# the same pipeline, so `2 staged  3 modified  1 untracked` reads as one
+# the same pipeline, so `2 staged  3 unstaged  1 untracked` reads as one
 # sentence where a mixed set of emoji and words read as three unrelated
 # facts. Untracked counts entries, not files — see where it is rendered.
 #
@@ -39,7 +39,7 @@
 # was the forking, so the whole design is arranged to avoid it:
 #
 #   * ONE `git status --porcelain=v2 --branch` yields branch, staged,
-#     modified, untracked, ahead, behind and the commit sha together. It
+#     unstaged, untracked, ahead, behind and the commit sha together. It
 #     replaced six git invocations and their wc/head/awk pipelines.
 #   * PS1 reads VARIABLES (__PS1_GIT, __PS1_CONDA) that PROMPT_COMMAND
 #     sets. A `$(...)` in PS1 forks on every single Enter.
@@ -64,7 +64,7 @@ export CONDA_CHANGEPS1=false
 __C_CONDA=$'\033[38;5;141m'
 __C_BRANCH=$'\033[38;5;215m'
 __C_STAGED=$'\033[38;5;150m'
-__C_MODIFIED=$'\033[38;5;203m'
+__C_UNSTAGED=$'\033[38;5;203m'
 # Deliberately the quietest of the three dirty-state colours. Untracked is
 # the least urgent of them — green is done, red is in progress, this is
 # merely not-yet-git's-problem — and it used to be rendered as ✨, the
@@ -72,7 +72,7 @@ __C_MODIFIED=$'\033[38;5;203m'
 __C_UNTRACKED=$'\033[38;5;180m'
 __C_GH=$'\033[38;5;250m'
 __C_WARN=$'\033[38;5;214m'
-# The modified red, but bold. A predicted conflict is the same colour
+# The unstaged red, but bold. A predicted conflict is the same colour
 # family as "you have edits" because that is what it is about to become a
 # problem for, and it is the loudest thing on the line because it is the
 # only state here that costs an afternoon rather than a keystroke.
@@ -670,7 +670,7 @@ __repo_has_remote() {
 
 __prompt_render() {
   local st line xy ab
-  local head="" oid="" staged=0 modified=0 untracked=0 ahead=0 behind=0
+  local head="" oid="" staged=0 unstaged=0 untracked=0 ahead=0 behind=0
   # The upstream's NAME, not a flag. porcelain v2 hands it over for free
   # and the merge check below needs something to merge against; emptiness
   # still answers the "is there an upstream at all" question a flag did.
@@ -708,7 +708,7 @@ __prompt_render() {
       # returns a non-zero status.
       '1 '* | '2 '*)     xy="${line:2:2}"
                          [[ "${xy:0:1}" == . ]] || (( ++staged ))
-                         [[ "${xy:1:1}" == . ]] || (( ++modified )) ;;
+                         [[ "${xy:1:1}" == . ]] || (( ++unstaged )) ;;
       '? '*)             (( ++untracked )) ;;
     esac
   done <<< "$st"
@@ -730,17 +730,24 @@ __prompt_render() {
     prot_branch="$head"
   fi
 
-  # Right side, with its visible width accumulated as it is built. Every
-  # emoji here is East Asian Wide: one character, two columns.
-  local right="" w=0
+  # Right side, one variable per segment, each with its visible width.
+  # Built separately rather than concatenated as it goes, because the
+  # fitting pass below removes individual pieces — appending would mean
+  # rebuilding the whole string to drop one. Every emoji here is East
+  # Asian Wide: one character, two columns.
+  local r_staged="" r_unstaged="" r_untracked="" r_sync="" r_conflict="" r_gh=""
+  local w_staged=0 w_unstaged=0 w_untracked=0 w_sync=0 w_conflict=0 w_gh=0
 
   if (( staged )); then
-    right+="${__C_STAGED}${staged} staged${__C_OFF}  "
-    (( w += ${#staged} + 9 ))                      # " staged" + 2 spaces
+    r_staged="${__C_STAGED}${staged} staged${__C_OFF}  "
+    (( w_staged = ${#staged} + 9 ))                # " staged" + 2 spaces
   fi
-  if (( modified )); then
-    right+="${__C_MODIFIED}${modified} modified${__C_OFF}  "
-    (( w += ${#modified} + 11 ))                   # " modified" + 2 spaces
+  # "unstaged", not "modified": porcelain v2's Y column is literally the
+  # unstaged state, and the pair reads as one idea next to "N staged"
+  # where "modified" invited the question of modified-versus-what.
+  if (( unstaged )); then
+    r_unstaged="${__C_UNSTAGED}${unstaged} unstaged${__C_OFF}  "
+    (( w_unstaged = ${#unstaged} + 11 ))           # " unstaged" + 2 spaces
   fi
   # Counts porcelain ENTRIES, not files. Git's default -unormal collapses
   # an untracked directory into one `?` line, so a new build/ holding 500
@@ -751,20 +758,23 @@ __prompt_render() {
   # mode that actually costs time on a large tree, spent to buy a number
   # whose only distinct behaviour is being alarming.
   if (( untracked )); then
-    right+="${__C_UNTRACKED}${untracked} untracked${__C_OFF}  "
-    (( w += ${#untracked} + 12 ))                  # " untracked" + 2 spaces
+    r_untracked="${__C_UNTRACKED}${untracked} untracked${__C_OFF}  "
+    (( w_untracked = ${#untracked} + 12 ))         # " untracked" + 2 spaces
   fi
-  # Two independent ifs, not an if/elif/elif with a third glyph for the
-  # both-at-once case. Seeing 🔼 and 🔽 together IS the diverged signal,
-  # so it needs no symbol of its own, and the counts can no longer be read
-  # in the wrong order the way a single 🔄2/3 could be.
+  # One segment, not two, because they are one idea and the fitting pass
+  # drops them together: 🔼 alone after 🔽 was dropped would read as "you
+  # are only ahead", which is a different and wrong statement. Two
+  # independent ifs inside it, though, not an if/elif with a third glyph
+  # for the both-at-once case — seeing 🔼 and 🔽 together IS the diverged
+  # signal, and the counts cannot be read in the wrong order the way a
+  # single 🔄2/3 could be.
   if (( ahead )); then
-    right+="🔼${ahead}  "
-    (( w += ${#ahead} + 4 ))
+    r_sync+="🔼${ahead}  "
+    (( w_sync += ${#ahead} + 4 ))
   fi
   if (( behind )); then
-    right+="🔽${behind}  "
-    (( w += ${#behind} + 4 ))
+    r_sync+="🔽${behind}  "
+    (( w_sync += ${#behind} + 4 ))
   fi
 
   # The bracketed slot reports this repo's relationship with its remote.
@@ -784,8 +794,8 @@ __prompt_render() {
   __repo_pre=""
   __repo_post=""
   if [[ -z "$upstream" ]] && ! __repo_has_remote "$__GIT_TOPLEVEL"; then
-    right+="${__C_WARN}[no origin]${__C_OFF}"
-    (( w += 11 ))
+    r_gh="${__C_WARN}[no origin]${__C_OFF}"
+    (( w_gh = 11 ))
   else
     local now
     # $EPOCHSECONDS is a bash 5 builtin; macOS /bin/bash is 3.2. Read once
@@ -799,26 +809,91 @@ __prompt_render() {
     # so this never starts outside the state the two arrows already show.
     if (( ahead && behind )); then
       __merge_segment "$upstream" "$oid" "$ahead" "$behind" "$now"
-      right+="$__merge_out"
-      (( w += __merge_w ))
+      r_conflict="$__merge_out"
+      (( w_conflict = __merge_w ))
     fi
 
     __gh_segment "$oid" "$now"
-    right+="$__gh_out"
-    (( w += __gh_w ))
+    r_gh="$__gh_out"
+    (( w_gh = __gh_w ))
   fi
 
-  # Assembled here rather than where the branch was parsed, because the
-  # decorations are not known until the segment above has run. The emoji
-  # are deliberately OUTSIDE the \001..\002 colour markers: they are
-  # visible characters and readline has to count them, where the colour
-  # bytes are invisible and it must not.
-  __PS1_GIT=" ${__repo_pre}${__NP_ON}${__C_BRANCH}${__NP_OFF}${head}${__NP_ON}${__C_OFF}${__NP_OFF}${__repo_post}"
-
+  # ─── Fitting ────────────────────────────────────────────────────────
+  #
+  # Everything above built the widest prompt this directory could want.
+  # The right side is drawn first at column (cols - w) and PS1 is then
+  # drawn over it from column 0, so anything the left side reaches, it
+  # destroys. The old guard only asked whether the right side fit the
+  # TERMINAL; it never knew the left side existed, so a busy repo in a
+  # 95-column window overwrote its own status line.
+  #
   # $COLUMNS is maintained by bash itself (bashrc sets `shopt -s
-  # checkwinsize`), which is why this does not shell out to `tput cols`.
+  # checkwinsize`, and bash 5 defaults it on), which is why this does not
+  # shell out to `tput cols`. It updates on resize, so the NEXT prompt
+  # after dragging the window narrower is already fitted — the one on
+  # screen is not redrawn, because readline only repaints its last line.
   local cols="${COLUMNS:-80}"
-  if (( w > 0 && w < cols )); then
+
+  # The left side's own text is never shortened. Losing a character of
+  # the path, the machine name or the conda env to make room for a status
+  # glyph is a bad trade — those are how you know WHERE you are.
+  #
+  # \h is the hostname up to the first dot; \w is $PWD with $HOME
+  # collapsed to ~. Both computed with parameter expansion, no forks.
+  local lw=0 dpath="$PWD" hshort="${HOSTNAME%%.*}"
+  [[ -n "$CONDA_DEFAULT_ENV" ]] && (( lw += ${#CONDA_DEFAULT_ENV} + 3 ))
+  [[ "$dpath" == "$HOME"* ]] && dpath="~${dpath#"$HOME"}"
+  (( lw += ${#USER} + 1 + ${#hshort} + 1 + ${#dpath} ))
+
+  # The branch and its two decorations sit on the left as well, and are
+  # the only part of it that may go.
+  local w_vis=0 w_shield=0 w_branch=0
+  [[ -n "$__repo_pre" ]]  && w_vis=3               # emoji + space
+  [[ -n "$__repo_post" ]] && w_shield=3            # space + emoji
+  [[ -n "$head" ]] && (( w_branch = ${#head} + 1 ))
+
+  local w=$(( w_staged + w_unstaged + w_untracked + w_sync + w_conflict + w_gh ))
+  local total=$(( lw + w_vis + w_branch + w_shield + w ))
+
+  # Least useful goes first. The whole cascade sits behind one comparison
+  # that is false on any terminal wide enough, so the common case pays a
+  # single test rather than nine.
+  #
+  # The order is deliberate and runs roughly "housekeeping before
+  # warnings, warnings before identity". Dirty-state counts go first —
+  # `git status` answers those on demand. Then ahead/behind. Then CI,
+  # which is a fact about a commit you already pushed. Then repo
+  # visibility, which is stable context you rarely need reminding of.
+  # `N conflicting` outlives all of them because it is the only one
+  # warning about damage you are about to do, and 🛡️ outlives that
+  # because committing to a protected branch is a mistake you make BEFORE
+  # you read a status line. The branch name is last: it is the single
+  # most useful thing here, and a prompt that has lost everything else is
+  # still worth having with it.
+  if (( total >= cols )); then
+    # Unconditional: the enclosing test already established it does not fit.
+    r_untracked=""; (( total -= w_untracked, w -= w_untracked ))
+    if (( total >= cols )); then r_unstaged="";  (( total -= w_unstaged,  w -= w_unstaged  )); fi
+    if (( total >= cols )); then r_staged="";    (( total -= w_staged,    w -= w_staged    )); fi
+    if (( total >= cols )); then r_sync="";      (( total -= w_sync,      w -= w_sync      )); fi
+    if (( total >= cols )); then r_gh="";        (( total -= w_gh,        w -= w_gh        )); fi
+    if (( total >= cols )); then __repo_pre="";  (( total -= w_vis    )); fi
+    if (( total >= cols )); then r_conflict="";  (( total -= w_conflict,  w -= w_conflict  )); fi
+    if (( total >= cols )); then __repo_post=""; (( total -= w_shield )); fi
+    if (( total >= cols )); then head="";        (( total -= w_branch )); fi
+  fi
+
+  # Assembled here rather than where the branch was parsed, because
+  # neither the decorations nor the fitting are known until now. The
+  # emoji are deliberately OUTSIDE the \001..\002 colour markers: they
+  # are visible characters and readline has to count them, where the
+  # colour bytes are invisible and it must not.
+  if [[ -n "$head" ]]; then
+    __PS1_GIT=" ${__repo_pre}${__NP_ON}${__C_BRANCH}${__NP_OFF}${head}${__NP_ON}${__C_OFF}${__NP_OFF}${__repo_post}"
+  fi
+
+  local right="${r_staged}${r_unstaged}${r_untracked}${r_sync}${r_conflict}${r_gh}"
+  if (( w > 0 && lw + w_vis + w_branch + w_shield + w < cols )); then
     printf '\033[%dG%s\r' $(( cols - w )) "$right"
   fi
   return 0
