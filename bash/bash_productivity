@@ -517,14 +517,15 @@ h() {
   Spreadsheets  ("2" + the format you want)                [qsv]
     2csv <file>...     → .csv     reads xlsx/xlsm/xlsb/xls/ods/csv/tsv
     2txt <file>...     → .txt     tab-delimited
-    2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2csv
+    2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2*
 
   Git (aliases)
-    gs                 status
-    gc "msg"           commit -m
+    gstatus / gs       status
+    gcommit / gc "msg" commit -m
     gpusho / gpushfo   push origin / push --force-with-lease origin
-    gco / gcob         checkout / checkout -b
-    gb / gbd           branch / safe delete (-d) branch
+    gchecko / gcheckob checkout / checkout -b
+    gbranch / gb       branch
+    gbranchd / gbd     safe delete (-d) branch
     gfetcho / gpullo   fetch origin / pull origin
     gprune             Fetch + delete branches with gone remotes
 
@@ -687,7 +688,7 @@ findword — whole-word grep across project
   Depends on: rg (ripgrep)
 HELP
       ;;
-    2csv|2txt|2xlsx|qsv)
+    2*|qsv)
       cat <<'HELP'
 2csv / 2txt / 2xlsx — spreadsheet conversion
 
@@ -731,20 +732,20 @@ HELP
   Depends on: qsv   (make install bash)
 HELP
       ;;
-    g|git|gs|gc|gp|gpf|gco|gcob|gb|gbd|gfo|gpo)
+    g*)
       cat <<'HELP'
 Git aliases — short forms for daily git commands
 
-  gs          git status
-  gc "msg"    git commit -m "msg"
-  gpusho      git push origin
-  gpushfo     git push --force-with-lease origin
-  gco <br>    git checkout <branch>
-  gcob <br>   git checkout -b <branch>      (create + switch)
-  gb          git branch
-  gbd         git branch -d
-  gfetcho     git fetch origin
-  gpullo      git pull origin
+  gstatus / gs          git status
+  gcommit / gc "msg"    git commit -m "msg"
+  gpusho                git push origin
+  gpushfo               git push --force-with-lease origin
+  gchecko <br>          git checkout <branch>
+  gcheckob <br>         git checkout -b <branch>
+  gbranch / gb          git branch
+  gbranchd / gbd        git branch -d
+  gfetcho               git fetch origin
+  gpullo                git pull origin
 
 HELP
       ;;
