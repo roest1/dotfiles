@@ -28,10 +28,9 @@ DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && p
 
 # Sections come from the manifest, not from this file.
 #
-# Through lib/manifest.sh rather than a local sed, so this honours `platform`.
-# A `platform windows` section cannot be installed from bash — install.sh
-# refuses it by design — so listing it in `make help` would advertise a target
-# that deliberately fails.
+# Through lib/manifest.sh rather than a local sed, so one parser decides what a
+# section is. Every section here is installable from bash; the Windows host is
+# not a section at all, because windows/install.ps1 declares its own payload.
 SECTIONS := $(shell bash -c 'source $(DOTFILES_DIR)/lib/manifest.sh && manifest_sections')
 
 # Section names passed on the command line (`make install nvim`) are arguments,
