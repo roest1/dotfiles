@@ -159,6 +159,11 @@ jobs:
             [ -s "$f" ] || { echo "missing or empty: $f"; fail=1; }
           done
           grep -q 'wezterm/fonts' deps.conf || { echo "deps.conf does not link wezterm/fonts"; fail=1; }
+          # OFL 1.1 section 2 requires the notice and licence to travel with the
+          # font, and section 5 forbids relicensing it -- so the standalone copy
+          # and the carve-out in LICENSE are both compliance, not tidiness.
+          [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
+          grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
           for cfg in wezterm/wezterm.lua wezterm/wezterm-windows.lua; do
             grep -q 'text_blink_rate_rapid = 0' "$cfg" \
               || { echo "$cfg: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }

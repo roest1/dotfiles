@@ -187,6 +187,15 @@ you write code here. Reasoning, revisit conditions and current status:
   `make` runs in the WSL guest, but the guest only writes the escape — `wezterm.exe` on
   the host draws it.
 
+  **The two `.ttf` files are OFL, not MIT, and `LICENSE` carves them out explicitly.**
+  That is required, not tidy: OFL 1.1 §5 says the font must be distributed *entirely*
+  under the OFL and under no other licence, so a repo-wide MIT grant would conflict.
+  `wezterm/fonts/OFL.txt` is the standalone copy, and `mkmono.py` deliberately preserves
+  name IDs 0/13/14 (upstream copyright and licence) — don't "clean up" those fields.
+  Upstream declares **no** Reserved Font Name, which is the only OFL clause that would
+  have restricted the derivative's name, so `Science Gothic Mono` is permissible. CI
+  asserts both the licence file and the carve-out survive.
+
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
   writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
   Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will

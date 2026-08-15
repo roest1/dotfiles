@@ -299,6 +299,20 @@ def finish(f, adv, style, weight):
     n.setName(f"Science Gothic Mono {style}", 4, 3, 1, 0x409)
     n.setName(f"ScienceGothicMono-{style}", 6, 3, 1, 0x409)
 
+    # nameID 3 is the UNIQUE font identifier, and both cuts inherit the same
+    # one from upstream -- two distinct fonts claiming a single ID, which is
+    # the collision that makes a matcher pick by first match and hand back the
+    # wrong glyphs. Keep upstream's version and vendor, replace the face name.
+    uid = n.getDebugName(3) or "1.000;DETF;ScienceGothic-Regular"
+    parts = uid.split(";")
+    ver, vendor = (parts + ["1.000", "DETF"])[:2]
+    n.setName(f"{ver};{vendor};ScienceGothicMono-{style}", 3, 3, 1, 0x409)
+
+    # nameID 0/13/14 -- the upstream copyright and the OFL declaration -- are
+    # deliberately left untouched. OFL 1.1 section 2 accepts machine-readable
+    # metadata as a place to carry the notice, and wezterm/fonts/OFL.txt is the
+    # standalone copy alongside it. Do not "clean up" these fields.
+
     # Kerning and per-axis metrics would reintroduce proportional spacing on a
     # fixed grid; fvar/STAT would advertise axes that no longer exist.
     for tag in ("GPOS", "kern", "HVAR", "STAT", "avar", "fvar", "gvar"):
