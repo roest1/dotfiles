@@ -1,18 +1,27 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Links config and installs tools for the Windows host, driven by deps.conf.
+    Links config and installs tools for the Windows host.
 
 .DESCRIPTION
-    The Windows counterpart to install.sh. Both read the same manifest, so
-    adding a Windows config stays a deps.conf edit - the invariant the bash
-    side already holds itself to.
+    The Windows payload is declared in the two tables below rather than parsed
+    out of deps.conf, and that is a deliberate reversal.
 
-    Only sections that explicitly declare `platform windows` are visible here.
-    That is deliberately opt-IN, where the bash parser is opt-OUT: a section
-    with no platform line means "every platform this entry point handles",
-    which is right for [bash] (Linux and macOS both) and catastrophic here,
-    where it would link bashrc into %USERPROFILE%.
+    This script used to reimplement the manifest parser in PowerShell - comment
+    stripping, section headers, a two-pass read so a `platform` line below a
+    `link` line could not silently drop it - so that "nothing else enumerates
+    the links" held across both entry points. That cost about 130 lines to
+    describe one symlink and one winget package, and the parity it bought was
+    always partial: the two parsers read `platform` with opposite defaults
+    precisely because a shared reading would have linked bashrc into
+    %USERPROFILE%.
+
+    Declaring the payload here removes the second parser, the `platform`
+    mechanism that existed to arbitrate between the two, and the class of bug
+    where the parsers disagree about the same file. The cost is stated plainly:
+    adding a Windows config is now an edit to this file instead of to
+    deps.conf. The section held one link and one tool for its entire life, so
+    that trade is worth the deletion.
 
     Targets Windows PowerShell 5.1, not just PowerShell 7 - 5.1 is what a
     fresh Windows box runs when you paste the bootstrap line. So: no ternary
@@ -24,9 +33,6 @@
     absent when the script is run as a scriptblock (bootstrap.ps1 does that to
     sidestep the execution policy), so bootstrap passes it explicitly.
 
-.PARAMETER Sections
-    Limit to these manifest sections. Default: every windows section.
-
 .PARAMETER LinkOnly
     Symlinks only - no winget, no downloads. The analogue of `make link`, for
     a machine where you can't install anything but still want your config.
@@ -37,9 +43,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string]   $RepoRoot,
-    [string[]] $Sections,
-    [switch]   $LinkOnly
+    [string] $RepoRoot,
+    [switch] $LinkOnly
 )
 
 Set-StrictMode -Version Latest
@@ -49,6 +54,29 @@ $ErrorActionPreference = 'Stop'
 # Harmless where the default is already sane.
 [Net.ServicePointManager]::SecurityProtocol =
     [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# --- The Windows payload ---------------------------------------------------
+#
+# Source is relative to the repo, Destination relative to %USERPROFILE%. Both
+# use backslashes: nothing translates them any more, because nothing is
+# reading paths written for the bash side.
+#
+# wezterm-windows.lua is a different file for a different job, not a variant of
+# wezterm/wezterm.lua. It configures wezterm.exe on the host, whose purpose is
+# to get you into WSL; it declares no unix_domains, because that socket path
+# belongs to a process inside the guest.
+
+$Links = @(
+    @{ Source = 'wezterm\wezterm-windows.lua'; Destination = '.config\wezterm\wezterm.lua' }
+)
+
+# Elevation helper, off by default. Windows 11 24H2+ ships `sudo` in System32
+# and wezterm-windows.lua prefers it when present. Uncomment on Windows 10, or
+# if you'd rather not run `sudo config --enable normal` for inline elevation.
+#   @{ Command = 'gsudo'; Package = 'gerardog.gsudo' }
+$WingetTools = @(
+    @{ Command = 'wezterm'; Package = 'wez.wezterm' }
+)
 
 # --- Locate the repo -------------------------------------------------------
 
@@ -62,96 +90,7 @@ if (-not $RepoRoot) {
 }
 
 $RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).ProviderPath
-$Manifest = Join-Path $RepoRoot 'deps.conf'
-
-if (-not (Test-Path -LiteralPath $Manifest)) {
-    throw "Manifest not found: $Manifest"
-}
-
 $BackupDir = Join-Path $env:USERPROFILE ('.dotfiles_backup\' + (Get-Date -Format 'yyyyMMdd_HHmmss'))
-
-# --- Manifest --------------------------------------------------------------
-
-# Strip from the first '#' and trim. Matches bash's ${raw%%#*} exactly -
-# including that a '#' inside a value would truncate it, which is why the
-# manifest has no such values.
-function Remove-ManifestComment {
-    param([string] $Line)
-
-    $hash = $Line.IndexOf('#')
-    if ($hash -ge 0) { $Line = $Line.Substring(0, $hash) }
-    return $Line.Trim()
-}
-
-<#
-    Two passes, because `platform` is a property of the whole section and the
-    bash parser collects it before deciding anything. A single pass would make
-    a `platform` line placed below a `link` line silently drop that link, so
-    the two parsers would disagree about the same file. They must not.
-#>
-function Get-ManifestRecord {
-    param(
-        [Parameter(Mandatory = $true)][string] $Path,
-        [string] $Platform = 'windows'
-    )
-
-    $lines = Get-Content -LiteralPath $Path -Encoding UTF8
-
-    # Pass 1: section -> declared platform
-    $platformOf = @{}
-    $section = ''
-    foreach ($raw in $lines) {
-        $line = Remove-ManifestComment $raw
-        if ($line.Length -eq 0) { continue }
-
-        if ($line -match '^\[([A-Za-z0-9_-]+)\]') {
-            $section = $Matches[1]
-            if (-not $platformOf.ContainsKey($section)) { $platformOf[$section] = '' }
-            continue
-        }
-
-        $fields = $line -split '\s+'
-        if ($fields[0] -eq 'platform' -and $fields.Count -ge 2 -and $section) {
-            $platformOf[$section] = $fields[1]
-        }
-    }
-
-    # Pass 2: emit the records belonging to a section that named this platform
-    $records = New-Object System.Collections.ArrayList
-    $section = ''
-    foreach ($raw in $lines) {
-        $line = Remove-ManifestComment $raw
-        if ($line.Length -eq 0) { continue }
-
-        if ($line -match '^\[([A-Za-z0-9_-]+)\]') {
-            $section = $Matches[1]
-            continue
-        }
-        if (-not $section) { continue }
-        if ($platformOf[$section] -ne $Platform) { continue }
-
-        $fields = $line -split '\s+'
-        if ($fields[0] -eq 'platform') { continue }
-
-        [void] $records.Add([pscustomobject]@{
-            Section = $section
-            Kind    = $fields[0]
-            Fields  = $fields
-        })
-    }
-
-    return $records.ToArray()
-}
-
-# `~/.config/x` -> `C:\Users\<you>\.config\x`. The manifest is written for the
-# bash side, so destinations arrive with forward slashes.
-function Resolve-Destination {
-    param([string] $Destination)
-
-    $path = $Destination
-    if ($path.StartsWith('~')) { $path = $env:USERPROFILE + $path.Substring(1) }
-    return $path.Replace('/', '\')
-}
 
 # --- Linking ---------------------------------------------------------------
 
@@ -277,37 +216,13 @@ Write-Host ''
 Write-Host "Windows dotfiles - $RepoRoot"
 Write-Host '-------------------------------------------'
 
-# @() because a single-record result unrolls to a scalar on return, and the
-# .Count / -contains checks below would then be measuring the wrong thing.
-$records = @(Get-ManifestRecord -Path $Manifest -Platform 'windows')
-
-if ($Sections) {
-    $known = @($records | ForEach-Object { $_.Section } | Sort-Object -Unique)
-    foreach ($s in $Sections) {
-        if ($known -notcontains $s) {
-            throw "No windows section named '$s'. Available: $($known -join ', ')"
-        }
-    }
-    $records = @($records | Where-Object { $Sections -contains $_.Section })
-}
-
-if ($records.Count -eq 0) {
-    Write-Host '  (no windows sections in deps.conf)' -ForegroundColor Yellow
-    exit 0
-}
-
 $failed = 0
 
 Write-Host ''
 Write-Host 'links:'
-foreach ($r in ($records | Where-Object { $_.Kind -eq 'link' })) {
-    if ($r.Fields.Count -lt 3) {
-        Write-Host "  malformed link line in [$($r.Section)]: $($r.Fields -join ' ')" -ForegroundColor Red
-        $failed++
-        continue
-    }
-    $src  = Join-Path $RepoRoot ($r.Fields[1].Replace('/', '\'))
-    $dest = Resolve-Destination $r.Fields[2]
+foreach ($link in $Links) {
+    $src  = Join-Path $RepoRoot $link.Source
+    $dest = Join-Path $env:USERPROFILE $link.Destination
     if (-not (Install-ConfigLink -Source $src -Destination $dest)) { $failed++ }
 }
 
@@ -320,22 +235,8 @@ if ($LinkOnly) {
 
 Write-Host ''
 Write-Host 'tools:'
-foreach ($r in ($records | Where-Object { $_.Kind -eq 'tool' })) {
-    if ($r.Fields.Count -lt 3) {
-        Write-Host "  malformed tool line in [$($r.Section)]: $($r.Fields -join ' ')" -ForegroundColor Red
-        $failed++
-        continue
-    }
-    $provider = $r.Fields[1]
-    $command  = $r.Fields[2]
-    $package  = $command
-    if ($r.Fields.Count -ge 4) { $package = $r.Fields[3] }
-
-    if ($provider -ne 'winget') {
-        Write-Host "  SKIP $command - provider '$provider' is not available on Windows" -ForegroundColor Yellow
-        continue
-    }
-    if (-not (Install-WingetTool -Command $command -Package $package)) { $failed++ }
+foreach ($tool in $WingetTools) {
+    if (-not (Install-WingetTool -Command $tool.Command -Package $tool.Package)) { $failed++ }
 }
 
 # Per-section fixups, mirroring how lib/run.sh runs <section>/deps.sh after
