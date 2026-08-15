@@ -85,15 +85,21 @@ pkg_install() {
     brew)
       brew install "$cmd" 2>/dev/null || { echo "  ⚠️  brew install $cmd failed"; return 1; }
       ;;
+    # stderr stays open on the sudo paths. It carries two things worth seeing:
+    # the package manager's reason for failing — otherwise the ⚠️ below is the
+    # only trace, and it says "failed" without saying why — and sudo's PAM
+    # conversation. pam_fprintd writes "Place your finger on the fingerprint
+    # reader" there while the password prompt goes to /dev/tty, so suppressing
+    # stderr turns fingerprint auth into a silent 30-second stall.
     apt)
       local pkg
       pkg=$(apt_pkg_name "$cmd")
-      sudo apt install -y "$pkg" 2>/dev/null || { echo "  ⚠️  apt install $pkg failed"; return 1; }
+      sudo apt install -y "$pkg" || { echo "  ⚠️  apt install $pkg failed"; return 1; }
       ;;
     dnf)
       local pkg
       pkg=$(dnf_pkg_name "$cmd")
-      sudo dnf install -y "$pkg" 2>/dev/null || { echo "  ⚠️  dnf install $pkg failed"; return 1; }
+      sudo dnf install -y "$pkg" || { echo "  ⚠️  dnf install $pkg failed"; return 1; }
       ;;
     *)
       echo "  ❌ No supported package manager. Install $cmd manually."

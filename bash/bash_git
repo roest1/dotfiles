@@ -10,6 +10,10 @@
 # You can use `git config --global alias.whatever "<gitop>"
 # and then have git whatever run `git <gitop>` but
 # my personal preference (for now) is keeping these here.
+alias gstashls='git stash list'
+alias gstash='git stash'
+alias gstashpush='git stash push -m'
+alias gstashpop='git stash pop'
 alias gstatus='git status'
 alias gs='git status'
 alias gcommit='git commit -m'
