@@ -256,16 +256,18 @@ aren't (fork instead — the layout is built for it). See
 
 **[Full walkthrough → git/GITHUB_TOOLS.md](git/GITHUB_TOOLS.md)** — walkthroughs and demos for the interactive GitHub tools.
 
-`gh-tui` is the way in. Press `?` in any screen for that screen's help.
+`gh-tui` is the way in. `ctrl-/` in any list, `?` in any menu, for that
+screen's help.
 
 | Command | What |
 | ------- | ---- |
-| `gh-tui`   | Everything GitHub, in one hub (`gh-ui` is an alias) |
-| `gha`      | Workflow status for HEAD as a table, names linked to their jobs |
+| `gh-tui`   | The current repo on GitHub, live: Actions, Pull Requests, Branches, Secrets, Environments |
+| `gha`      | Workflow status for HEAD as a table, names linked to their jobs — the one-shot |
 
-Inside `gh-tui`: Pull Requests, CI/Actions, Secrets, Environments and
-Branches. Those screens are reached through the hub rather than as separate
-commands, so there is one name to remember instead of six.
+Every screen is a list with a live preview. Hover a workflow run and its jobs
+appear with only the failed steps expanded, log tail inline; a running one
+refreshes under the cursor by itself. Needs fzf ≥ 0.65 (installed via mise
+for that reason).
 
 ## Layout
 
