@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "defaultMode": "auto",
+    "read": {
+      "deny": ["**/.env*", "**/.ssh/**", "**/*password*"]
+    }
+  },
+  "model": "sonnet",
+  "enabledPlugins": {
+    "lua-lsp@claude-plugins-official": true
+  },
+  "effortLevel": "medium",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "hooks": {
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'd2FpdGluZw==' >/dev/tty; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'Y29tcGxldGU=' >/dev/tty; } 2>/dev/null || true"
+          }
+        ]
+      }
+    ]
+  }
+}
