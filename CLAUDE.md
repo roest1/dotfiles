@@ -70,19 +70,30 @@ installer or an extracted build is an acceptable source, so `make status` doesn'
 correct state as drift (zoxide's curl installer, wezterm extracted into `~/.local`, bun's
 own installer). The actual install goes in the section's `deps.sh`.
 
-**Windows is a second entry point, not a second manifest.** `windows/install.ps1` parses
-the same `deps.conf` from PowerShell, so the "nothing else enumerates links" rule still
-holds across both. A section may declare `platform <linux|mac|windows>`, which makes it
-invisible everywhere else.
+**Windows is the one exception to "`deps.conf` is the source of truth", and it is
+deliberate.** `windows/install.ps1` declares its payload in two tables at the top of the
+file — `$Links` and `$WingetTools` — and reads no manifest at all. Adding a Windows
+config is an edit to that script, not to `deps.conf`.
 
-The two parsers read that field with deliberately _opposite_ defaults, and the asymmetry
-is the whole point. A section with no `platform` line means "every platform this entry
-point handles" — correct for `[bash]`, which really does run on Linux and macOS. The
-PowerShell side instead requires `platform windows` explicitly, because inheriting the
-permissive reading there would link `bashrc` into `%USERPROFILE%`. `[wezterm]` and
-`[windows]` both claim `~/.config/wezterm/wezterm.lua` in their respective homes; the
-filter is the only thing stopping a bare `./install.sh` inside WSL from overwriting the
-Linux config with the Windows one. A `windows-latest` CI job asserts both halves.
+That is a reversal, so the reasoning matters. The script used to parse `deps.conf` in
+PowerShell to keep the "nothing else enumerates links" rule true across both entry
+points. It cost ~130 lines of comment-stripping and two-pass section reading to describe
+**one symlink and one winget package**, and it forced a `platform` mechanism into
+`lib/manifest.sh` whose only job was arbitrating between the two — `[wezterm]` and
+`[windows]` both named `~/.config/wezterm/wezterm.lua`, so without a filter a bare
+`./install.sh` inside WSL overwrote the Linux config with the Windows one.
+
+The parity was never real either: the two parsers read `platform` with deliberately
+_opposite_ defaults, because a shared reading would have linked `bashrc` into
+`%USERPROFILE%`. Declaring the payload where the Windows installer can read it directly
+retired the second parser, the `platform` mechanism and the conflict in one move. **There
+is no `platform` line type and no `winget` provider** — CI rejects both.
+
+What survives is the part that was doing real work: idempotent linking, stale-link
+detection, backup-before-replace, and the symlink→copy fallback with Developer Mode
+guidance. A `windows-latest` CI job still asserts the config lands, matches the repo,
+re-runs idempotently, and touches no Linux destination — that last one because `$Links`
+is hand-written now, so a Linux path pasted into it would otherwise install unopposed.
 
 Prefer `pkg` for anything the distro ships; `mise` for tools distros don't reliably carry;
 `||` chains rather than conditionals. **Never key provider choice on `$PM`** — that's a

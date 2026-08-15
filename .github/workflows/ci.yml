@@ -130,22 +130,14 @@ jobs:
             for p in ${provider//||/ }; do
               case "$p" in
                 pkg|uv|cargo|mise|manual) ;;
-                winget) echo "[$section] winget is only valid in a platform windows section"; bad=1 ;;
+                # No windows entry point reads this file any more, so winget
+                # here would install nothing and report nothing. Name it
+                # explicitly rather than letting it fall into "unknown".
+                winget) echo "[$section] winget is not installable from this manifest — declare it in windows/install.ps1"; bad=1 ;;
                 *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
               esac
             done
           done < <(manifest_lines tool)
-          # The windows sections, which the line above cannot see. winget is
-          # the only provider that means anything there: lib/providers.sh has
-          # no case for it, and windows/install.ps1 has no case for the others.
-          while IFS=$'\t' read -r section provider cmd pkg; do
-            for p in ${provider//||/ }; do
-              case "$p" in
-                winget) ;;
-                *) echo "[$section] provider '$p' is not installable on Windows"; bad=1 ;;
-              esac
-            done
-          done < <(MANIFEST_PLATFORM=windows manifest_lines tool windows)
           exit $bad
       - name: Every link source exists in the repo
         run: |
@@ -154,14 +146,14 @@ jobs:
           while IFS=$'\t' read -r section src dest; do
             [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
           done < <(manifest_lines link)
-          # `platform windows` sections are invisible on this runner by design.
-          # Check them explicitly, or deleting wezterm-windows.lua would only be
-          # caught by whoever next ran the bootstrap on Windows.
-          #
-          # The assignment can't leak: process substitution is its own process.
-          while IFS=$'\t' read -r section src dest; do
-            [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
-          done < <(MANIFEST_PLATFORM=windows manifest_lines link)
+          # windows/install.ps1 declares its own payload, so manifest_lines
+          # cannot see it. Read the Source values straight out of its $Links
+          # table: without this, deleting wezterm-windows.lua would only be
+          # caught on the windows runner, or by whoever next ran the bootstrap.
+          while read -r src; do
+            [ -n "$src" ] || continue
+            [ -e "$src" ] || { echo "[windows] missing link source: $src"; bad=1; }
+          done < <(grep -oP "Source\s*=\s*'\K[^']+" windows/install.ps1 | tr '\\' '/')
           exit $bad
 
       # The reverse of the check above, and the direction that breaks new
@@ -826,11 +818,15 @@ jobs:
           if ($got -ne $want) { throw "content differs from wezterm/wezterm-windows.lua" }
           Write-Host "ok: $dest"
 
-      # The regression this whole design exists to prevent. The bash parser
-      # treats a section with no `platform` line as "every platform", which is
-      # right for [bash] on Linux and macOS; the PowerShell parser must NOT
-      # inherit that reading, or it links bashrc into %USERPROFILE%.
-      - name: Bash sections are not linked on Windows
+      # This used to guard a parser: the bash side reads a section with no
+      # `platform` line as "every platform", and a PowerShell parser inheriting
+      # that reading would link bashrc into %USERPROFILE%. There is no second
+      # parser now, so the failure it caught cannot happen the same way.
+      #
+      # Kept because the risk moved rather than left. install.ps1's $Links
+      # table is hand-written, and a Linux destination pasted into it would be
+      # installed without anything else objecting.
+      - name: install.ps1 links only Windows destinations
         shell: powershell
         run: |
           # Asserts on what install.ps1 REPORTED, not on whether these paths
