@@ -533,6 +533,15 @@ compress() {
 # If you ever want to *filter or join* during conversion rather than dump a
 # sheet, that's duckdb's job and worth reaching for separately.
 #
+# 2parquet/2feather/2pickle were the obvious place to reach for it, and duckdb
+# lost there too — for a third reason, not the two above. It cannot write Arrow
+# IPC: v1.5.5 has no `arrow` COPY function, and the arrow extension is not
+# published for linux_amd64 (the registry offers avro, azure, parquet,
+# autocomplete, aws). It writes parquet perfectly, but a parquet-only engine
+# still leaves feather and pickle needing python, and two engines for three
+# formats is worse than one. Hence bash/tabular.py. Note this is not a reversal
+# of the paragraph above: filtering and joining are still duckdb's job.
+#
 # csv→txt goes through `qsv fmt`, not `tr ',' '\t'`, because a blind
 # translate corrupts any quoted field containing a comma. qsv re-quotes
 # correctly: "alpha, inc" loses its quotes in tab output, 'quote"d' keeps them.
@@ -541,11 +550,16 @@ compress() {
 _sheet_convert() {
     local target="$1"; shift
     local cmd="2${target}" outdelim="" sheet="" force=0 f ext out rc=0
-    local files=() sheetarg=()
+    local columnar="" outext="$target" script="" codec=""
+    local files=() sheetarg=() uvargs=() codecarg=()
 
     case "$target" in
-        csv) outdelim=',' ;;
-        txt) outdelim='\t' ;;
+        csv)     outdelim=',' ;;
+        txt)     outdelim='\t' ;;
+        parquet) columnar=1 ;;
+        feather) columnar=1 ;;
+        # .pkl, not .pickle — the extension every pandas example uses.
+        pickle)  columnar=1; outext=pkl ;;
     esac
 
     if [[ "$target" == "xlsx" ]]; then
@@ -556,6 +570,21 @@ _sheet_convert() {
             echo "       producing a real workbook — 2csv/2txt don't need it)" >&2
             return 127
         fi
+    elif [[ -n "$columnar" ]]; then
+        if ! command -v uv &>/dev/null; then
+            echo "$cmd: needs uv — see https://docs.astral.sh/uv/" >&2
+            return 127
+        fi
+        script="$(_dotfiles_dir)/bash/tabular.py"
+        if [[ ! -f "$script" ]]; then
+            echo "$cmd: cannot find tabular.py (looked in $script)" >&2
+            return 127
+        fi
+        # tabular.py declares only polars (215M cached), which covers parquet
+        # and feather. pickle additionally needs pandas and pyarrow, taking the
+        # environment to 476M — layered on here rather than in the script's
+        # header so 2parquet and 2feather never pay for it.
+        [[ "$target" == "pickle" ]] && uvargs=(--with pandas --with pyarrow)
     elif ! command -v qsv &>/dev/null; then
         echo "$cmd: qsv not installed — run: make install bash" >&2
         return 127
@@ -565,6 +594,11 @@ _sheet_convert() {
         case "$1" in
             -s|--sheet) sheet="$2"; shift 2 ;;
             -f|--force) force=1; shift ;;
+            -c|--compression)
+                if [[ -z "$columnar" ]]; then
+                    echo "$cmd: -c only applies to 2parquet and 2feather" >&2; return 2
+                fi
+                codec="$2"; shift 2 ;;
             -h|--help)  echo "usage: $cmd [-s <sheet>] [-f] <file>..." >&2; return 0 ;;
             --)         shift; while [[ $# -gt 0 ]]; do files+=("$1"); shift; done ;;
             -*)         echo "$cmd: unknown flag '$1'" >&2; return 2 ;;
@@ -585,15 +619,16 @@ _sheet_convert() {
         return 2
     fi
     [[ -n "$sheet" ]] && sheetarg=(--sheet "$sheet")
+    [[ -n "$codec" ]] && codecarg=("$codec")
 
     for f in "${files[@]}"; do
         if [[ ! -f "$f" ]]; then
             echo "$cmd: no such file: $f" >&2; rc=1; continue
         fi
 
-        out="${f%.*}.${target}"
+        out="${f%.*}.${outext}"
         if [[ "$out" == "$f" ]]; then
-            echo "$cmd: $f is already .${target}" >&2; rc=1; continue
+            echo "$cmd: $f is already .${outext}" >&2; rc=1; continue
         fi
         if [[ -e "$out" && $force -eq 0 ]]; then
             echo "$cmd: $out exists (use -f to overwrite)" >&2; rc=1; continue
@@ -603,12 +638,45 @@ _sheet_convert() {
         ext=$(printf '%s' "${f##*.}" | tr '[:upper:]' '[:lower:]')
         case "$ext" in
             xlsx|xlsm|xlsb|xls|ods|csv|tsv|tab|txt) ;;
+            parquet|feather|arrow|ipc)
+                # Columnar in, columnar out. Only the python engine reads
+                # these, so they are not valid input for 2csv/2txt/2xlsx.
+                if [[ -z "$columnar" ]]; then
+                    echo "$cmd: don't know how to read '$f'" >&2; rc=1; continue
+                fi
+                ;;
             *) echo "$cmd: don't know how to read '$f'" >&2; rc=1; continue ;;
         esac
 
         if [[ "$target" == "xlsx" ]]; then
             ssconvert "$f" "$out" >/dev/null 2>&1 \
                 || { echo "$cmd: ssconvert failed on $f" >&2; rc=1; continue; }
+        elif [[ -n "$columnar" ]]; then
+            # Excel never reaches tabular.py. qsv flattens it to a temp CSV
+            # first, because calamine reads legacy BIFF .xls that nothing
+            # else here will, and because Excel stores integers as doubles —
+            # a naive reader turns an id column into 1.0, 2.0.
+            case "$ext" in
+                xlsx|xlsm|xlsb|xls|ods)
+                    local tmp
+                    if ! command -v qsv &>/dev/null; then
+                        echo "$cmd: reading Excel needs qsv — run: make install bash" >&2
+                        rc=1; continue
+                    fi
+                    tmp="$(mktemp -t 2col.XXXXXX)" || { rc=1; continue; }
+                    mv "$tmp" "$tmp.csv"; tmp="$tmp.csv"
+                    if ! qsv excel --quiet "${sheetarg[@]}" --output "$tmp" "$f"; then
+                        rm -f "$tmp"; rc=1; continue
+                    fi
+                    uv run --quiet "${uvargs[@]}" "$script" "$tmp" "$out" "$target" "${codecarg[@]}" || rc=1
+                    rm -f "$tmp"
+                    [[ $rc -eq 0 ]] || continue
+                    ;;
+                *)
+                    uv run --quiet "${uvargs[@]}" "$script" "$f" "$out" "$target" "${codecarg[@]}" \
+                        || { rc=1; continue; }
+                    ;;
+            esac
         else
             case "$ext" in
                 xlsx|xlsm|xlsb|xls|ods)
@@ -630,6 +698,21 @@ _sheet_convert() {
 2csv()  { _sheet_convert csv  "$@"; }
 2txt()  { _sheet_convert txt  "$@"; }
 2xlsx() { _sheet_convert xlsx "$@"; }
+
+# Columnar targets. These go through bash/tabular.py rather than qsv — see
+# the comment block above _sheet_convert and `h 2parquet`.
+2parquet() { _sheet_convert parquet "$@"; }
+2feather() { _sheet_convert feather "$@"; }
+2pickle()  { _sheet_convert pickle  "$@"; }
+
+# Where this repo lives, resolved from the symlink bashrc was sourced through.
+# Plain `readlink`, not `readlink -f`: macOS is CI-tested only and BSD readlink
+# has no -f, so -f is tried first and the portable spelling is the fallback.
+_dotfiles_dir() {
+    local link
+    link="$(readlink -f ~/.bashrc 2>/dev/null || readlink ~/.bashrc)"
+    (cd "$(dirname "$link")/.." && pwd)
+}
 
 # edit/reload dotfiles (symlinked by install.sh)
 edit-dotfiles() {
@@ -712,6 +795,9 @@ h() {
     2csv <file>...     → .csv     reads xlsx/xlsm/xlsb/xls/ods/csv/tsv
     2txt <file>...     → .txt     tab-delimited
     2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2*
+    2parquet <file>... → .parquet columnar, compressed        [uv]
+    2feather <file>... → .feather Arrow IPC, fastest to read  [uv]
+    2pickle <file>...  → .pkl     pandas — see h 2*            [uv]
 
   Git (aliases)
     gstashls           stash list
@@ -924,6 +1010,73 @@ findword — whole-word grep across project
     findword "useState" -I 'dist|coverage'
 
   Depends on: rg (ripgrep)
+HELP
+      ;;
+    2parquet|2feather|2pickle)
+      cat <<'HELP'
+2parquet / 2feather / 2pickle — columnar conversion
+
+  2parquet <file>...    → .parquet    columnar, compressed, portable
+  2feather <file>...    → .feather    Arrow IPC, fastest to read back
+  2pickle  <file>...    → .pkl        pandas DataFrame
+
+  Same flags as 2csv: -f to overwrite, -s <sheet> to pick one sheet out
+  of a workbook. Plus -c to choose a codec:
+
+    2parquet -c <zstd|snappy|gzip|lz4|brotli|uncompressed>   default zstd
+    2feather -c <uncompressed|lz4|zstd>                      default uncompressed
+
+  Measured on the 200k x 6 frame (12M as csv):
+
+    parquet  zstd 3.3M   gzip 3.3M   snappy 4.6M   uncompressed 8.0M
+    feather  zstd 5.8M   lz4  8.9M   uncompressed 18M
+
+  The defaults differ because the formats are for different jobs. Parquet
+  is what you store or hand to someone, so it defaults to zstd — the same
+  codec `compress` reaches for, and polars' own default. Feather is Arrow
+  IPC, whose point is being memory-mappable and read back at once;
+  compressing it trades away the property you chose it for. That is the
+  whole reason the same frame is 3.3M as parquet and 18M as feather. Pass
+  -c zstd if you want a feather file small enough to move around, but
+  consider whether you wanted parquet.
+
+  Reads everything 2csv reads — xlsx, xlsm, xlsb, legacy .xls, ods, csv,
+  tsv — plus .parquet, .feather, .arrow and .ipc, so these also convert
+  between each other:
+
+    2parquet report.xlsx        workbook  → columnar
+    2feather big.parquet        parquet   → Arrow IPC
+    2csv data.parquet           NOT supported — qsv can't read parquet
+
+  On a 200k x 6 frame: .csv 12M, .parquet 3.2M, .feather 17M. Feather is
+  larger because it is uncompressed and memory-mappable; that is the
+  trade it makes for read speed. Reach for parquet to store or share,
+  feather when the next step reads it back immediately.
+
+  A different engine from the rest of the family. 2csv/2txt are one qsv
+  call; these run bash/tabular.py through `uv run`, which builds a cached
+  Python environment from the script's own PEP 723 header. First run
+  downloads (a few seconds), then it is ~0.2s warm.
+
+  2parquet and 2feather need only polars — 215M cached. 2pickle also
+  needs pandas and pyarrow, which takes it to 476M; those are layered on
+  for that one command rather than declared in the header, so the other
+  two never pay for them.
+
+  Excel is still read by qsv, not by python. _sheet_convert flattens a
+  workbook to a temp CSV first, because calamine reads legacy BIFF .xls
+  that the alternatives refuse, and because Excel stores every number as
+  a double — a naive reader turns an id column into 1.0, 2.0.
+
+  On 2pickle, honestly: a .pkl is a Python-version and library-version
+  coupled artefact, not an interchange format. It stores a pandas frame,
+  so reading it needs pandas of a compatible version, and unpickling a
+  file you did not create executes arbitrary code in it. Use it as a
+  local cache for your own work. If you are handing the file to anyone —
+  including future you on another machine — use 2parquet.
+
+  Depends on: uv, plus qsv for Excel input. Both guarded; a missing one
+  is reported rather than silently skipped.
 HELP
       ;;
     2*|qsv)
