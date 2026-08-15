@@ -2,20 +2,14 @@
   "permissions": {
     "defaultMode": "auto",
     "read": {
-      "deny": ["**/.env*", "**/.ssh/**", "**/*password*"]
+      "deny": [
+        "**/.env*",
+        "**/.ssh/**",
+        "**/*password*"
+      ]
     }
   },
   "model": "sonnet",
-  "enabledPlugins": {
-    "lua-lsp@claude-plugins-official": true
-  },
-  "effortLevel": "medium",
-  "tui": "fullscreen",
-  "skipDangerousModePermissionPrompt": true,
-  "skipWorkflowUsageWarning": true,
-  "theme": "dark",
-  "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
   "hooks": {
     "Notification": [
       {
@@ -37,5 +31,15 @@
         ]
       }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "lua-lsp@claude-plugins-official": true
+  },
+  "effortLevel": "xhigh",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true
 }
