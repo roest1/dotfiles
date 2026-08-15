@@ -52,6 +52,36 @@ elif command -v fc-list >/dev/null 2>&1; then
   fi
 fi
 
+# ─── Science Gothic (tab bar font) ────────────────────────────────────────
+#
+# wezterm.lua's window_frame.font names 'Science Gothic'; without it wezterm
+# falls back to 0xProto for the tab bar, so a failure here degrades looks,
+# not function.
+#
+# A Google Fonts family (OFL-licensed), pulled from google/fonts' own repo
+# rather than fonts.google.com — the latter has no stable direct-download
+# URL, while raw.githubusercontent.com/google/fonts is a stable, checksum-free
+# but content-addressed-by-path source that doesn't change under a family
+# once published.
+if command -v fc-list >/dev/null 2>&1; then
+  if fc-list | grep -i 'Science Gothic' >/dev/null; then
+    echo "  ✅ Science Gothic (already installed)"
+  else
+    echo "  installing Science Gothic → ~/.local/share/fonts/ScienceGothic"
+    sg_font="$(mktemp)"
+    if curl -fsSL -o "$sg_font" \
+         "https://raw.githubusercontent.com/google/fonts/main/ofl/sciencegothic/ScienceGothic%5BCTRS,slnt,wdth,wght%5D.ttf"; then
+      mkdir -p "$HOME/.local/share/fonts/ScienceGothic"
+      cp "$sg_font" "$HOME/.local/share/fonts/ScienceGothic/ScienceGothic.ttf"
+      fc-cache -f "$HOME/.local/share/fonts/ScienceGothic" >/dev/null 2>&1 || true
+      echo "  ✅ Science Gothic"
+    else
+      echo "  ⚠️  Science Gothic download failed — tab bar falls back to 0xProto"
+    fi
+    rm -f "$sg_font"
+  fi
+fi
+
 if command -v wezterm >/dev/null 2>&1; then
   echo "  ✅ wezterm ($(wezterm --version 2>/dev/null | head -1))"
   exit 0

@@ -428,6 +428,43 @@ jobs:
           test -L "$HOME/.bashrc"
           test -L "$HOME/.config/nvim"
           test -L "$HOME/.config/wezterm/wezterm.lua"
+          test -L "$HOME/.claude/settings.json"
+
+      # The [claude] hooks and wezterm's format-tab-title are two halves of one
+      # feature — the hooks publish claude_state as an OSC user var, the tab bar
+      # reads it to pick a per-tab glyph — so this checks the payload, not just
+      # that a link exists.
+      #
+      # Worth asserting rather than assuming, because BOTH failure modes here
+      # are silent. A malformed settings.json disables every setting in the file
+      # instead of erroring, and a hook that stops publishing just degrades the
+      # tab bar to "stopped" forever, which looks like a working config until
+      # you notice no tab ever says otherwise.
+      - name: Claude user settings parse and carry the wezterm hooks
+        run: |
+          jq -e . "$HOME/.claude/settings.json" >/dev/null \
+            || { echo "FAIL: ~/.claude/settings.json is not valid JSON"; exit 1; }
+          for ev in Notification Stop; do
+            jq -e --arg ev "$ev" \
+              '.hooks[$ev][0].hooks[0].command | test("SetUserVar=claude_state")' \
+              "$HOME/.claude/settings.json" >/dev/null \
+              || { echo "FAIL: $ev hook missing or no longer publishes claude_state"; exit 1; }
+          done
+
+      # `claude/`, not `.claude/`, is load-bearing: Claude Code reads a
+      # `.claude/settings.json` in the working repo as PROJECT settings on top
+      # of the user settings this section links. Storing it under the dotted
+      # name would feed one file to both scopes inside this repo, and hook
+      # arrays MERGE across scopes rather than override — so every hook would
+      # register twice and fire twice, here and nowhere else.
+      - name: Claude settings are not also project-scoped
+        run: |
+          if [ -e .claude/settings.json ]; then
+            echo "FAIL: .claude/settings.json would double-load as project settings"
+            echo "      move it to claude/settings.json (see [claude] in deps.conf)"
+            exit 1
+          fi
+
       - name: Idempotent — second run changes nothing
         run: |
           make link | tee /tmp/second.txt

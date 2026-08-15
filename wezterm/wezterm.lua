@@ -6,7 +6,23 @@ local config = wezterm.config_builder()
 -- the fallback chain (plus wezterm's always-appended bundled fonts, including
 -- Symbols Nerd Font for glyphs) keeps the terminal working — just in
 -- JetBrains Mono instead.
-config.font = wezterm.font_with_fallback({ "0xProto Nerd Font", "JetBrains Mono" })
+--
+-- Noto Color Emoji is listed explicitly, not relied on as an implicit
+-- fallback, because 0xProto Nerd Font also has a glyph for codepoints like
+-- U+26A1 (⚡) — checked its cmap directly, it's named `oct-zap`, an Octicons
+-- icon patched in like the rest of a Nerd Font's set: flat and single-color,
+-- meant to be tinted like any other icon rather than rendered as emoji
+-- artwork. Order among the three doesn't matter here, though: `wezterm
+-- ls-fonts --text "⚡️"` shows the main terminal's shaping is
+-- presentation-aware — it skips a font whose only match is that flat glyph
+-- when the text carries the VS16 (\u{FE0F}) presentation selector, and
+-- keeps looking until it finds one with real color tables, regardless of
+-- where in the list that font sits. Noto Color Emoji is still named
+-- explicitly so that doesn't depend on wezterm's bundled fallback shipping
+-- a copy. window_frame.font below draws from the SAME two fonts for the
+-- SAME glyph and needs the opposite treatment — its shaping isn't
+-- presentation-aware, so order there is load-bearing. See the note there.
+config.font = wezterm.font_with_fallback({ "0xProto Nerd Font", "JetBrains Mono", "Noto Color Emoji" })
 
 -- Attach a GUI window to the Jarvis sidecar's mux server so you can watch the
 -- worker + brain Claude Code panes live:  wezterm connect mux
@@ -103,17 +119,36 @@ config.colors = {
 config.window_frame = {
 	active_titlebar_bg = "#2a273f",
 	inactive_titlebar_bg = "#232136",
-	font = wezterm.font({ family = "0xProto Nerd Font" }),
+	-- Science Gothic — a Google Fonts variable family (OFL-licensed), installed
+	-- by wezterm/deps.sh. Bold weight for the military-poster heft; 0xProto
+	-- stays as fallback so status glyphs (🔨💬⚡ etc.) still resolve, since
+	-- Science Gothic doesn't cover them.
+	--
+	-- Noto Color Emoji has to be listed too — this is the font that actually
+	-- draws the tab bar (format-tab-title runs against window_frame.font, not
+	-- config.font — see above). It goes BEFORE 0xProto here, the opposite of
+	-- config.font's order, because this shaping path isn't presentation-aware
+	-- the way the main terminal's is: `wezterm ls-fonts` has no equivalent
+	-- probe for window_frame.font, so this was checked by sampling the
+	-- rendered tab bar's actual pixels with 0xProto listed first — no
+	-- orange/gold anywhere, only green blends of the title color, meaning it
+	-- had resolved ⚡ to 0xProto's flat `oct-zap` glyph (see config.font above)
+	-- regardless of the trailing \u{FE0F}. Listing the color font first
+	-- sidesteps the missing presentation logic entirely: plain
+	-- first-match-wins now lands on Noto Color Emoji before 0xProto is ever
+	-- consulted. Confirmed fixed after reload.
+	font = wezterm.font_with_fallback({
+		{ family = "Science Gothic", weight = "Bold" },
+		"Noto Color Emoji",
+		"0xProto Nerd Font",
+	}),
 	font_size = 11.0,
 }
 
--- Tab 2 in the current window is truncated mid-word ("...Fedora and cus").
--- The default is 16; this is wide enough for a Claude Code session title to
--- be tellable apart from its neighbours without any one tab eating the bar.
 config.tab_max_width = 32
 
 config.use_fancy_tab_bar = true
-config.hide_tab_bar_if_only_one_tab = true
+config.hide_tab_bar_if_only_one_tab = false
 
 -- Drops the OS title bar — the row carrying the app icon, the window title
 -- and the minimise/maximise/close buttons — leaving the tab bar as the top
@@ -208,32 +243,31 @@ end
 -- Swap any glyph freely; nothing below depends on which character it is.
 local STATES = {
 	-- Claude is actively running — its spinner is on screen right now.
-	working = { glyph = "🔨", cols = 2, color = "#eb6f92" },
+	working = { glyph = "🔨", cols = 2, color = "#f6c177" },
 
 	-- A Claude pane with output you have not read. The nearest thing to
 	-- "it wants you" that is actually observable from here.
-	waiting = { glyph = "💬", cols = 2, color = "#a6e3a1" },
+	waiting = { glyph = "💬", cols = 2, color = "#eb6f92" },
 
 	-- A Claude pane that is quiet and whose output you have already seen.
-	-- Foam rather than green so that once hooks land, a question and a
+	-- Gold rather than green so that once hooks land, a question and a
 	-- completion stay tellable apart at a glance.
-	complete = { glyph = "⚡", cols = 2, color = "#9ccfd8" },
+	-- The trailing \u{FE0F} (VS16) forces EMOJI presentation. Without it, ⚡
+	-- (U+26A1) defaults to TEXT presentation — a plain glyph tinted by
+	-- `color` below — unlike 🔨/💬, which have no text-presentation fallback
+	-- and so always render full-color regardless of this attribute.
+	-- complete = { glyph = "⚡\u{FE0F}", cols = 2, color = "#a6e3a1" },
+	complete = { glyph = "⚡️", cols = 2, color = "#a6e3a1" }, -- typed with VS16 attached directly
 
 	-- A terminal with no Claude session in it.
 	--
-	-- Black as asked, and stated with the measurement because it is severe:
-	-- #000000 scores 1.46:1 against the inactive tab background and 1.34:1
-	-- against the active one, where WCAG's floor for text is 4.5:1. It will
-	-- read as "no dot at all" rather than "a dark dot" — which is a fine
-	-- outcome if the intent is for plain shells to disappear, and the wrong
-	-- one if you wanted them merely quiet. For quiet-but-present, use the
-	-- muted "#6e6a86" instead: 2.79:1, visibly grey without pulling focus.
+	-- White, at full 21:1 contrast against both the active (#232136) and
+	-- inactive (#2a273f) tab backgrounds — plain shells are meant to stand
+	-- out, not recede.
 	--
-	-- bold is set only here, and it is doing real work rather than decoration:
-	-- weight is the one legibility cue left when the contrast ratio is 1.46:1,
-	-- so shell tabs stay findable as shapes even when the colour cannot carry
-	-- them. Add `bold = true` to any other row to match.
-	plain = { glyph = "●", cols = 1, color = "#000000", bold = true },
+	-- bold stays set: even at full contrast, weight is what makes the shape
+	-- read as a distinct tab rather than just more text in the bar.
+	plain = { glyph = "●", cols = 1, color = "#ffffff", bold = true },
 }
 
 -- rose-pine ships no green — its palette runs base/surface/overlay through
@@ -322,9 +356,12 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 		{ Attribute = { Intensity = "Normal" } },
 		{ Foreground = { Color = "#6e6a86" } },
 		{ Text = " " .. index },
+		-- Print the status glyph WITHOUT setting a Foreground color (lets emoji render natively)
+		{ Text = st.glyph .. " " },
+		-- Apply text color and bolding ONLY to the title text
 		{ Attribute = { Intensity = st.bold and "Bold" or "Normal" } },
 		{ Foreground = { Color = st.color } },
-		{ Text = st.glyph .. " " .. wezterm.truncate_right(text, room) .. " " },
+		{ Text = wezterm.truncate_right(text, room) .. " " },
 	}
 end)
 
