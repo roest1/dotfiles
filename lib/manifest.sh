@@ -40,8 +40,19 @@ manifest_sections() {
   done < "$MANIFEST_FILE"
 }
 
+# NOT `manifest_sections | grep -qxF "$1"`. Callers run under `set -o pipefail`
+# (install.sh, and the Makefile recipes), where that spelling is a race: `grep
+# -q` exits the moment it matches, manifest_sections takes SIGPIPE still
+# writing, and pipefail reports 141 for the pipeline — so a section that IS
+# present reads as absent. It depends on whether the producer finishes before
+# the consumer leaves, which is why it passed on one CI runner and failed on
+# two. Process substitution has no pipeline status to poison.
 manifest_has_section() {
-  manifest_sections | grep -qxF "$1"
+  local name
+  while IFS= read -r name; do
+    [[ "$name" == "$1" ]] && return 0
+  done < <(manifest_sections)
+  return 1
 }
 
 # manifest_lines <kind> [section...]
