@@ -3,6 +3,9 @@
 	email = 95721769+roest1@users.noreply.github.com
 [credential]
 	helper = store
+[color "status"]
+	; Match the PS1 untracked segment (__C_UNTRACKED in bash/bash_theme).
+	untracked = 180
 [filter "lfs"]
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f
