@@ -47,21 +47,30 @@ $(eval $(ARGS):;@:)
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status sync prune test shell update sections mise-lock $(SECTIONS)
+.PHONY: help install link check status sync prune test shell update sections mise-lock mono-font $(SECTIONS)
 
+# One recipe line, not twelve, because lib/sgr.sh has to be sourced in the same
+# shell that uses it — make runs each recipe line in its own.
+#
+# The escapes sit OUTSIDE awk's format specifiers, so %-12s still pads the
+# target name alone and the columns land exactly where they did before. They
+# are also empty unless stdout is a WezTerm terminal; see lib/sgr.sh.
 help: ## Show this help
-	@echo ""
-	@echo "dotfiles — $(UNAME)"
-	@echo ""
-	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  make %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "  Sections (from deps.conf): $(SECTIONS)"
-	@echo "    make install nvim        install just that section"
-	@echo "    make link bash           link just that section's config"
-	@echo "    make check nvim          verify just that section"
-	@echo ""
-	@echo "  To skip a single tool, comment it out in deps.conf."
-	@echo ""
+	@source "$(DOTFILES_DIR)/lib/sgr.sh"; \
+	echo ""; \
+	printf "%sdotfiles — %s%s\n" "$$SG_B" "$(UNAME)" "$$SG_OFF"; \
+	echo ""; \
+	awk -v b="$$SG_B" -v r="$$SG_R" -v o="$$SG_OFF" \
+	    'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ \
+	     {printf "  %smake %-12s%s %s%s\n", b, $$1, r, $$2, o}' $(MAKEFILE_LIST); \
+	echo ""; \
+	printf "  %sSections (from deps.conf):%s %s\n" "$$SG_B" "$$SG_OFF" "$(SECTIONS)"; \
+	printf "%s    make install nvim        install just that section%s\n" "$$SG" "$$SG_OFF"; \
+	printf "%s    make link bash           link just that section's config%s\n" "$$SG" "$$SG_OFF"; \
+	printf "%s    make check nvim          verify just that section%s\n" "$$SG" "$$SG_OFF"; \
+	echo ""; \
+	printf "%s  To skip a single tool, comment it out in deps.conf.%s\n" "$$SG" "$$SG_OFF"; \
+	echo ""
 
 sections: ## List sections declared in deps.conf
 	@echo "$(SECTIONS)" | tr ' ' '\n'
@@ -114,6 +123,22 @@ prune: ## Remove superseded mise tool versions (shows them first)
 mise-lock: ## Regenerate mise.toml from deps.conf and refresh mise.lock
 	@bash "$(DOTFILES_DIR)/tools/gen-mise.sh"
 	@cd "$(DOTFILES_DIR)" && mise lock
+
+# Science Gothic Mono is generated the same way mise.toml is: an authored
+# generator plus a committed artifact. The .ttf files live in wezterm/fonts and
+# are linked into ~/.config/wezterm, so a fresh machine needs no python, no
+# network and no font tooling — only this target does. Re-run after an upstream
+# Science Gothic release.
+mono-font: ## Regenerate wezterm/fonts from upstream Science Gothic
+	@command -v uv >/dev/null 2>&1 || { echo "uv not installed — declared in deps.conf [bash]"; exit 1; }
+	@src=$$(mktemp); \
+	if curl -fsSL -o "$$src" \
+	     "https://raw.githubusercontent.com/google/fonts/main/ofl/sciencegothic/ScienceGothic%5BCTRS,slnt,wdth,wght%5D.ttf"; then \
+	  uv run "$(DOTFILES_DIR)/wezterm/mkmono.py" "$$src" "$(DOTFILES_DIR)/wezterm/fonts"; \
+	else \
+	  echo "download failed — wezterm/fonts left as-is"; rm -f "$$src"; exit 1; \
+	fi; \
+	rm -f "$$src"
 
 test: ## Run the Lua unit tests (no plugins, no network)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not installed — skipping"; exit 0; }

@@ -66,8 +66,14 @@ $ErrorActionPreference = 'Stop'
 # to get you into WSL; it declares no unix_domains, because that socket path
 # belongs to a process inside the guest.
 
+# The fonts directory carries Science Gothic Mono, which `make` output inside
+# WSL is rendered in -- the guest emits the escape, but wezterm.exe out here
+# does the drawing, so the font has to exist on THIS side. It is read via
+# font_dirs in wezterm-windows.lua rather than installed into the Windows font
+# store, which keeps it to one copy that tracks the repo.
 $Links = @(
-    @{ Source = 'wezterm\wezterm-windows.lua'; Destination = '.config\wezterm\wezterm.lua' }
+    @{ Source = 'wezterm\wezterm-windows.lua'; Destination = '.config\wezterm\wezterm.lua' },
+    @{ Source = 'wezterm\fonts';               Destination = '.config\wezterm\fonts' }
 )
 
 # Elevation helper, off by default. Windows 11 24H2+ ships `sudo` in System32
@@ -160,7 +166,15 @@ function Install-ConfigLink {
         return $true
     }
     catch {
-        Copy-Item -LiteralPath $Source -Destination $Destination -Force
+        # A directory source needs -Recurse. Without it Copy-Item creates an
+        # empty folder and reports success, so wezterm\fonts would arrive with
+        # no fonts in it and the terminal would quietly fall back.
+        if (Test-Path -LiteralPath $Source -PathType Container) {
+            Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+        }
+        else {
+            Copy-Item -LiteralPath $Source -Destination $Destination -Force
+        }
         Write-Host "  copied $Destination (symlink denied)" -ForegroundColor Yellow
         Write-Host "    Turn on Settings > System > For developers > Developer Mode" -ForegroundColor Yellow
         Write-Host "    and re-run to get a link that tracks the repo. Until then this" -ForegroundColor Yellow
