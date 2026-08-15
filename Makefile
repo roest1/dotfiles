@@ -48,7 +48,7 @@ $(eval $(ARGS):;@:)
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status sync test shell update sections mise-lock $(SECTIONS)
+.PHONY: help install link check status sync prune test shell update sections mise-lock $(SECTIONS)
 
 help: ## Show this help
 	@echo ""
@@ -90,6 +90,23 @@ lint: ## Run shellcheck over every shell source (same check CI runs)
 
 sync: ## Install/update nvim plugins + parsers (headless)
 	@$(MAKE) -C "$(DOTFILES_DIR)/nvim" sync
+
+# `mise prune` is two unrelated jobs behind one name: it prunes tracked
+# configuration links AND unused tool versions. The config half runs first and
+# needs no confirmation; the tool half prompts. So in any non-interactive
+# context — a script, this Makefile, CI — bare `mise prune` does the config
+# half, prints "pruned configuration links", removes nothing, and looks like it
+# worked. That is not a flag worth remembering under pressure, so it lives here
+# instead. Shows what will go, then does it.
+prune: ## Remove superseded mise tool versions (shows them first)
+	@command -v mise >/dev/null 2>&1 || { echo "mise not installed — nothing to prune"; exit 0; }
+	@if [ -z "$$(mise ls --prunable 2>/dev/null)" ]; then \
+		echo "no superseded mise versions"; \
+	else \
+		echo "superseded versions:"; \
+		mise ls --prunable | sed 's/^/  /'; \
+		mise prune --tools -y; \
+	fi
 
 # deps.conf declares the tool set; this derives the version pins from it and
 # turns them into a checksummed, per-platform lockfile. Same arrangement as
