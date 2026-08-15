@@ -714,6 +714,10 @@ h() {
     2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2*
 
   Git (aliases)
+    gstashls           stash list
+    gstash             stash
+    gstashpush         stash push -m
+    gstashpop          stash pop
     gstatus / gs       status
     gcommit / gc "msg" commit -m
     gpusho / gpushfo   push origin / push --force-with-lease origin
@@ -970,6 +974,10 @@ HELP
       cat <<'HELP'
 Git aliases — short forms for daily git commands
 
+  gstashls              git stash list
+  gstash                git stash
+  gstashpush            git stash push -m "msg"
+  gstashpop             git stash pop
   gstatus / gs          git status
   gcommit / gc "msg"    git commit -m "msg"
   gpusho                git push origin
