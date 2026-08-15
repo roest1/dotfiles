@@ -23,6 +23,33 @@ local config = wezterm.config_builder()
 -- the fallback chain quietly uses JetBrains Mono.
 config.font = wezterm.font_with_fallback { '0xProto Nerd Font', 'JetBrains Mono' }
 
+-- ─── Colors ──────────────────────────────────────────────────────────────────
+--
+-- Kept in sync with wezterm.lua BY HAND, and it has to be: this file is never
+-- symlinked out of the repo (see the header), so there is no shared source for
+-- the two to read. If you retune the colours there, retune them here.
+--
+-- The ANSI 16 are left alone for the same reason as the Linux config — the
+-- shell inside WSL is the same bash, with the same 256-colour prompt and the
+-- same gh/git output, and remapping the slots would re-tint all of it. This
+-- sets the window chrome only, which is what makes the two hosts look like one
+-- terminal.
+-- Literal hex for the same reason as the Linux config: reading the value from
+-- wezterm.color.get_builtin_schemes() costs ~24ms per config evaluation, and
+-- this file is evaluated several times per process.
+config.colors = {
+  foreground = '#e0def4',
+  background = '#232136',
+  cursor_bg = '#e0def4',
+  cursor_fg = '#232136',
+  cursor_border = '#e0def4',
+
+  -- The builtin's selection_bg equals its background, which renders a selection
+  -- invisible; this is rose-pine moon's "highlight med" instead.
+  selection_fg = '#e0def4',
+  selection_bg = '#44415a',
+}
+
 -- ─── What's actually on this machine ─────────────────────────────────────────
 --
 -- Probing the filesystem rather than hardcoding paths, because every one of

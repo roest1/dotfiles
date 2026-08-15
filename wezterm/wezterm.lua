@@ -1,19 +1,401 @@
-local wezterm = require 'wezterm'
+local wezterm = require("wezterm")
+local act = wezterm.action
 local config = wezterm.config_builder()
 
 -- 0xProto Nerd Font, installed by wezterm/deps.sh. On a machine without it,
 -- the fallback chain (plus wezterm's always-appended bundled fonts, including
 -- Symbols Nerd Font for glyphs) keeps the terminal working — just in
 -- JetBrains Mono instead.
-config.font = wezterm.font_with_fallback { '0xProto Nerd Font', 'JetBrains Mono' }
+config.font = wezterm.font_with_fallback({ "0xProto Nerd Font", "JetBrains Mono" })
 
 -- Attach a GUI window to the Jarvis sidecar's mux server so you can watch the
 -- worker + brain Claude Code panes live:  wezterm connect mux
 -- socket_path points at the SAME default socket the sidecar's `wezterm cli`
 -- and `wezterm-mux-server` use, so the GUI shares their panes.
-local runtime = os.getenv 'XDG_RUNTIME_DIR' or '/run/user/1000'
+local runtime = os.getenv("XDG_RUNTIME_DIR") or "/run/user/1000"
 config.unix_domains = {
-  { name = 'mux', socket_path = runtime .. '/wezterm/sock' },
+	{ name = "mux", socket_path = runtime .. "/wezterm/sock" },
+}
+
+-- ─── Colors ─────────────────────────────────────────────────────────
+--
+-- rose-pine-moon, to match nvim (nvim/lua/external/plugins/theme.lua).
+--
+-- Literal hex, NOT wezterm.color.get_builtin_schemes()['rose-pine-moon'],
+-- which is where this started. That call builds the whole 1113-entry
+-- scheme table to read one row: measured at ~24ms per call on this
+-- machine. wezterm evaluates this file several times per process (the
+-- same fact wezterm-windows.lua's `exists` helper is written around), so
+-- the tidier-looking indirection costs more per terminal launch than
+-- bash_theme spends on an entire prompt. Pasting seven strings is worth
+-- more than not repeating them.
+--
+-- Re-derive after a wezterm upgrade with:
+--   wezterm --config-file /dev/null -e true   # then in any lua scratch:
+--   require('wezterm').color.get_builtin_schemes()['rose-pine-moon']
+--
+-- The ANSI 16 are DELIBERATELY not set, and that is the whole point of
+-- writing it this way instead of `config.color_scheme = 'rose-pine-moon'`.
+-- Everything that colors its own output — gh, git, grep, and so the whole
+-- bash_github_tui — speaks in those 16 slots, and bash_theme/EZA_COLORS
+-- speak in 256-colour codes layered on the same palette. Remapping the
+-- 16 would re-tint every one of them to rose-pine's reds and greens.
+-- Semantics would survive (green is still "added") but the hues you
+-- already read fluently would not.
+--
+-- To take the full scheme instead, comment this block and uncomment the
+-- line below it — toggling is commenting, as deps.conf puts it.
+config.colors = {
+	foreground = "#e0def4",
+	background = "#232136",
+	cursor_bg = "#e0def4",
+	cursor_fg = "#232136",
+	cursor_border = "#e0def4",
+
+	-- NOT the builtin's value. rose-pine-moon ships selection_bg identical to
+	-- its background (#232136), which renders a selection invisible. #44415a is
+	-- "highlight med" from the upstream rose-pine moon palette, which is what
+	-- the scheme means by a selection.
+	selection_fg = "#e0def4",
+	selection_bg = "#44415a",
+
+	-- ─── Tab bar ──────────────────────────────────────────────────────
+	--
+	-- A SEPARATE setting from `background` above, which is the trap: theming
+	-- the terminal area alone leaves the tab bar at wezterm's default grey,
+	-- sitting directly above a #232136 window. Both have to be stated.
+	--
+	-- The shades are rose-pine moon's own surface ladder, so the bar reads as
+	-- depth rather than as a different program:
+	--   base #232136 (the terminal)  <- active tab, so it merges with the pane
+	--   surface #2a273f              <- the bar itself and idle tabs
+	--   overlay #393552              <- hover
+	tab_bar = {
+		background = "#2a273f",
+
+		active_tab = {
+			bg_color = "#232136",
+			fg_color = "#e0def4",
+		},
+		inactive_tab = {
+			bg_color = "#2a273f",
+			fg_color = "#6e6a86", -- muted: readable, but clearly not the focus
+		},
+		inactive_tab_hover = {
+			bg_color = "#393552",
+			fg_color = "#e0def4",
+		},
+		new_tab = {
+			bg_color = "#2a273f",
+			fg_color = "#908caa",
+		},
+		new_tab_hover = {
+			bg_color = "#393552",
+			fg_color = "#e0def4",
+		},
+	},
+}
+-- config.color_scheme = 'rose-pine-moon'   -- full scheme, ANSI 16 included
+
+-- The fancy tab bar draws its own frame, which `colors.tab_bar.background`
+-- does NOT reach — that is why the bar can stay grey even after the block
+-- above. active/inactive here is the WINDOW's focus, not the tab's.
+config.window_frame = {
+	active_titlebar_bg = "#2a273f",
+	inactive_titlebar_bg = "#232136",
+	font = wezterm.font({ family = "0xProto Nerd Font" }),
+	font_size = 11.0,
+}
+
+-- Tab 2 in the current window is truncated mid-word ("...Fedora and cus").
+-- The default is 16; this is wide enough for a Claude Code session title to
+-- be tellable apart from its neighbours without any one tab eating the bar.
+config.tab_max_width = 32
+
+config.use_fancy_tab_bar = true
+config.hide_tab_bar_if_only_one_tab = true
+
+-- Drops the OS title bar — the row carrying the app icon, the window title
+-- and the minimise/maximise/close buttons — leaving the tab bar as the top
+-- row. That row was pure duplication here: format-window-title below mirrors
+-- the active tab's name into it, so it was spending a full row of screen to
+-- restate what the tab bar already says.
+--
+-- 'RESIZE' keeps the invisible drag borders, so the window is still resizable
+-- by edge. Closing/minimising becomes GNOME's job — Super+H to minimise, and
+-- SUPER+w still closes a tab.
+--
+-- The other option is live again now that use_fancy_tab_bar is back on:
+--
+--   config.window_decorations = "INTEGRATED_BUTTONS|RESIZE"
+--
+-- which still drops the separate title row but redraws the minimise/maximise/
+-- close buttons INSIDE the tab bar, so nothing is lost. It requires the fancy
+-- tab bar and is ignored by the retro one — which is why it was ruled out
+-- while that was false. Pick this one if losing the buttons is the part that
+-- bothers you. 'TITLE|RESIZE' restores the original two-row layout.
+--
+-- NOTE: this setting is the one thing here a config reload cannot apply. A
+-- window's decoration mode is fixed when the window is created, so changing
+-- it needs every wezterm window closed and relaunched, not SUPER+r.
+config.window_decorations = "RESIZE"
+
+-- ─── Tab titles: Claude Code session state ───────────────────────────
+--
+-- Claude Code already writes its state into the PANE title over OSC; nothing
+-- here has to poll or shell out. This only surfaces it in the tab, from two
+-- independent signals:
+--
+--   WORKING  the pane title carries Claude's busy marker. Read live on every
+--            repaint, so it clears the moment Claude stops.
+--   UNSEEN   wezterm's own has_unseen_output: a NON-ACTIVE tab has printed
+--            something you have not looked at. This is the "it finished and
+--            is waiting on you" signal, and it is deliberately independent of
+--            the title — it works the same for a plain shell whose build just
+--            finished in a background tab.
+--
+-- The icon is recomputed from live pane state every repaint and never stored.
+-- That is precisely what lets a hand-renamed tab keep its status glyph: the
+-- rename binding below sets the tab's TEXT, and the glyph is re-derived
+-- around it. Rename and status are orthogonal, which is what you want.
+--
+-- ✳ is Claude Code's SESSION marker, not a busy marker. This was originally
+-- read as "Claude is working", which was wrong and showed up immediately:
+-- every Claude tab wore the working glyph forever, including two that had
+-- long since stopped. Claude stamps ✳ into the title for the life of the
+-- session and leaves it there, so it answers "is this a Claude pane" and
+-- says nothing at all about what that pane is doing.
+--
+-- Kept as a SECOND way to recognise a Claude pane, because it survives cases
+-- the process name misses — Claude shelling out to a subprocess makes the
+-- foreground process something else entirely for the duration.
+--
+-- CTRL+SHIFT+I toasts the raw title and process name, which is how the above
+-- was diagnosed and how to check it again if the glyphs look wrong.
+local CLAUDE_IDLE = "✳"
+
+-- ...and this is the one that actually answers "is it working". Claude Code
+-- animates a half-shaded circle in the title while it runs, cycling through
+-- these four, and settles back on ✳ the moment it stops. So the ANIMATION is
+-- the busy signal and ✳ is its absence — which is the exact inverse of how
+-- this was first written, and why two long-finished sessions sat there wearing
+-- a hammer.
+--
+-- Matched as a set rather than a single character because any one of them is
+-- only on screen for a frame or two; whichever is showing at repaint time is
+-- the one that has to hit.
+local CLAUDE_WORKING = { "◐", "◑", "◒", "◓" }
+
+-- Third way to recognise a Claude pane, independent of the title. Matched
+-- against the foreground process name; widen it here if CTRL+SHIFT+I shows
+-- something else.
+local CLAUDE_PROC = "claude"
+
+local function title_has_any(title, set)
+	for _, ch in ipairs(set) do
+		if title:find(ch, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+-- One row per state: the glyph, its display WIDTH IN COLUMNS, and its colour.
+-- cols is stated rather than measured because `#glyph` is bytes and every
+-- emoji here is 4 bytes wide but occupies 2 columns — using the byte count to
+-- budget space would truncate titles by two characters too many.
+--
+-- Swap any glyph freely; nothing below depends on which character it is.
+local STATES = {
+	-- Claude is actively running — its spinner is on screen right now.
+	working = { glyph = "🔨", cols = 2, color = "#eb6f92" },
+
+	-- A Claude pane with output you have not read. The nearest thing to
+	-- "it wants you" that is actually observable from here.
+	waiting = { glyph = "💬", cols = 2, color = "#a6e3a1" },
+
+	-- A Claude pane that is quiet and whose output you have already seen.
+	-- Foam rather than green so that once hooks land, a question and a
+	-- completion stay tellable apart at a glance.
+	complete = { glyph = "⚡", cols = 2, color = "#9ccfd8" },
+
+	-- A terminal with no Claude session in it.
+	--
+	-- Black as asked, and stated with the measurement because it is severe:
+	-- #000000 scores 1.46:1 against the inactive tab background and 1.34:1
+	-- against the active one, where WCAG's floor for text is 4.5:1. It will
+	-- read as "no dot at all" rather than "a dark dot" — which is a fine
+	-- outcome if the intent is for plain shells to disappear, and the wrong
+	-- one if you wanted them merely quiet. For quiet-but-present, use the
+	-- muted "#6e6a86" instead: 2.79:1, visibly grey without pulling focus.
+	--
+	-- bold is set only here, and it is doing real work rather than decoration:
+	-- weight is the one legibility cue left when the contrast ratio is 1.46:1,
+	-- so shell tabs stay findable as shapes even when the colour cannot carry
+	-- them. Add `bold = true` to any other row to match.
+	plain = { glyph = "●", cols = 1, color = "#000000", bold = true },
+}
+
+-- rose-pine ships no green — its palette runs base/surface/overlay through
+-- love/gold/rose/pine/foam/iris. #a6e3a1 is an addition, picked to sit at a
+-- similar lightness to the rose-pine accents so it reads as part of the set
+-- rather than pasted in from another theme.
+
+wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
+	local pane = tab.active_pane
+	local pane_title = (pane and pane.title) or ""
+
+	-- A tab renamed by hand (or by the Jarvis sidecar's set-tab-title) wins
+	-- over the pane's own title; otherwise fall back to what the pane reports.
+	local text = tab.tab_title
+	if not text or #text == 0 then
+		text = pane_title
+	end
+	if #text == 0 then
+		text = "shell"
+	end
+
+	-- Strip Claude's own status glyph out of the TEXT so it is not rendered
+	-- twice — this block re-adds one as a status column of its own. Both the
+	-- idle marker and whichever spinner frame is currently showing have to go.
+	-- Plain find/sub rather than a gsub pattern: these are multi-byte and Lua
+	-- patterns are byte-oriented.
+	for _, ch in ipairs({ CLAUDE_IDLE, "◐", "◑", "◒", "◓" }) do
+		local s, e = text:find(ch, 1, true)
+		if s then
+			text = text:sub(1, s - 1) .. text:sub(e + 1)
+		end
+	end
+	text = text:gsub("^%s+", "")
+	if #text == 0 then
+		text = "claude"
+	end
+
+	-- Cheap reads, no I/O, evaluated fresh on every repaint.
+	local proc = (pane and pane.foreground_process_name) or ""
+	local busy = title_has_any(pane_title, CLAUDE_WORKING)
+	local is_claude = busy or pane_title:find(CLAUDE_IDLE, 1, true) ~= nil or proc:find(CLAUDE_PROC, 1, true) ~= nil
+
+	-- has_unseen_output is GONE from this decision, deliberately.
+	--
+	-- It answers "have I looked at this tab", not "does this tab need me",
+	-- and those come apart the moment you click. A tab showing 💬 would drop
+	-- to ⚡ on activation even though Claude's state had not changed at all —
+	-- the glyph was reporting the viewer, not the session. A status icon that
+	-- changes because you looked at it is worse than no status icon.
+	--
+	-- What replaces it is the pane's user var, which only Claude can set, so
+	-- it moves when and only when Claude's state actually moves. Until the
+	-- hooks below are wired up it is simply nil, and a stopped session reads
+	-- as ⚡ — stable and honest, rather than flickering and wrong.
+	local uvars = (pane and pane.user_vars) or {}
+	local claimed = uvars.claude_state
+
+	local st
+	if busy then
+		-- The spinner is on screen: outranks any stale hook claim, because the
+		-- spinner is the more recent evidence by definition.
+		st = STATES.working
+	elseif not is_claude then
+		st = STATES.plain
+	elseif claimed == "waiting" then
+		st = STATES.waiting
+	else
+		st = STATES.complete
+	end
+
+	-- Budget the index and status column out of max_width BEFORE truncating,
+	-- so the glyph can never be the thing that gets cut off. st.cols, not
+	-- #st.glyph — see the note on the STATES table.
+	local index = tostring(tab.tab_index + 1) .. ": "
+	local room = max_width - #index - (st.cols + 1) - 1
+	if room < 4 then
+		room = 4
+	end
+
+	-- Intensity is reset to Normal on the index run and set from the state on
+	-- the title run, rather than left to inherit: format-tab-title output is
+	-- a stream of attribute changes, so an unset Intensity carries over from
+	-- whatever the previous tab ended on.
+	return {
+		{ Background = { Color = hover and "#393552" or (tab.is_active and "#232136" or "#2a273f") } },
+		{ Attribute = { Intensity = "Normal" } },
+		{ Foreground = { Color = "#6e6a86" } },
+		{ Text = " " .. index },
+		{ Attribute = { Intensity = st.bold and "Bold" or "Normal" } },
+		{ Foreground = { Color = st.color } },
+		{ Text = st.glyph .. " " .. wezterm.truncate_right(text, room) .. " " },
+	}
+end)
+
+-- ─── The one distinction still missing ───────────────────────────────
+--
+-- Working vs stopped is solved above, off Claude's own spinner. What is NOT
+-- solved is splitting stopped into its two halves: "it asked me something"
+-- and "it finished and returned a result". Both are a quiet pane with unread
+-- output, and the difference lives entirely in WHAT was printed, which
+-- nothing here parses. has_unseen_output is a good proxy for "look at this"
+-- and a useless one for "why", so 💬 currently covers both.
+--
+-- Claude Code already emits the distinction — as HOOK EVENTS, not as terminal
+-- output:
+--
+--   Notification  fires when Claude is waiting on you — a permission prompt
+--                 or a follow-up question.        -> STATES.waiting  💬
+--   Stop          fires when Claude finishes responding.
+--                                                 -> STATES.complete ✅
+--
+-- The channel back into this file is wezterm's USER VARS: a program in the
+-- pane emits OSC 1337 SetUserVar, and the value appears on the same
+-- PaneInformation the handler above already receives:
+--
+--   printf '\033]1337;SetUserVar=%s=%s\007' claude_state "$(printf waiting | base64)"
+--   -- then, in the handler:  pane.user_vars.claude_state
+--
+-- That costs no file I/O per repaint and does NOT go through `wezterm cli`,
+-- which matters because `wezterm cli` is currently broken on this machine
+-- (WEZTERM_UNIX_SOCKET points at a gui-sock that does not exist).
+--
+-- The open question is whether a hook subprocess can reach the pane's tty to
+-- emit that sequence at all — Claude Code's own Bash tool runs with no
+-- controlling terminal, and a hook may inherit the same. If it cannot, the
+-- fallback is a state file under $XDG_RUNTIME_DIR keyed by $WEZTERM_PANE,
+-- read here behind a cache. Untested either way; do not wire the hooks up
+-- assuming it works without checking that first.
+
+-- Rename the active tab. WezTerm has NO way to bind a double-click on a tab:
+-- mouse_bindings only cover the terminal area, and the tab bar exposes exactly
+-- one mouse event (new-tab-button-click). A key is the whole available API.
+--
+-- Submitting an EMPTY line clears the override and hands the tab back to the
+-- pane's own title, so this is reversible without restarting anything.
+config.keys = {
+	{
+		key = "E",
+		mods = "CTRL|SHIFT",
+		action = act.PromptInputLine({
+			description = "Rename tab (status glyph stays live)",
+			action = wezterm.action_callback(function(window, _, line)
+				if line ~= nil then
+					window:active_tab():set_title(line)
+				end
+			end),
+		}),
+	},
+	-- Discovery aid for CLAUDE_WORKING/CLAUDE_IDLE/CLAUDE_PROC: shows the strings
+	-- the state machine actually reads, so a marker that stops matching can be
+	-- diagnosed by looking rather than by guessing.
+	{
+		key = "I",
+		mods = "CTRL|SHIFT",
+		action = wezterm.action_callback(function(window, pane)
+			local msg = ("title: %s\nproc: %s"):format(
+				pane:get_title() or "<none>",
+				pane:get_foreground_process_name() or "<none>"
+			)
+			window:toast_notification("wezterm tab state", msg, nil, 6000)
+		end),
+	},
 }
 
 -- The sidecar names each session's TAB ("WORKER · <repo>", "BRAIN · <date>")
@@ -21,13 +403,13 @@ config.unix_domains = {
 -- OS window title, so mirror the stable tab name into the window title here
 -- (with the live status appended) — that's what shows in the GNOME window
 -- switcher, keeping multiple Jarvis terminals tellable apart.
-wezterm.on('format-window-title', function(tab)
-  local name = tab.tab_title
-  local status = tab.active_pane and tab.active_pane.title or ''
-  if name and #name > 0 then
-    return status ~= '' and (name .. '  —  ' .. status) or name
-  end
-  return status ~= '' and status or 'wezterm'
+wezterm.on("format-window-title", function(tab)
+	local name = tab.tab_title
+	local status = tab.active_pane and tab.active_pane.title or ""
+	if name and #name > 0 then
+		return status ~= "" and (name .. "  —  " .. status) or name
+	end
+	return status ~= "" and status or "wezterm"
 end)
 
 return config
