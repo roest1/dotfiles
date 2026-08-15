@@ -49,6 +49,7 @@ function handshake(cmd: string, args: string[]): Promise<boolean> {
     const done = (ok: boolean) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       child.kill();
       resolve(ok);
     };
@@ -60,7 +61,7 @@ function handshake(cmd: string, args: string[]): Promise<boolean> {
     });
 
     child.on("error", () => done(false));
-    setTimeout(() => done(false), TIMEOUT_MS);
+    const timer = setTimeout(() => done(false), TIMEOUT_MS);
 
     const body = JSON.stringify({
       jsonrpc: "2.0",
