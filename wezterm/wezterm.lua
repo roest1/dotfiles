@@ -259,6 +259,44 @@ local STATES = {
 	-- complete = { glyph = "⚡\u{FE0F}", cols = 2, color = "#a6e3a1" },
 	complete = { glyph = "⚡️", cols = 2, color = "#a6e3a1" }, -- typed with VS16 attached directly
 
+	-- A gh-tui session, which announces itself over the same user-var channel
+	-- (bash/bash_github_tui's `_gh_tab_var`).
+	--
+	-- U+F408 is `oct-mark_github` — GitHub's own Octicons mark, patched into
+	-- 0xProto Nerd Font. NOT an emoji: Unicode has no GitHub logo at any
+	-- codepoint, so the logo is only ever available as a font-specific glyph.
+	--
+	-- Written as the ESCAPE and not as the literal character, which is the one
+	-- place this row differs from every other in the table. U+F408 is in the
+	-- Private Use Area, and PUA characters do not survive being passed through
+	-- tools that sanitise text — pasting the literal glyph here produced an
+	-- EMPTY string, which is a silent failure: the config still loads, the tab
+	-- still draws, there is simply no icon and nothing says why. `\u{f408}`
+	-- cannot be lost that way, and it also states which codepoint this is
+	-- without needing a font to read the file.
+	--
+	-- Verified with `wezterm ls-fonts --text "$(printf '\uf408')"` — escaped
+	-- there too, so the check is one you can paste out of this file without a
+	-- Nerd Font installed to read it. It resolves to 0xProtoNerdFont-Regular
+	-- and reports `cells=1`, which is where cols comes from rather than it
+	-- being guessed.
+	--
+	-- Falls back to a blank box on a machine without the patched font, the same
+	-- bargain the rest of the config makes for Nerd Font glyphs.
+	--
+	-- glyph_color exists for this row alone: a Nerd Font icon is flat and
+	-- monochrome, so unlike 🔨/💬/⚡ it does NOT paint itself — left alone it
+	-- would inherit the muted grey of the tab index and the octocat's cut-outs
+	-- would close up into a smudge. White is what GitHub's own mark uses on a
+	-- dark ground.
+	--
+	-- pad likewise. Every other glyph here is an emoji occupying two columns,
+	-- and the drawn artwork sits inside them with its own margin; a Nerd Font
+	-- icon is drawn to fill its single cell edge to edge, so the shared
+	-- one-column gap leaves the mark touching the title. Two columns puts it
+	-- back to looking like the same amount of air as the emoji rows.
+	github = { glyph = "\u{f408}", cols = 1, pad = 2, color = "#c4a7e7", glyph_color = "#ffffff" },
+
 	-- A terminal with no Claude session in it.
 	--
 	-- White, at full 21:1 contrast against both the active (#232136) and
@@ -330,6 +368,12 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 		-- The spinner is on screen: outranks any stale hook claim, because the
 		-- spinner is the more recent evidence by definition.
 		st = STATES.working
+	elseif uvars.gh_tui == "1" then
+		-- Ranked under `busy` for the same reason: live evidence beats a claim.
+		-- Above the Claude branches because gh-tui is a foreground program you
+		-- are sitting in — while it holds the pane, that is what the pane is,
+		-- and its own var is cleared on the way out.
+		st = STATES.github
 	elseif not is_claude then
 		st = STATES.plain
 	elseif claimed == "waiting" then
@@ -341,8 +385,14 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 	-- Budget the index and status column out of max_width BEFORE truncating,
 	-- so the glyph can never be the thing that gets cut off. st.cols, not
 	-- #st.glyph — see the note on the STATES table.
+	--
+	-- pad is the gap between glyph and title, one column unless a state asks
+	-- for more, and it is budgeted here rather than just appended: a space
+	-- added at the print site alone would be taken back out of the title by
+	-- the truncation below, which is the same trap st.cols exists to avoid.
+	local pad = st.pad or 1
 	local index = tostring(tab.tab_index + 1) .. ": "
-	local room = max_width - #index - (st.cols + 1) - 1
+	local room = max_width - #index - (st.cols + pad) - 1
 	if room < 4 then
 		room = 4
 	end
@@ -351,18 +401,27 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 	-- the title run, rather than left to inherit: format-tab-title output is
 	-- a stream of attribute changes, so an unset Intensity carries over from
 	-- whatever the previous tab ended on.
-	return {
+	local out = {
 		{ Background = { Color = hover and "#393552" or (tab.is_active and "#232136" or "#2a273f") } },
 		{ Attribute = { Intensity = "Normal" } },
 		{ Foreground = { Color = "#6e6a86" } },
 		{ Text = " " .. index },
-		-- Print the status glyph WITHOUT setting a Foreground color (lets emoji render natively)
-		{ Text = st.glyph .. " " },
-		-- Apply text color and bolding ONLY to the title text
-		{ Attribute = { Intensity = st.bold and "Bold" or "Normal" } },
-		{ Foreground = { Color = st.color } },
-		{ Text = wezterm.truncate_right(text, room) .. " " },
 	}
+
+	-- Print the status glyph WITHOUT setting a Foreground color (lets emoji
+	-- render natively). glyph_color is the single exception, and only a state
+	-- whose glyph is FLAT should set it — see STATES.github.
+	if st.glyph_color then
+		out[#out + 1] = { Foreground = { Color = st.glyph_color } }
+	end
+	out[#out + 1] = { Text = st.glyph .. string.rep(" ", pad) }
+
+	-- Apply text color and bolding ONLY to the title text
+	out[#out + 1] = { Attribute = { Intensity = st.bold and "Bold" or "Normal" } }
+	out[#out + 1] = { Foreground = { Color = st.color } }
+	out[#out + 1] = { Text = wezterm.truncate_right(text, room) .. " " }
+
+	return out
 end)
 
 -- ─── The one distinction still missing ───────────────────────────────
