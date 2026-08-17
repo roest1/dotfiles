@@ -214,21 +214,23 @@ config.hide_tab_bar_if_only_one_tab = false
 -- NOTE: this setting is the one thing here a config reload cannot apply. A
 -- window's decoration mode is fixed when the window is created, so changing
 -- it needs every wezterm window closed and relaunched, not SUPER+r.
-config.window_decorations = "RESIZE"
+config.window_decorations = "NONE"
 
 -- ─── Tab titles: Claude Code session state ───────────────────────────
 --
 -- Claude Code already writes its state into the PANE title over OSC; nothing
 -- here has to poll or shell out. This only surfaces it in the tab, from two
--- independent signals:
+-- independent signals, both read live on every repaint:
 --
---   WORKING  the pane title carries Claude's busy marker. Read live on every
---            repaint, so it clears the moment Claude stops.
---   UNSEEN   wezterm's own has_unseen_output: a NON-ACTIVE tab has printed
---            something you have not looked at. This is the "it finished and
---            is waiting on you" signal, and it is deliberately independent of
---            the title — it works the same for a plain shell whose build just
---            finished in a background tab.
+--   WORKING  the pane title carries Claude's spinner, so this clears the
+--            moment Claude stops.
+--   CLAIMED  the pane's claude_state user var, set by the hooks in
+--            claude/settings.json — "waiting" when Claude asked you
+--            something, "complete" when it finished. See the note at the
+--            user_vars read below for why this and not has_unseen_output.
+--
+-- The spinner outranks the claim, because a spinner on screen is the more
+-- recent evidence by definition.
 --
 -- The icon is recomputed from live pane state every repaint and never stored.
 -- That is precisely what lets a hand-renamed tab keep its status glyph: the
@@ -286,13 +288,15 @@ local STATES = {
 	-- Claude is actively running — its spinner is on screen right now.
 	working = { glyph = "🔨", cols = 2, color = "#f6c177" },
 
-	-- A Claude pane with output you have not read. The nearest thing to
-	-- "it wants you" that is actually observable from here.
+	-- Claude's Notification hook fired: it is waiting on you — a permission
+	-- prompt or a follow-up question.
 	waiting = { glyph = "💬", cols = 2, color = "#eb6f92" },
 
-	-- A Claude pane that is quiet and whose output you have already seen.
-	-- Gold rather than green so that once hooks land, a question and a
-	-- completion stay tellable apart at a glance.
+	-- Claude's Stop hook fired: it finished responding. Distinct from `waiting`
+	-- in both glyph and hue so the two halves of "stopped" stay tellable apart
+	-- at a glance. Also the fallback for a Claude pane that has not reported
+	-- anything yet, which is why it is the else branch below rather than an
+	-- explicit `claimed == "complete"` test.
 	-- The trailing \u{FE0F} (VS16) forces EMOJI presentation. Without it, ⚡
 	-- (U+26A1) defaults to TEXT presentation — a plain glyph tinted by
 	-- `color` below — unlike 🔨/💬, which have no text-presentation fallback
@@ -398,9 +402,15 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 	-- changes because you looked at it is worse than no status icon.
 	--
 	-- What replaces it is the pane's user var, which only Claude can set, so
-	-- it moves when and only when Claude's state actually moves. Until the
-	-- hooks below are wired up it is simply nil, and a stopped session reads
-	-- as ⚡ — stable and honest, rather than flickering and wrong.
+	-- it moves when and only when Claude's state actually moves.
+	--
+	-- The writer is claude/settings.json, linked by deps.conf's [claude]
+	-- section: its Notification hook claims "waiting", its Stop hook claims
+	-- "complete", each emitting OSC 1337 SetUserVar straight to /dev/tty. That
+	-- is the whole channel — no polling, no file I/O per repaint, and nothing
+	-- goes through `wezterm cli`. With [claude] unlinked this is simply nil and
+	-- every stopped session reads ⚡: degraded, but stable and honest rather
+	-- than flickering and wrong.
 	local uvars = (pane and pane.user_vars) or {}
 	local claimed = uvars.claude_state
 
@@ -464,41 +474,6 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 
 	return out
 end)
-
--- ─── The one distinction still missing ───────────────────────────────
---
--- Working vs stopped is solved above, off Claude's own spinner. What is NOT
--- solved is splitting stopped into its two halves: "it asked me something"
--- and "it finished and returned a result". Both are a quiet pane with unread
--- output, and the difference lives entirely in WHAT was printed, which
--- nothing here parses. has_unseen_output is a good proxy for "look at this"
--- and a useless one for "why", so 💬 currently covers both.
---
--- Claude Code already emits the distinction — as HOOK EVENTS, not as terminal
--- output:
---
---   Notification  fires when Claude is waiting on you — a permission prompt
---                 or a follow-up question.        -> STATES.waiting  💬
---   Stop          fires when Claude finishes responding.
---                                                 -> STATES.complete ✅
---
--- The channel back into this file is wezterm's USER VARS: a program in the
--- pane emits OSC 1337 SetUserVar, and the value appears on the same
--- PaneInformation the handler above already receives:
---
---   printf '\033]1337;SetUserVar=%s=%s\007' claude_state "$(printf waiting | base64)"
---   -- then, in the handler:  pane.user_vars.claude_state
---
--- That costs no file I/O per repaint and does NOT go through `wezterm cli`,
--- which matters because `wezterm cli` is currently broken on this machine
--- (WEZTERM_UNIX_SOCKET points at a gui-sock that does not exist).
---
--- The open question is whether a hook subprocess can reach the pane's tty to
--- emit that sequence at all — Claude Code's own Bash tool runs with no
--- controlling terminal, and a hook may inherit the same. If it cannot, the
--- fallback is a state file under $XDG_RUNTIME_DIR keyed by $WEZTERM_PANE,
--- read here behind a cache. Untested either way; do not wire the hooks up
--- assuming it works without checking that first.
 
 -- Rename the active tab. WezTerm has NO way to bind a double-click on a tab:
 -- mouse_bindings only cover the terminal area, and the tab bar exposes exactly
