@@ -5,1575 +5,2151 @@
 # Source this from .bashrc:
 #   source ~/.bash_github_tui
 #
-# STATUS: working, and parked. Everything below runs; nothing here is
-# half-finished. It is the next thing to work on, not the current one — see
-# docs/decisions/github-tui.md for the plan, the open question that gates it,
-# and the ideas not yet brought in. Keep that file and this header in step.
-#
 # Commands:
-#   gh-tui        All GitHub features in a tui
+#   gh-tui        All of GitHub for the current repo, in one TUI
 #
-# To dissolve into gh-tui — these are the screens, reachable directly for now:
-#   _gpr           Interactive PR management (list → pick → act)
-#   _gpr create    Create a new PR from current branch
-#   _gpr mine      Show only your PRs
-#   _ghsecrets     Manage repo & environment secrets
-#   _ghbranch      Branches & rulesets (supersedes classic protection)
-#   _ghenv         Environment management
-#   _gha_ui        Interactive workflow picker → action menu → logs
+# The non-interactive gh command (gha) and the shared helpers (__gh_check,
+# __gh_repo, __gh_default_branch, _open_url) live in bash_github, which is
+# sourced first. Everything here may use them. This file is the only one of
+# the three that may invoke fzf, and CI enforces that — it is what keeps this
+# layer replaceable as a unit.
 #
-# The non-interactive gh command (gha) and the shared
-# helpers (__gh_check, __gh_repo, __gh_default_branch, _open_url) live in
-# bash_github, which is sourced first. Everything here may use them. This file
-# is the only one of the three that may invoke fzf, and CI enforces that — it
-# is what keeps this layer replaceable as a unit.
+# HOW IT IS BUILT
 #
-# Navigation — nvim friendly. Encoded once in __fzf_menu, not repeated per
-# call site; see bash_productivity.
-#   Menus:  ↑↓ and hjkl navigate   enter select   -/q back
-#   Lists:  type to filter   enter select   esc back
-#   Pagers: r refresh   -/q back
-#   Help:   ? in any screen shows that screen's page
+# Every screen is one fzf window: a list on the left, a live preview on the
+# right, and single-key actions on the list. Screens open instantly because
+# nothing is fetched before fzf starts — the list arrives through a
+# `start:reload` binding and the preview renders per item, cached. Nothing
+# stops to say "press r to refresh"; the preview *is* the view.
 #
-# Dependencies: gh, fzf, jq
+# fzf's preview, reload and execute commands run in a child shell that has
+# none of these functions. Rather than materialise every renderer as a
+# separate script, gh-tui writes ONE worker script per session — every
+# `_gh*` function in this file, dumped with `declare -f`, plus a dispatcher —
+# and every fzf command is `bash $W <verb> args…`. So a preview is an
+# ordinary bash function in this file, shellchecked and sourced like the
+# rest, and the only rule is that a function running over there may call
+# other functions from this file, the fzf wrappers and time helpers named in
+# _gh_worker_write, and nothing else from the parent shell.
+#
+# Screens open other screens the same way: `enter` is an execute() that runs
+# `bash $W screen-steps …`, a nested fzf. The parent fzf stays alive under
+# it with its cursor, filter and scroll, so esc is genuinely back. Nothing
+# loops to a menu; there is no menu to loop back to.
+#
+# Live data: each screen runs fzf with --listen, which hands its child
+# commands an FZF_PORT. A preview that renders something still in progress
+# schedules one `refresh-preview` POST a few seconds out, so a running
+# workflow updates under the cursor without a keypress; the hub's prefetch
+# does the same as each pane's data lands. This is why the floor is fzf 0.65
+# (2025) rather than whatever the distro ships — see _gh_fzf_ok.
+#
+# Navigation — nvim friendly, and the same everywhere:
+#   Lists:  type to filter   enter select   esc back   ctrl-r refresh
+#           ctrl-o open in browser   ctrl-/ help   (other keys in the footer)
+#   Menus:  ↑↓ / jk   enter select   -/q back   ? help
+#   Preview scroll: shift-↑↓ · alt-j/k · mouse wheel
+#
+# Dependencies: gh, fzf ≥ 0.65, jq, curl (live refresh only — degrades to
+# manual ctrl-r without it)
+
+# ─── Chrome ───────────────────────────────────────────────────────
+#
+# One palette, one fzf style, applied to every screen — the same eight
+# colours the prompt uses (bash_theme), so the TUI reads as part of the
+# shell rather than a visitor in it. `_gh_palette` is a function rather
+# than top-level assignments because the worker script needs the same
+# values and gets them the same way everything else does: `declare -f`.
+
+_gh_palette() {
+  _C0=$'\033[0m'            _CB=$'\033[1m'
+  _C_RED=$'\033[38;5;203m'  _C_GRN=$'\033[38;5;150m'
+  _C_YEL=$'\033[38;5;214m'  _C_ORG=$'\033[38;5;215m'
+  _C_PUR=$'\033[38;5;141m'  _C_TAN=$'\033[38;5;180m'
+  _C_BLU=$'\033[38;5;110m'  _C_WHT=$'\033[38;5;255m'
+  _C_GRY=$'\033[38;5;245m'  _C_DIM=$'\033[38;5;240m'
+}
+
+# The fzf floor. Everything below assumes --listen (0.36), the `focus` and
+# `start` events (0.36), `execute` returning to the list (0.38), border and
+# preview labels (0.35), transform-* actions (0.45), --style (0.60) and
+# --footer (0.65). Ubuntu's apt carries 0.29 (22.04) and 0.44 (24.04), so
+# deps.conf installs fzf through mise first — the same reasoning as nvim —
+# and this check says what to do on a machine that hasn't re-run install.
+_gh_fzf_ok() {
+  local have maj min rest
+  have=$(fzf --version 2>/dev/null | awk '{ print $1 }')
+  [[ -z "$have" ]] && return 1
+  # Major/minor arithmetic rather than sort -V: bash/deps.sh enforces the
+  # same floor at install time with the same test, so the two can't disagree.
+  maj="${have%%.*}"; rest="${have#*.}"; min="${rest%%.*}"
+  maj="${maj//[!0-9]/}"; min="${min//[!0-9]/}"
+  if [[ -n "$maj" ]] && (( maj > 0 || ${min:-0} >= 65 )); then return 0; fi
+  echo "❌ gh-tui needs fzf ≥ 0.65 (have $have) — run: make install bash" >&2
+  echo "   (or: mise use -g fzf@latest)" >&2
+  return 1
+}
+
+# Common flags for a LIST screen. Menus keep going through __fzf_menu
+# (bash_productivity), which owns the -/q/? contract; they get the same
+# chrome by having _GH_STYLE appended after the title.
+_gh_style() {
+  _GH_STYLE=(
+    --height=100% --layout=reverse --ansi --style=full:rounded
+    --info=inline-right --no-separator
+    --pointer='▶' --marker='✓' --scrollbar='▐' --ellipsis='…'
+    --highlight-line
+    --color='border:240,label:215:bold,list-border:240,input-border:240,header-border:240,footer-border:240,preview-border:240'
+    --color='preview-label:215:bold,list-label:250,header:250,footer:245,prompt:141,pointer:215,marker:150'
+    --color='hl:215,hl+:215:bold,fg+:255,bg+:236,info:141,spinner:150,gutter:-1,query:255,disabled:245'
+  )
+  _GH_PREVIEW=(--preview-window='right,58%,wrap,<60(down,60%,wrap)')
+}
+
+# fzf for a list screen. Wraps the shared style, the listen socket, the
+# preview scroll keys and the universal bindings; each screen adds its own
+# --preview, --bind and --footer on top.
+#
+#   _gh_fzf <help-name> [fzf args...]
+#
+# Output is whatever fzf prints (with --expect, the key then the line).
+_gh_fzf() {
+  local help="$1"; shift
+  local -a binds=(
+    --bind='alt-k:preview-up,alt-j:preview-down,alt-u:preview-half-page-up,alt-d:preview-half-page-down'
+    --bind='alt-p:toggle-preview'
+    --bind="ctrl-/:execute(less -R -- '$_GH_D/help/$help')"
+  )
+  fzf "${_GH_STYLE[@]}" "${_GH_PREVIEW[@]}" --listen "${binds[@]}" "$@"
+}
+
+# A menu with the same chrome. Same contract as __fzf_menu, full screen.
+_gh_menu() {
+  local title="$1"; shift
+  __fzf_menu "$title" "${_GH_STYLE[@]}" --no-info --no-input "$@"
+}
+
+# yes/no as a menu, so a confirmation looks like every other screen instead
+# of a bare read prompt under it. Returns 0 on yes.
+_gh_confirm() {
+  local q="$1" yes="${2:-Yes}" no="${3:-No}" pick
+  pick=$(printf '%s\n' "$no" "$yes" \
+    | _gh_menu "$q" --border-label=" ⚠  confirm " --height=100%)
+  [[ "$pick" == "$yes" ]]
+}
+
+# A one-line text input inside the fzf chrome. Prints what was typed;
+# empty on esc. Given no items, fzf is a prompt with --print-query.
+_gh_input() {
+  local prompt="$1" initial="${2:-}" out
+  out=$(printf '' | fzf "${_GH_STYLE[@]}" --print-query --prompt="$prompt " \
+          --query="$initial" --header="enter accept   esc cancel" \
+          --border-label=" ✏  input " --no-info 2>/dev/null | head -1)
+  printf '%s' "$out"
+}
+
+# Pause on a message. Only used after a terminal-writing action that has no
+# screen of its own to return to (a merge, a create); the screens themselves
+# never ask you to press a key.
+_gh_pause() {
+  local _k
+  echo ""
+  read -rsn1 -p "  any key to continue " _k; echo ""
+}
+
+# Announce the session to wezterm, which paints the tab's status glyph from
+# the pane's USER VARS — the same channel wezterm.lua already reads Claude
+# Code's state on. OSC 1337 SetUserVar, base64 value, written straight to the
+# tty: no `wezterm cli` (broken on this machine — WEZTERM_UNIX_SOCKET points
+# at a gui-sock that does not exist) and no file I/O per repaint.
+#
+# /dev/tty rather than stdout, because gh-tui's own stdout is redirected to
+# /dev/null and every screen runs inside fzf's alternate screen.
+#
+# Silent everywhere else: an unrecognised OSC is discarded by every terminal
+# that isn't wezterm, so there is nothing to guard on beyond having a tty.
+#
+# The off value is "0", not "". wezterm documents SetUserVar as name plus a
+# base64 payload and documents no way to UNSET one, so clearing by sending an
+# empty payload is betting on how its parser treats a zero-length decode — and
+# losing that bet leaves the pane wearing the mark until the shell dies. A var
+# that is present and reads "0" needs no such bet; the handler tests for "1".
+_gh_tab_var() {
+  [[ -w /dev/tty ]] || return 0
+  command -v base64 >/dev/null 2>&1 || return 0
+  printf '\033]1337;SetUserVar=gh_tui=%s\007' \
+    "$(printf %s "$1" | base64 | tr -d '\n')" >/dev/tty 2>/dev/null || true
+}
+
+# ─── Worker ───────────────────────────────────────────────────────
+#
+# Everything from here to `_gh_worker_write` runs INSIDE fzf's child
+# processes — previews, reloads, execute bindings — via `bash $W verb…`,
+# where $W is the script _gh_worker_write materialises per session. That
+# script starts with three baked-in facts, and the functions read them as
+# globals:
+#
+#   $D       the session dir (lists, ticks, port files, in-progress bodies)
+#   $R       owner/repo
+#   $CACHE   persistent, per-repo: rendered bodies of COMPLETED runs and the
+#            logs of completed jobs — both immutable, so a second visit to a
+#            run is instant even in a new shell. Pruned by age at startup.
+#
+# A `_ghw_` function may call other `_ghw_` functions, _gh_palette, _open_url,
+# and the time helpers from bash_theme. Nothing else exists over there.
+
+_ghw_main() {
+  local verb="${1:-}"; shift || true
+  case "$verb" in
+    list-runs)     _ghw_list_runs "$@" ;;
+    runs-label)    _ghw_runs_label ;;
+    runs-toggle)   _ghw_runs_toggle ;;
+    pv-run)        _ghw_pv_run "$@" ;;
+    list-steps)    _ghw_list_steps "$@" ;;
+    pv-job)        _ghw_pv_job "$@" ;;
+    pv-step)       _ghw_pv_step "$@" ;;
+    log-job)       _ghw_log_job "$@" ;;
+    log-step)      _ghw_log_step "$@" ;;
+    log-run)       _ghw_log_run "$@" ;;
+    rerun)         _ghw_rerun "$@" ;;
+    cancel)        _ghw_cancel "$@" ;;
+    open)          _open_url "$1" ;;
+    list-prs)      _ghw_list_prs "$@" ;;
+    prs-label)     _ghw_prs_label ;;
+    prs-next)      _ghw_prs_next ;;
+    pv-pr)         _ghw_pv_pr "$@" ;;
+    list-branches) _ghw_list_branches "$@" ;;
+    pv-branch)     _ghw_pv_branch "$@" ;;
+    list-secrets)  _ghw_list_secrets "$@" ;;
+    pv-secret)     _ghw_pv_secret "$@" ;;
+    list-envs)     _ghw_list_envs "$@" ;;
+    pv-env)        _ghw_pv_env "$@" ;;
+    hub-prefetch)  _ghw_hub_prefetch "$@" ;;
+    hub-refresh)   _ghw_hub_refresh ;;
+    pv-hub)        _ghw_pv_hub "$@" ;;
+    screen)        _ghw_screen "$@" ;;
+    screen-actions)     _gh_screen_actions ;;
+    screen-actions-for) _gh_screen_actions_for "$@" ;;
+    screen-steps)       _gh_screen_steps "$@" ;;
+    screen-prs)         _gh_screen_prs ;;
+    screen-branches)    _gh_screen_branches ;;
+    screen-secrets)     _gh_screen_secrets ;;
+    screen-envs)        _gh_screen_envs ;;
+    open-run)      _ghw_open_run "$@" ;;
+    open-branch)   _ghw_open_branch "$@" ;;
+    open-settings) _ghw_open_settings "$@" ;;
+    pr-checkout)   _ghw_pr_checkout "$@" ;;
+    pr-create)     _ghw_pr_create ;;
+    pr-menu)       _ghw_pr_menu "$@" ;;
+    branch-checkout) _ghw_branch_checkout "$@" ;;
+    branch-delete) _ghw_branch_delete "$@" ;;
+    branch-menu)   _ghw_branch_menu "$@" ;;
+    rulesets)      _ghw_rulesets ;;
+    secret-set)    _ghw_secret_set "$@" ;;
+    secret-delete) _ghw_secret_delete "$@" ;;
+    env-create)    _ghw_env_create ;;
+    env-delete)    _ghw_env_delete "$@" ;;
+    env-menu)      _ghw_env_menu "$@" ;;
+    *) echo "gh-tui worker: unknown verb '$verb'" >&2; return 1 ;;
+  esac
+}
+
+# POST an action string to the fzf instance that spawned us. --listen puts
+# the port in FZF_PORT for every child command; a caller that already
+# knows a port (the hub prefetch, which outlives any one preview) passes
+# it. Without curl this is a no-op and the screens still work — you just
+# press ctrl-r yourself.
+_ghw_notify() {
+  local port="${2:-${FZF_PORT:-}}"
+  [[ -z "$port" ]] && return 0
+  command -v curl &>/dev/null || return 0
+  curl -s -m 2 -X POST "localhost:$port" -d "$1" >/dev/null 2>&1
+}
+
+# Schedule ONE deferred POST per fzf instance. A preview that shows a run
+# still in progress calls this; when the timer fires the preview re-renders,
+# sees it is still running, and schedules the next one — a live view that
+# stops by itself the moment the run completes. The lock file holds the
+# expiry, so ten previews of ten running jobs share one timer rather than
+# stacking ten.
+_ghw_tick() {
+  local secs="$1" action="$2" now
+  [[ -z "${FZF_PORT:-}" || -n "${GHW_PREFETCH:-}" ]] && return 0
+  now=$(date +%s)
+  local lock="$D/tick.$FZF_PORT"
+  if [[ -s "$lock" ]] && (( $(<"$lock") > now )); then return 0; fi
+  echo $(( now + secs + 2 )) > "$lock"
+  ( sleep "$secs"; rm -f "$lock"; _ghw_notify "$action" "$FZF_PORT" ) >/dev/null 2>&1 </dev/null &
+}
+
+# jq helpers shared by every renderer. A string, spliced in front of each
+# program, so the glyph for "cancelled" is decided in exactly one place.
+_ghw_jq_defs() {
+  cat <<'JQ'
+def glyph:
+  if .status == "completed" then
+    ( .conclusion as $c
+    | if   $c == "success"          then "✅"
+      elif $c == "failure"          then "❌"
+      elif $c == "cancelled"        then "🚫"
+      elif $c == "skipped"          then "⏭ "
+      elif $c == "timed_out"        then "⏰"
+      elif $c == "action_required"  then "⚠️ "
+      elif $c == "startup_failure"  then "💥"
+      elif $c == "neutral" or $c == "stale" then "⚪"
+      else "❓" end )
+  elif .status == "in_progress" then "⏳"
+  elif .status == "queued" or .status == "waiting" or .status == "pending" or .status == "requested" then "🕒"
+  else "⏳" end;
+def when: if .status == "completed" then (.conclusion // "?") else (.status | gsub("_"; " ")) end;
+def age: if . < 60 then "now" elif . < 3600 then "\(./60|floor)m" elif . < 86400 then "\(./3600|floor)h"
+         elif . < 604800 then "\(./86400|floor)d" else "\(./604800|floor)w" end;
+def dur: if . == null then "" elif . >= 3600 then "\(./3600|floor)h\((. % 3600)/60|floor)m"
+         elif . >= 60 then "\(./60|floor)m\(. % 60)s" else "\(.)s" end;
+def secs: if . == null or . == "" then null else (sub("\\.[0-9]+"; "") | fromdateiso8601) end;
+def lpad(n): tostring | (n - length) as $p | if $p > 0 then (" " * $p) + . else . end;
+def rpad(n): tostring | (n - length) as $p | if $p > 0 then . + (" " * $p) else . end;
+def trunc(n): if length > n then .[:n-1] + "…" else . end;
+def dots(n): (n - length) as $p | if $p > 1 then . + " " + ("·" * ($p - 1)) else . + " " end;
+def event: if . == "pull_request" then "pr" elif . == "workflow_dispatch" then "manual"
+           elif . == "schedule" then "cron" elif . == "pull_request_target" then "pr-tgt"
+           elif . == "dynamic" then "dyn" else . end;
+JQ
+}
+
+# mtime, GNU or BSD stat.
+_ghw_mtime() {
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
+}
+
+# ─── Actions: the run list ─────────────────────────────────────────
+
+# One line per run, newest first. The visible column is field 1; the rest
+# are tab-separated facts the preview and the key bindings read back, so
+# nothing is fetched twice for something the list already knew.
+#
+#   fresh   bypass the 15s list cache (ctrl-r)
+#
+# The branch scope (this branch / all) is a file, flipped by _ghw_runs_toggle
+# — which ctrl-b runs as a transform-list-label, i.e. synchronously, BEFORE
+# the reload that reads it. Doing the flip inside the reload raced the label.
+_ghw_list_runs() {
+  local mode="" arg
+  [[ -f "$D/runs.branch" ]] && mode=branch
+  for arg in "$@"; do
+    [[ "$arg" == fresh ]] && rm -f "$D"/runs.*.json
+  done
+
+  local q="per_page=40" br sha
+  br=$(git symbolic-ref --short HEAD 2>/dev/null)
+  sha=$(git rev-parse HEAD 2>/dev/null)
+  if [[ -n "$mode" && -n "$br" ]]; then
+    q+="&branch=$(printf '%s' "$br" | jq -sRr @uri)"
+  fi
+  # A commit filter (the PR screen's "checks" jump) is a file, like the branch
+  # mode, so reload bindings need no arguments they'd have to be told about.
+  [[ -s "$D/runs.sha" ]] && q+="&head_sha=$(<"$D/runs.sha")"
+
+  local json="$D/runs.$mode.json"
+  if [[ ! -s "$json" ]] || (( $(date +%s) - $(_ghw_mtime "$json") > 15 )); then
+    gh api "repos/$R/actions/runs?$q" > "$json.tmp" 2>/dev/null && mv "$json.tmp" "$json"
+  fi
+  [[ -s "$json" ]] || { printf '%s❌ could not list workflow runs for %s%s\n' "$_C_RED" "$R" "$_C0"; return; }
+
+  jq -r --arg sha "$sha" --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg ORG "$_C_ORG" --arg DIM "$_C_DIM" \
+     --arg GRY "$_C_GRY" --arg PUR "$_C_PUR" --arg YEL "$_C_YEL" \
+     "$(_ghw_jq_defs)"'
+    (.workflow_runs // []) as $r
+    | if ($r | length) == 0 then ([$DIM + "  no workflow runs here yet" + $C0, "none"] | @tsv) else
+    ($r | map(.name) | unique | length > 1) as $multi
+    | ([$r[].head_branch | length] | max // 4 | if . > 18 then 18 else . end) as $bw
+    | $r[]
+    | (if .status == "completed" then ((.updated_at|secs) - (.run_started_at|secs))
+       else ($now - (.run_started_at|secs)) end) as $d
+    | [ ( glyph + " "
+          + (if .head_sha == $sha then $ORG + "●" + $C0 else " " end)
+          + $DIM + (($now - (.created_at|secs)) | age | lpad(3)) + " "
+          + ($d | dur | lpad(6)) + $C0 + "  "
+          + $GRY + (.event | event | trunc(6) | rpad(6)) + $C0 + " "
+          + $ORG + (.head_branch | trunc($bw) | rpad($bw)) + $C0 + "  "
+          + (if $multi then $PUR + .name + $C0 + " · " else "" end)
+          + (.display_title | gsub("[\t\n]"; " ")) ),
+        .id, .status, (.conclusion // ""), .html_url, .name, .head_branch, .event,
+        (.display_title | gsub("[\t\n]"; " ")), .created_at, (.run_started_at // .created_at),
+        .updated_at, .run_number, .run_attempt, .head_sha, (.actor.login // "")
+      ] | @tsv end' "$json"
+
+  # Warm the previews of the first few runs so the first hovers are instant.
+  # Detached, quiet, and told not to schedule refresh ticks of its own.
+  (
+    export GHW_PREFETCH=1; unset FZF_PORT
+    jq -r '.workflow_runs[:6][] | "\(.id) \(.run_attempt)"' "$json" 2>/dev/null | while read -r id att; do
+      _ghw_run_body "$id" "" "$att" >/dev/null 2>&1 &
+    done
+    wait
+  ) >/dev/null 2>&1 </dev/null &
+}
+
+_ghw_runs_toggle() {
+  if [[ -f "$D/runs.branch" ]]; then rm -f "$D/runs.branch"; else : > "$D/runs.branch"; fi
+  _ghw_runs_label
+}
+
+_ghw_runs_label() {
+  local br
+  if [[ -s "$D/runs.sha" ]]; then
+    printf ' commit %s ' "$(cut -c1-7 < "$D/runs.sha")"
+  elif [[ -f "$D/runs.branch" ]]; then
+    br=$(git symbolic-ref --short HEAD 2>/dev/null)
+    printf ' ⎇ %s ' "${br:-HEAD}"
+  else
+    printf ' all branches '
+  fi
+}
+
+# ─── Actions: one run, rendered ────────────────────────────────────
+
+# Preview for a run. The lines that never change — workflow, title, branch,
+# who and why — come straight from the list fields and print at once; the
+# body (status, jobs, steps, failed-step logs) is fetched, rendered and
+# cached by _ghw_run_body.
+_ghw_pv_run() {
+  [[ "$1" == none || -z "$1" ]] && { printf '%sNothing has run here yet.%s\n' "$_C_DIM" "$_C0"; return; }
+  local id="$1" wf="$5" br="$6" ev="$7" title="$8" created="$9" num="${12}" att="${13}" actor="${15}"
+  printf '%s%s%s %s#%s%s' "$_CB$_C_PUR" "$wf" "$_C0" "$_C_DIM" "$num" "$_C0"
+  (( att > 1 )) 2>/dev/null && printf ' %s(attempt %s)%s' "$_C_DIM" "$att" "$_C0"
+  printf '  %s%s%s\n' "$_C_ORG" "$br" "$_C0"
+  printf '%s%s%s\n' "$_CB" "$title" "$_C0"
+  printf '%s%s · %s · %s ago%s\n' "$_C_GRY" "$(printf '%s' "$ev" | tr '_' ' ')" \
+    "${actor:-?}" "$(__relative_time "$created")" "$_C0"
+  _ghw_rule
+  _ghw_run_body "$id" "$2" "$att"
+}
+
+_ghw_rule() {
+  printf '%s────────────────────────────────────────────────────────%s\n' "$_C_DIM" "$_C0"
+}
+
+# The cached, width-independent body of a run. Two calls, in parallel: the
+# run (its status is authoritative — the list line may be 15s stale) and its
+# jobs. One jq pass lays out jobs and steps; failed steps come out as marker
+# lines that the loop below swaps for the tail of that step's log.
+_ghw_run_body() {
+  local id="$1" seen="${2:-}" att="${3:-0}"
+  local final="$CACHE/run-$id-a$att.body" live="$D/run-$id.body"
+  if [[ -s "$final" ]]; then cat "$final"; return; fi
+  if [[ -s "$live" ]] && (( $(date +%s) - $(_ghw_mtime "$live") < 4 )); then
+    cat "$live"
+    _ghw_tick 5 'refresh-preview'
+    return
+  fi
+
+  local t="$D/run-$id"
+  # Someone (the prefetch, a previous hover) may be rendering this already.
+  if ! mkdir "$t.lock" 2>/dev/null; then
+    for _ in $(seq 1 25); do
+      sleep 0.2
+      [[ -s "$final" ]] && { cat "$final"; return; }
+      [[ -s "$live" ]] && { cat "$live"; _ghw_tick 5 'refresh-preview'; return; }
+    done
+    rmdir "$t.lock" 2>/dev/null   # stale — the other side died
+    mkdir "$t.lock" 2>/dev/null || return
+  fi
+
+  gh api "repos/$R/actions/runs/$id" > "$t.run" 2>/dev/null &
+  gh api "repos/$R/actions/runs/$id/jobs?per_page=100" > "$t.jobs" 2>/dev/null &
+  wait
+  if [[ ! -s "$t.run" || ! -s "$t.jobs" ]]; then
+    rmdir "$t.lock" 2>/dev/null
+    printf '%s❌ could not fetch run %s%s\n' "$_C_RED" "$id" "$_C0"
+    return
+  fi
+
+  local status
+  status=$(jq -r '.status' "$t.run")
+
+  # Failed jobs' logs, fetched together before the render loop needs them.
+  # Only completed jobs have logs at all — GitHub serves nothing for a job
+  # still running — so the loop's "log not available yet" is honest.
+  local jid
+  for jid in $(jq -r '.jobs[] | select(.status == "completed" and .conclusion == "failure") | .id' "$t.jobs"); do
+    _ghw_job_log "$jid" >/dev/null 2>&1 &
+  done
+  wait
+
+  {
+    jq -r --slurpfile run "$t.run" --argjson now "$(date +%s)" \
+       --arg C0 "$_C0" --arg CB "$_CB" --arg RED "$_C_RED" --arg GRN "$_C_GRN" \
+       --arg YEL "$_C_YEL" --arg DIM "$_C_DIM" --arg GRY "$_C_GRY" --arg ORG "$_C_ORG" \
+       "$(_ghw_jq_defs)"'
+      $run[0] as $r
+      | ($r | if .status == "completed" then ((.updated_at|secs) - (.run_started_at|secs))
+              else ($now - ((.run_started_at // .created_at)|secs)) end) as $rd
+      # ── status line ──
+      | ( ($r | glyph) + " " + $CB
+          + (if $r.status == "completed" then
+               (if $r.conclusion == "success" then $GRN elif $r.conclusion == "failure" then $RED else $YEL end)
+               + ($r | when)
+             else $YEL + ($r | when) end)
+          + $C0 + $DIM + " · " + ($rd | dur)
+          + (if $r.status != "completed" then " so far" else "" end)
+          + " · started " + (($r.run_started_at // $r.created_at) | .[11:16]) + " UTC" + $C0 )
+      , ""
+      # ── jobs ──
+      , ( .jobs[]
+          | (if .status == "completed" then ((.completed_at|secs) - (.started_at|secs))
+             elif .started_at != null then ($now - (.started_at|secs)) else null end) as $jd
+          | (.status == "completed" and .conclusion == "failure") as $failed
+          | (.status != "completed") as $running
+          | ( glyph + " "
+              + (if $failed then $CB + $RED elif $running then $YEL else "" end)
+              + (.name | trunc(46) | dots(48)) + $C0 + " "
+              + $DIM + ($jd | dur | lpad(6)) + (if $running and $jd != null then " ⋯" else "" end) + $C0 )
+          , ( if ($failed or $running) then
+                ( .id as $jid
+                | .steps[]
+                | (if .status == "completed" then ((.completed_at|secs) - (.started_at|secs))
+                   elif .started_at != null then ($now - (.started_at|secs)) else null end) as $sd
+                | (.status == "in_progress") as $now_running
+                | ( "   " + (if $now_running then $YEL + "▶ " elif .status != "completed" then $DIM + "○ " else glyph + " " end)
+                    + (if .conclusion == "failure" then $RED elif $now_running then $YEL elif .status != "completed" then $DIM else "" end)
+                    + (.name | trunc(43) | dots(45)) + $C0
+                    + " " + $DIM + ($sd | dur | lpad(6)) + $C0 )
+                , ( if .conclusion == "failure" and .started_at != null then
+                      "\u0001LOG\t\($jid)\t\(.number)\t\(.started_at)\t\(.completed_at // "")\t\(.name)"
+                    else empty end )
+                )
+              else empty end )
+        )
+      , ""
+      # ── summary ──
+      , ( ([.jobs[] | select(.conclusion == "success")] | length) as $ok
+        | ([.jobs[] | select(.conclusion == "failure")] | length) as $bad
+        | ([.jobs[] | select(.status != "completed")] | length) as $run
+        | ([.jobs[] | select(.conclusion == "skipped")] | length) as $skip
+        | ([.jobs[] | select(.conclusion == "cancelled")] | length) as $canc
+        | ( (if $ok > 0 then "✅ \($ok) passed   " else "" end)
+          + (if $bad > 0 then "❌ \($bad) failed   " else "" end)
+          + (if $run > 0 then "⏳ \($run) running   " else "" end)
+          + (if $canc > 0 then "🚫 \($canc) cancelled   " else "" end)
+          + (if $skip > 0 then "⏭  \($skip) skipped   " else "" end)
+          + (if (.jobs | length) == 0 then $DIM + "no jobs yet — waiting for a runner" + $C0 else "" end) )
+        | rtrimstr("   ") )
+    ' "$t.jobs" | while IFS= read -r line; do
+      if [[ "$line" == $'\001LOG\t'* ]]; then
+        local jid num start end sname
+        IFS=$'\t' read -r _ jid num start end sname <<< "$line"
+        _ghw_step_tail "$jid" "$start" "$end" "$sname" 18
+      else
+        printf '%s\n' "$line"
+      fi
+    done
+  } > "$t.render"
+
+  if [[ "$status" == "completed" ]]; then
+    mv "$t.render" "$final"; rm -f "$live" "$t.run"
+    mv "$t.jobs" "$CACHE/run-$id-a$att.jobs"
+    cat "$final"
+    # If the list line still says ⏳ — it saw this run mid-flight — refresh
+    # it. Only then: a reload moves the cursor, so it has to earn its keep.
+    if [[ -n "$seen" && "$seen" != completed && -z "${GHW_PREFETCH:-}" ]]; then
+      _ghw_notify 'reload(bash '"$D/w"' list-runs fresh)'
+    fi
+  else
+    mv "$t.render" "$live"
+    cat "$live"
+    _ghw_tick 5 'refresh-preview'
+  fi
+  rmdir "$t.lock" 2>/dev/null
+}
+
+# ─── Actions: logs ─────────────────────────────────────────────────
+
+# The log of one job, from the per-job endpoint: ~15KB and half a second,
+# where the whole run's log is megabytes and several. Immutable once the job
+# has completed, so it lives in the persistent cache. Prints the path.
+_ghw_job_log() {
+  local jid="$1" f
+  f="$CACHE/job-$jid.log"
+  if [[ ! -s "$f" ]]; then
+    # Unique temp: two previews can want the same log at the same moment.
+    gh api --allow-escape-sequences "repos/$R/actions/jobs/$jid/logs" > "$f.$$" 2>/dev/null \
+      && [[ -s "$f.$$" ]] && mv "$f.$$" "$f"
+    rm -f "$f.$$"
+  fi
+  [[ -s "$f" ]] && printf '%s\n' "$f"
+}
+
+# The lines of a job log that belong to one step. GitHub no longer serves
+# per-step logs (the run zip is one file per job now, which is why
+# `gh run view --log` says UNKNOWN STEP), so this is reconstructed:
+#
+#   1. the coarse window: lines whose timestamp falls in [started, completed]
+#      — second precision, so a sub-second step shares its second with its
+#      neighbours and the window can hold three steps' worth;
+#   2. inside it, the anchor: the step's own `##[group]Run …` line, preferring
+#      one whose text is the step's name (true for unnamed and `uses:` steps);
+#   3. the cut: the last `##[error]` before the next step's marker — a failed
+#      step always ends on one — else that next marker, else the window end.
+#
+# Steps that never open a Run group (Set up job, Post …, Stop containers)
+# get the whole window, which is the honest answer for them.
+_ghw_step_slice() {
+  local f="$1" start="${2:0:19}" end="${3:0:19}" name="${4:-}"
+  awk -v s="$start" -v e="$end" -v name="$name" '
+    { sub(/^\357\273\277/, ""); ts = substr($0, 1, 19) }
+    ts < s { next }
+    e != "" && ts > e { exit }
+    { win[++n] = $0 }
+    END {
+      if (n == 0) exit
+      a = 0
+      for (i = 1; i <= n; i++) {
+        if (win[i] ~ /Z ##\[group\]Run /) {
+          if (a == 0) a = i
+          t = win[i]; sub(/^[^ ]+ ##\[group\]/, "", t)
+          if (t == name) { a = i; break }
+        }
+      }
+      if (a == 0) a = 1
+      z = n
+      for (i = a + 1; i <= n; i++)
+        if (win[i] ~ /Z (##\[group\]Run |Post job cleanup\.|Cleaning up orphan processes|Stop and remove container)/) { z = i - 1; break }
+      last = 0
+      for (i = a; i <= z; i++) if (win[i] ~ /Z ##\[error\]/) last = i
+      if (last > 0) z = last
+      for (i = a; i <= z; i++) print win[i]
+    }
+  ' "$f"
+}
+
+# GitHub's log markup → colour. Timestamps and CRs go; ##[group] becomes a
+# ▸ heading, ##[error] a red ✖, ##[endgroup] disappears. Anything the tool
+# itself coloured passes through — fzf's preview renders ANSI.
+_ghw_fmt_log() {
+  awk -v red="$_C_RED" -v yel="$_C_YEL" -v blu="$_C_BLU" -v dim="$_C_DIM" -v off="$_C0" -v b="$_CB" '
+    { sub(/^\357\273\277/, ""); sub(/\r$/, ""); sub(/^[0-9-]+T[0-9:.]+Z ?/, "") }
+    /^##\[endgroup\]/ { next }
+    /^##\[error\]/    { sub(/^##\[error\]/, "");   print b red "✖ " $0 off; next }
+    /^##\[warning\]/  { sub(/^##\[warning\]/, ""); print yel "⚠ " $0 off; next }
+    /^##\[group\]/    { sub(/^##\[group\]/, "");   print blu "▸ " $0 off; next }
+    /^##\[(notice|debug|command|section)\]/ { sub(/^##\[[a-z]+\]/, ""); print dim $0 off; next }
+    { print }
+  '
+}
+
+# The last N lines of a failed step, indented under its line in the run body.
+_ghw_step_tail() {
+  local jid="$1" start="$2" end="$3" name="$4" n="${5:-18}" f total slice
+  f=$(_ghw_job_log "$jid") || {
+    printf '     %s┃ log not available yet%s\n' "$_C_DIM" "$_C0"; return; }
+  slice=$(_ghw_step_slice "$f" "$start" "$end" "$name")
+  if [[ -z "$slice" ]]; then
+    printf '     %s┃ (no output captured for this step)%s\n' "$_C_DIM" "$_C0"; return
+  fi
+  total=$(printf '%s\n' "$slice" | wc -l | tr -d ' ')
+  if (( total > n )); then
+    printf '     %s┃ ▴ %s earlier lines — enter to browse%s\n' "$_C_DIM" $(( total - n )) "$_C0"
+  fi
+  printf '%s\n' "$slice" | tail -n "$n" | _ghw_fmt_log \
+    | awk -v p="     $_C_RED┃$_C0 " '{ print p $0 }'
+}
+
+# ─── Actions: jobs & steps browser ─────────────────────────────────
+
+# Path to a run's jobs JSON: the persistent copy for a completed run, else
+# a fresh fetch (4s TTL, so the steps list of a running job stays live).
+_ghw_jobs_json() {
+  local id="$1" att="${2:-}" final live
+  # Keyed by attempt: a rerun is the same id with a new attempt, and the old
+  # attempt's jobs are not this run's jobs any more. A caller that doesn't
+  # know the attempt (rerun/cancel prompts) takes the newest cached one.
+  [[ -z "$att" ]] && att=$(ls "$CACHE"/run-"$id"-a*.jobs 2>/dev/null | sed 's/.*-a\([0-9]*\)\.jobs$/\1/' | sort -n | tail -1)
+  final="$CACHE/run-$id-a${att:-0}.jobs" live="$D/run-$id.jobs"
+  if [[ -n "$att" && -s "$final" ]]; then printf '%s\n' "$final"; return; fi
+  if [[ ! -s "$live" ]] || (( $(date +%s) - $(_ghw_mtime "$live") > 4 )); then
+    gh api "repos/$R/actions/runs/$id/jobs?per_page=100" > "$live.tmp" 2>/dev/null \
+      && mv "$live.tmp" "$live"
+  fi
+  [[ -s "$live" ]] && printf '%s\n' "$live"
+}
+
+# The flat jobs › steps list. Job lines are selectable too — their preview
+# is the whole job with every failed step expanded in full. Field 2 is the
+# kind, which the preview binding uses as its verb (pv-job / pv-step).
+_ghw_list_steps() {
+  local id="$1" att="${2:-}" f
+  f=$(_ghw_jobs_json "$id" "$att") || { printf '%s❌ could not fetch jobs%s\n' "$_C_RED" "$_C0"; return; }
+  jq -r --arg run "$id" --arg att "$att" --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg RED "$_C_RED" --arg YEL "$_C_YEL" --arg DIM "$_C_DIM" \
+     "$(_ghw_jq_defs)"'
+    .jobs[]
+    | (if .status == "completed" then ((.completed_at|secs) - (.started_at|secs))
+       elif .started_at != null then ($now - (.started_at|secs)) else null end) as $jd
+    | (.status == "completed" and .conclusion == "failure") as $failed
+    | ( [ glyph + " " + (if $failed then $CB + $RED elif .status != "completed" then $YEL else $CB end)
+          + .name + $C0 + $DIM + "  " + ($jd | dur) + $C0,
+          "job", $run, .id, 0, $att ] | @tsv )
+    , ( .id as $jid
+        | .steps[]
+        | (if .status == "completed" then ((.completed_at|secs) - (.started_at|secs))
+           elif .started_at != null then ($now - (.started_at|secs)) else null end) as $sd
+        | [ "   " + (if .status == "in_progress" then $YEL + "▶ " elif .status != "completed" then $DIM + "○ " else glyph + " " end)
+            + (if .conclusion == "failure" then $RED elif .status != "completed" then $DIM else "" end)
+            + .name + $C0 + $DIM + "  " + ($sd | dur) + $C0,
+            "step", $run, $jid, .number, $att ] | @tsv )
+  ' "$f"
+}
+
+# One job: header, every step, and every failed step's log in full.
+_ghw_pv_job() {
+  local run="$1" jid="$2" att="${4:-}" f
+  f=$(_ghw_jobs_json "$run" "$att") || return
+  local status
+  status=$(jq -r --argjson j "$jid" '.jobs[] | select(.id == $j) | .status' "$f")
+  jq -r --argjson j "$jid" --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg RED "$_C_RED" --arg GRN "$_C_GRN" \
+     --arg YEL "$_C_YEL" --arg DIM "$_C_DIM" --arg GRY "$_C_GRY" \
+     "$(_ghw_jq_defs)"'
+    .jobs[] | select(.id == $j)
+    | (if .status == "completed" then ((.completed_at|secs) - (.started_at|secs))
+       elif .started_at != null then ($now - (.started_at|secs)) else null end) as $jd
+    | ( glyph + " " + $CB + .name + $C0 )
+    , ( $DIM + (when) + " · " + ($jd | dur) + (if .status != "completed" then " so far" else "" end)
+        + (if .runner_name then " · " + .runner_name else "" end) + $C0 )
+    , ""
+    , ( .steps[]
+        | (if .status == "completed" then ((.completed_at|secs) - (.started_at|secs))
+           elif .started_at != null then ($now - (.started_at|secs)) else null end) as $sd
+        | ( (if .status == "in_progress" then $YEL + "▶ " elif .status != "completed" then $DIM + "○ " else glyph + " " end)
+            + (if .conclusion == "failure" then $RED elif .status != "completed" then $DIM else "" end)
+            + (.name | trunc(46) | dots(48)) + $C0 + " " + $DIM + ($sd | dur | lpad(6)) + $C0 )
+        , ( if .conclusion == "failure" and .started_at != null then
+              "\u0001LOG\t\($j)\t\(.number)\t\(.started_at)\t\(.completed_at // "")\t\(.name)"
+            else empty end ) )
+  ' "$f" | while IFS= read -r line; do
+    if [[ "$line" == $'\001LOG\t'* ]]; then
+      local j num start end sname
+      IFS=$'\t' read -r _ j num start end sname <<< "$line"
+      _ghw_step_tail "$j" "$start" "$end" "$sname" 400
+    else
+      printf '%s\n' "$line"
+    fi
+  done
+  [[ "$status" != "completed" ]] && _ghw_tick 5 'refresh-preview+reload(bash '"$D/w"' list-steps '"$run $att"')'
+  return 0
+}
+
+# One step: header and its full log.
+_ghw_pv_step() {
+  local run="$1" jid="$2" num="$3" att="${4:-}" f
+  f=$(_ghw_jobs_json "$run" "$att") || return
+  local meta name status concl start end jname
+  meta=$(jq -r --argjson j "$jid" --argjson n "$num" \
+    '.jobs[] | select(.id == $j) | .name as $jn | .steps[] | select(.number == $n)
+     | [$jn, .name, .status, (.conclusion // ""), (.started_at // ""), (.completed_at // "")] | @tsv' "$f")
+  IFS=$'\t' read -r jname name status concl start end <<< "$meta"
+  printf '%s%s%s %s›%s %s%s%s\n' "$_C_GRY" "$jname" "$_C0" "$_C_DIM" "$_C0" "$_CB" "$name" "$_C0"
+  local glyph
+  glyph=$(jq -rn --arg s "$status" --arg c "$concl" "$(_ghw_jq_defs)"'{status: $s, conclusion: $c} | glyph')
+  local dur=""
+  [[ -n "$start" && -n "$end" ]] && dur=$(__duration_str "$start" "$end")
+  printf '%s %s%s%s%s\n' "$glyph" "$_C_DIM" "${concl:-$status}" "${dur:+ · $dur}" "$_C0"
+  _ghw_rule
+  case "$status:$concl" in
+    completed:skipped) printf '%sskipped%s\n' "$_C_DIM" "$_C0"; return ;;
+    completed:*) ;;
+    *)
+      printf '%s⏳ %s — the log lands when the job completes%s\n' "$_C_YEL" \
+        "$(printf '%s' "$status" | tr '_' ' ')" "$_C0"
+      _ghw_tick 5 'refresh-preview'
+      return ;;
+  esac
+  local log
+  log=$(_ghw_job_log "$jid") || { printf '%slog not available%s\n' "$_C_DIM" "$_C0"; return; }
+  _ghw_step_slice "$log" "$start" "$end" "$name" | _ghw_fmt_log
+}
+
+# Pager bodies (bound to enter / ctrl-l via execute, piped into less).
+_ghw_log_step() { _ghw_pv_step "$@"; }
+_ghw_log_job() {
+  local jid="$2" f
+  f=$(_ghw_job_log "$jid") || { echo "log not available"; return; }
+  _ghw_fmt_log < "$f"
+}
+_ghw_log_run() {
+  local run="$1" att="${2:-}" f jid name
+  f=$(_ghw_jobs_json "$run" "$att") || return
+  # Every job's log, fetched together, printed in job order.
+  for jid in $(jq -r '.jobs[] | select(.status == "completed") | .id' "$f"); do
+    _ghw_job_log "$jid" >/dev/null 2>&1 &
+  done
+  wait
+  jq -r '.jobs[] | "\(.id)\t\(.name)"' "$f" | while IFS=$'\t' read -r jid name; do
+    printf '\n%s%s━━━ %s ━━━%s\n\n' "$_CB" "$_C_PUR" "$name" "$_C0"
+    _ghw_log_job _ "$jid"
+  done
+}
+
+# ─── Actions: rerun / cancel (inside execute, so the prompt has the tty) ──
+
+_ghw_rerun() {
+  local id="$1" f failed ans
+  f=$(_ghw_jobs_json "$id") || { echo "❌ could not read run $id"; sleep 1.5; return; }
+  failed=$(jq '[.jobs[] | select(.conclusion == "failure")] | length' "$f")
+  echo ""
+  if (( failed > 0 )); then
+    read -rp "  ↻ Rerun $failed failed job(s) of run $id? [y/N] " ans
+    [[ "$ans" =~ ^[yY]$ ]] || return
+    gh run rerun "$id" --failed 2>&1 && echo "  ✅ rerunning failed jobs" || echo "  ❌ rerun failed"
+  else
+    read -rp "  ↻ Rerun ALL jobs of run $id? [y/N] " ans
+    [[ "$ans" =~ ^[yY]$ ]] || return
+    gh run rerun "$id" 2>&1 && echo "  ✅ rerun triggered" || echo "  ❌ rerun failed"
+  fi
+  # A rerun is a new attempt of the same id: the "final" body is final no more.
+  rm -f "$CACHE/run-$id".* "$D/run-$id".* "$D"/runs.*.json
+  sleep 1.2
+}
+
+_ghw_cancel() {
+  local id="$1" ans
+  echo ""
+  read -rp "  ⛔ Cancel run $id? [y/N] " ans
+  [[ "$ans" =~ ^[yY]$ ]] || return
+  gh run cancel "$id" 2>&1 && echo "  ✅ cancel requested" || echo "  ❌ could not cancel"
+  rm -f "$D/run-$id".* "$D"/runs.*.json
+  sleep 1.2
+}
+
+# ─── Pull requests ─────────────────────────────────────────────────
+
+# Filter modes, cycled by ctrl-f. A file rather than an argument so the
+# reload binding is the same string whichever mode is current.
+_ghw_prs_mode() { [[ -s "$D/prs.mode" ]] && cat "$D/prs.mode" || echo open; }
+_ghw_prs_label() {
+  case "$(_ghw_prs_mode)" in
+    open)   printf ' open ' ;;
+    mine)   printf ' mine ' ;;
+    review) printf ' needs my review ' ;;
+    merged) printf ' recently merged ' ;;
+    closed) printf ' recently closed ' ;;
+  esac
+}
+
+# ctrl-f: advance the mode and print the new label, synchronously (it is a
+# transform-list-label), so the reload that follows reads the new mode.
+_ghw_prs_next() {
+  local mode
+  case "$(_ghw_prs_mode)" in
+    open) mode=mine ;; mine) mode=review ;; review) mode=merged ;;
+    merged) mode=closed ;; *) mode=open ;;
+  esac
+  printf '%s' "$mode" > "$D/prs.mode"
+  _ghw_prs_label
+}
+
+_ghw_list_prs() {
+  local mode arg
+  mode=$(_ghw_prs_mode)
+  for arg in "$@"; do
+    [[ "$arg" == fresh ]] && rm -f "$D"/prs.*.json
+  done
+
+  local -a flags=(--limit 50 --json 'number,title,author,headRefName,baseRefName,headRefOid,reviewDecision,isDraft,createdAt,updatedAt,additions,deletions,labels,statusCheckRollup,url,state,mergeable')
+  case "$mode" in
+    open)   flags+=(--state open) ;;
+    mine)   flags+=(--state open --author @me) ;;
+    review) flags+=(--state open --search 'review-requested:@me') ;;
+    merged) flags+=(--state merged) ;;
+    closed) flags+=(--state closed) ;;
+  esac
+
+  local json="$D/prs.$mode.json"
+  if [[ ! -s "$json" ]] || (( $(date +%s) - $(_ghw_mtime "$json") > 30 )); then
+    gh pr list "${flags[@]}" > "$json.tmp" 2>/dev/null && mv "$json.tmp" "$json"
+  fi
+  [[ -s "$json" ]] || { printf '%s❌ could not list pull requests%s\n' "$_C_RED" "$_C0"; return; }
+
+  jq -r --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg ORG "$_C_ORG" --arg DIM "$_C_DIM" --arg GRY "$_C_GRY" \
+     --arg GRN "$_C_GRN" --arg RED "$_C_RED" --arg PUR "$_C_PUR" --arg TAN "$_C_TAN" \
+     "$(_ghw_jq_defs)"'
+    def review: if .isDraft then "📝" elif .state == "MERGED" then "🟣" elif .state == "CLOSED" then "⛔"
+                elif .reviewDecision == "APPROVED" then "✅" elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
+                elif .reviewDecision == "REVIEW_REQUIRED" then "👀" else "⏳" end;
+    def ci: (.statusCheckRollup // []) as $c
+            | if ($c | length) == 0 then " "
+              elif any($c[]; (.conclusion // "") == "FAILURE" or (.state // "") == "FAILURE" or (.state // "") == "ERROR") then $RED + "✗" + $C0
+              elif any($c[]; (.status // "") != "COMPLETED" and (.state // "") == "" ) then "…"
+              elif any($c[]; (.state // "") == "PENDING" or (.state // "") == "EXPECTED") then "…"
+              else $GRN + "✓" + $C0 end;
+    if length == 0 then ([$DIM + "  nothing in this view — ctrl-f cycles the filter, ctrl-n opens a PR" + $C0, "none"] | @tsv) else
+    ([.[].author.login | length] | max // 4 | if . > 14 then 14 else . end) as $aw
+    | .[]
+    | [ ( review + " " + ci + " "
+          + $DIM + ("#" + (.number|tostring) | rpad(6)) + $C0
+          + $TAN + (.author.login | trunc($aw) | rpad($aw)) + $C0 + "  "
+          + $DIM + (($now - (.updatedAt|secs)) | age | lpad(3)) + $C0 + "  "
+          + (.title | gsub("[\t\n]"; " "))
+          + $DIM + "  " + $ORG + .headRefName + $C0
+          + $DIM + "  " + $GRN + "+" + (.additions|tostring) + $RED + "/-" + (.deletions|tostring) + $C0 ),
+        .number, .url, .headRefName, .headRefOid, .state, .title ] | @tsv end
+  ' "$json"
+}
+
+# The PR preview: everything `gh pr view` says, in colour and in an order
+# that answers "can I merge this" first.
+_ghw_pv_pr() {
+  [[ "$1" == none || -z "$1" ]] && {
+    printf '%sNothing in this view.\n\nctrl-f cycles: open → mine → needs my review → merged → closed\nctrl-n opens a pull request from the current branch%s\n' "$_C_DIM" "$_C0"; return; }
+  local num="$1" f="$D/pr-$1.json"
+  if [[ ! -s "$f" ]] || (( $(date +%s) - $(_ghw_mtime "$f") > 45 )); then
+    gh pr view "$num" --json 'number,title,state,author,body,baseRefName,headRefName,reviewDecision,isDraft,mergeable,mergeStateStatus,additions,deletions,changedFiles,labels,reviews,reviewRequests,statusCheckRollup,createdAt,updatedAt,url,assignees,commits,comments,milestone' \
+      > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  fi
+  [[ -s "$f" ]] || { printf '%s❌ could not read PR #%s%s\n' "$_C_RED" "$num" "$_C0"; return; }
+
+  jq -r --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg ORG "$_C_ORG" --arg DIM "$_C_DIM" --arg GRY "$_C_GRY" \
+     --arg GRN "$_C_GRN" --arg RED "$_C_RED" --arg PUR "$_C_PUR" --arg TAN "$_C_TAN" --arg YEL "$_C_YEL" \
+     --arg BLU "$_C_BLU" \
+     "$(_ghw_jq_defs)"'
+    def state: if .isDraft then $DIM + "📝 draft" elif .state == "MERGED" then $PUR + "🟣 merged"
+               elif .state == "CLOSED" then $RED + "⛔ closed" else $GRN + "🟢 open" end;
+    def decision: if .state != "OPEN" and .reviewDecision != "APPROVED" and .reviewDecision != "CHANGES_REQUESTED" then empty
+                  elif .reviewDecision == "APPROVED" then $GRN + "✅ approved"
+                  elif .reviewDecision == "CHANGES_REQUESTED" then $YEL + "🔄 changes requested"
+                  elif .reviewDecision == "REVIEW_REQUIRED" then $YEL + "👀 review required"
+                  else $DIM + "no review decision" end;
+    def mergeable: if .state != "OPEN" then empty
+                   elif .mergeable == "CONFLICTING" then $RED + "⚠  merge conflicts" + $C0
+                   elif .mergeStateStatus == "CLEAN" then $GRN + "✔ ready to merge" + $C0
+                   elif .mergeStateStatus == "BLOCKED" then $YEL + "⛔ blocked by rules" + $C0
+                   elif .mergeStateStatus == "BEHIND" then $YEL + "↓ behind base" + $C0
+                   elif .mergeStateStatus == "UNSTABLE" then $YEL + "✗ checks failing" + $C0
+                   elif .mergeStateStatus == "DIRTY" then $RED + "⚠  conflicts" + $C0
+                   else $DIM + (.mergeStateStatus | ascii_downcase) + $C0 end;
+    def check: (.conclusion // .state // .status // "") | ascii_upcase
+               | if . == "SUCCESS" then "✅" elif . == "FAILURE" or . == "ERROR" then "❌"
+                 elif . == "SKIPPED" or . == "NEUTRAL" then "⏭ " elif . == "CANCELLED" then "🚫"
+                 elif . == "PENDING" or . == "EXPECTED" or . == "IN_PROGRESS" or . == "QUEUED" or . == "" then "⏳"
+                 else "❓" end;
+    ( $CB + .title + $C0 + $DIM + "  #" + (.number|tostring) + $C0 )
+    , ( (state) + $C0 + $DIM + " · " + $C0 + $TAN + .author.login + $C0 + $DIM + " · "
+        + $ORG + .headRefName + $C0 + $DIM + " → " + $ORG + .baseRefName + $C0 + $DIM
+        + " · updated " + (($now - (.updatedAt|secs)) | age) + " ago" + $C0 )
+    , ( $GRN + "+" + (.additions|tostring) + $RED + " -" + (.deletions|tostring) + $C0 + $DIM
+        + " · " + (.changedFiles|tostring) + " files · " + (.commits|length|tostring) + " commits · "
+        + (.comments|length|tostring) + " comments" + $C0 )
+    , ( if (.labels|length) > 0 then "🏷  " + ([.labels[].name | $BLU + . + $C0] | join("  ")) else empty end )
+    , ""
+    , ( (decision) + $C0
+        + (if (.reviewRequests|length) > 0 then $DIM + " · awaiting " + ([.reviewRequests[] | (.login // .name // "?")] | join(", ")) + $C0 else "" end) )
+    , ( ([.reviews[]? | select(.state != "COMMENTED")] | group_by(.author.login) | map(last) | .[]
+        | "   " + (if .state == "APPROVED" then "✅" elif .state == "CHANGES_REQUESTED" then "🔄" elif .state == "DISMISSED" then "⚪" else "💬" end)
+          + " " + .author.login + $DIM + " " + (.state | ascii_downcase | gsub("_"; " ")) + $C0 ) )
+    , ( mergeable )
+    , ( if (.statusCheckRollup|length) > 0 then
+          ( "", $GRY + "checks" + $C0,
+            ( .statusCheckRollup[] | "   " + check + " " + (.name // .context // "?")
+              + (if .startedAt and .completedAt then $DIM + " " + (((.completedAt|secs) - (.startedAt|secs)) | dur) + $C0 else "" end) ) )
+        else empty end )
+    , ""
+    , ( if (.body // "") != "" then ($DIM + "────────────────────────────────────────────────────────" + $C0, (.body | gsub("\r"; ""))) else $DIM + "(no description)" + $C0 end )
+  ' "$f"
+
+  # Live while checks are still running on an open PR.
+  if jq -e '.state == "OPEN" and any(.statusCheckRollup[]?; (.status // "") != "COMPLETED" and (.state // "") != "SUCCESS" and (.state // "") != "FAILURE" and (.state // "") != "ERROR")' "$f" >/dev/null 2>&1; then
+    rm -f "$f"; _ghw_tick 8 'refresh-preview'
+  fi
+}
+
+# ─── Branches ──────────────────────────────────────────────────────
+
+# Remote branches from the API (authoritative, carries `protected`), joined
+# with what local git knows about each — age, author, subject, ahead/behind
+# the default branch — which is instant. A fetch runs in the background on a
+# fresh load and reloads the list when done, so the local view catches up
+# without holding the screen.
+_ghw_list_branches() {
+  local arg fresh=""
+  for arg in "$@"; do [[ "$arg" == fresh ]] && fresh=1; done
+  local json="$D/branches.json"
+  if [[ -n "$fresh" || ! -s "$json" ]] || (( $(date +%s) - $(_ghw_mtime "$json") > 60 )); then
+    gh api "repos/$R/branches?per_page=100" --paginate > "$json.tmp" 2>/dev/null && mv "$json.tmp" "$json"
+    # --paginate concatenates arrays; flatten so it is one list.
+    jq -s 'flatten' "$json" > "$json.tmp" 2>/dev/null && mv "$json.tmp" "$json"
+    (
+      git fetch --prune -q origin >/dev/null 2>&1 \
+        && _ghw_notify 'reload(bash '"$D/w"' list-branches)' "${FZF_PORT:-}"
+    ) >/dev/null 2>&1 </dev/null &
+  fi
+  [[ -s "$json" ]] || { printf '%s❌ could not list branches%s\n' "$_C_RED" "$_C0"; return; }
+
+  local def cur
+  def=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
+  cur=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+  # Local facts, one git call: for every remote-tracking ref, its age,
+  # author, subject and ahead/behind against the default branch.
+  local facts="$D/branches.facts"
+  # %(ahead-behind:) needs git ≥ 2.41; older gits get the columns without it.
+  # lstrip=3 drops refs/remotes/origin/ so the name matches the API's.
+  local fmt='%(refname:lstrip=3)%09%(committerdate:unix)%09%(authorname)%09%(subject)%09'
+  git for-each-ref --format="$fmt"'%(ahead-behind:refs/remotes/origin/'"$def"')' refs/remotes/origin > "$facts" 2>/dev/null \
+    || git for-each-ref --format="$fmt" refs/remotes/origin > "$facts" 2>/dev/null
+
+  jq -r --arg def "$def" --arg cur "$cur" --argjson now "$(date +%s)" \
+     --rawfile facts "$facts" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg ORG "$_C_ORG" --arg DIM "$_C_DIM" --arg GRY "$_C_GRY" \
+     --arg GRN "$_C_GRN" --arg RED "$_C_RED" --arg TAN "$_C_TAN" --arg YEL "$_C_YEL" \
+     "$(_ghw_jq_defs)"'
+    ($facts | split("\n") | map(select(length > 0) | split("\t") | {(.[0]): {t: .[1], who: .[2], subj: .[3], ab: (.[4] // "")}}) | add // {}) as $F
+    | ([.[].name | length] | max // 4 | if . > 28 then 28 else . end) as $nw
+    | sort_by(if .name == $def then 0 else 1 end, -(($F[.name].t // "0") | tonumber))
+    | .[]
+    | $F[.name] as $f
+    | (($f.ab // "") | split(" ")) as $ab
+    | [ ( (if .name == $cur then $ORG + "●" else " " end) + $C0 + " "
+          + (if .name == $def then "⭐" elif .protected then "🛡 " else "  " end) + " "
+          + (if .name == $cur then $ORG + $CB else "" end) + (.name | trunc($nw) | rpad($nw)) + $C0 + "  "
+          + (if $f then
+               $DIM + ((($now - ($f.t|tonumber)) | age) | lpad(3)) + $C0 + "  "
+               + (if .name == $def then "        "
+                  else ($GRN + "↑" + ($ab[0] // "?" | lpad(3)) + " " + $RED + "↓" + ($ab[1] // "?" | lpad(3)) + $C0) end) + "  "
+               + $TAN + ($f.who | trunc(12) | rpad(12)) + $C0 + "  " + ($f.subj | gsub("[\t\n]"; " "))
+             else $DIM + "  (not fetched yet)" + $C0 end) ),
+        .name, (if .protected then 1 else 0 end), (if .name == $def then 1 else 0 end),
+        (if .name == $cur then 1 else 0 end), .commit.sha ] | @tsv
+  ' "$json"
+}
+
+_ghw_pv_branch() {
+  local name="$1" protected="$2" isdef="$3" iscur="$4"
+  [[ "$name" == none || -z "$name" ]] && return 0
+  printf '%s%s%s' "$_CB$_C_ORG" "$name" "$_C0"
+  (( isdef )) && printf '  %s⭐ default%s' "$_C_YEL" "$_C0"
+  (( iscur )) && printf '  %s● checked out%s' "$_C_ORG" "$_C0"
+  (( protected )) && printf '  %s🛡  ruled%s' "$_C_BLU" "$_C0"
+  printf '\n'
+
+  # Local tracking state, if we have it.
+  local up
+  if git show-ref --verify --quiet "refs/heads/$name" 2>/dev/null; then
+    up=$(git rev-parse --abbrev-ref "$name@{upstream}" 2>/dev/null)
+    if [[ -n "$up" ]]; then
+      local ahead behind
+      read -r ahead behind < <(git rev-list --left-right --count "$name...$up" 2>/dev/null)
+      printf '%slocal branch · ↑%s ↓%s vs %s%s\n' "$_C_DIM" "${ahead:-?}" "${behind:-?}" "$up" "$_C0"
+    else
+      printf '%slocal branch · no upstream%s\n' "$_C_DIM" "$_C0"
+    fi
+  else
+    printf '%sremote only — enter to check out%s\n' "$_C_DIM" "$_C0"
+  fi
+
+  # The PR for this branch, if any.
+  local pr
+  pr=$(gh pr list --head "$name" --state all --limit 1 \
+        --json number,title,state,isDraft,url --jq '.[0] | select(.) |
+        "\(if .state == "MERGED" then "🟣" elif .state == "CLOSED" then "⛔" elif .isDraft then "📝" else "🟢" end) #\(.number)  \(.title)"' 2>/dev/null)
+  [[ -n "$pr" ]] && printf '%s\n' "$pr"
+
+  # Effective rules — cached: rulesets change rarely and this is two calls.
+  local rf="$D/rules-$name"
+  if [[ ! -s "$rf" ]] || (( $(date +%s) - $(_ghw_mtime "$rf") > 300 )); then
+    gh api "repos/$R/rules/branches/$name" 2>/dev/null | jq -r --arg DIM "$_C_DIM" --arg C0 "$_C0" '
+      if length == 0 then empty else
+        "rules: " + ([.[] | .type
+          + (if .type == "required_status_checks" then " (\(.parameters.required_status_checks | length) checks" + (if .parameters.strict_required_status_checks_policy then ", strict" else "" end) + ")"
+             elif .type == "pull_request" then " (\(.parameters.required_approving_review_count) approvals)"
+             else "" end)] | unique | join(" · "))
+      end' > "$rf" 2>/dev/null
+  fi
+  [[ -s "$rf" ]] && printf '%s🛡  %s%s\n' "$_C_BLU" "$(<"$rf")" "$_C0"
+
+  _ghw_rule
+  local ref="origin/$name"
+  git rev-parse --verify --quiet "$ref" >/dev/null 2>&1 || ref="$name"
+  git log --color=always --format='%C(215)%h%C(reset) %C(240)%ar%C(reset) %C(180)%an%C(reset) %s%C(auto)%d%C(reset)' \
+    -n 20 "$ref" 2>/dev/null || printf '%s(no local commits for %s — fetch first)%s\n' "$_C_DIM" "$name" "$_C0"
+}
+
+# ─── Secrets ───────────────────────────────────────────────────────
+
+_ghw_list_secrets() {
+  local arg
+  for arg in "$@"; do [[ "$arg" == fresh ]] && rm -f "$D"/secrets.json; done
+  local json="$D/secrets.json"
+  if [[ ! -s "$json" ]] || (( $(date +%s) - $(_ghw_mtime "$json") > 60 )); then
+    {
+      gh secret list --json name,updatedAt --jq '.[] | {scope: "repo", env: "", name, updatedAt}' 2>/dev/null
+      gh api "repos/$R/environments" --jq '.environments[].name' 2>/dev/null | while read -r env; do
+        gh secret list --env "$env" --json name,updatedAt \
+          --jq --arg env "$env" '.[] | {scope: "env", env: $env, name, updatedAt}' 2>/dev/null
+      done
+    } | jq -s '.' > "$json.tmp" 2>/dev/null && mv "$json.tmp" "$json"
+  fi
+  [[ -s "$json" ]] || { printf '%s❌ could not list secrets%s\n' "$_C_RED" "$_C0"; return; }
+  jq -r --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg DIM "$_C_DIM" --arg PUR "$_C_PUR" --arg TAN "$_C_TAN" \
+     "$(_ghw_jq_defs)"'
+    if length == 0 then [ $DIM + "  no secrets — ctrl-n sets one" + $C0, "none", "", "" ] | @tsv else
+    ([.[].name | length] | max) as $nw
+    | .[]
+    | [ ( (if .scope == "repo" then "🔑 " else "🌍 " end)
+          + $CB + (.name | rpad($nw)) + $C0 + "  "
+          + (if .scope == "env" then $PUR + .env + $C0 + "  " else "" end)
+          + $DIM + "updated " + (($now - (.updatedAt|secs)) | age) + " ago" + $C0 ),
+        .scope, .env, .name ] | @tsv end
+  ' "$json"
+}
+
+_ghw_pv_secret() {
+  local scope="$1" env="$2" name="$3"
+  [[ "$scope" == none ]] && { printf '%sNothing here yet.\n\nctrl-n sets a repository or environment secret.%s\n' "$_C_DIM" "$_C0"; return; }
+  printf '%s%s%s\n' "$_CB" "$name" "$_C0"
+  if [[ "$scope" == repo ]]; then
+    printf '%srepository secret%s\n' "$_C_DIM" "$_C0"
+  else
+    printf '%senvironment secret · %s%s%s\n' "$_C_DIM" "$_C_PUR" "$env" "$_C0"
+  fi
+  _ghw_rule
+  cat <<TXT
+${_C_GRY}Values are write-only. GitHub never returns them — not to the API,
+not to the CLI. To change one, set it again (ctrl-n with the same name).${_C0}
+
+${_C_DIM}Used in a workflow as${_C0}  \${{ secrets.$name }}
+TXT
+  if [[ "$scope" == env ]]; then
+    printf '%swhich resolves only in a job that declares%s  environment: %s\n' "$_C_DIM" "$_C0" "$env"
+  fi
+}
+
+# ─── Environments ──────────────────────────────────────────────────
+
+_ghw_list_envs() {
+  local arg
+  for arg in "$@"; do [[ "$arg" == fresh ]] && rm -f "$D"/envs.json; done
+  local json="$D/envs.json"
+  if [[ ! -s "$json" ]] || (( $(date +%s) - $(_ghw_mtime "$json") > 60 )); then
+    gh api "repos/$R/environments" > "$json.tmp" 2>/dev/null && mv "$json.tmp" "$json"
+  fi
+  [[ -s "$json" ]] || { printf '%s❌ could not list environments%s\n' "$_C_RED" "$_C0"; return; }
+  jq -r --argjson now "$(date +%s)" \
+     --arg C0 "$_C0" --arg CB "$_CB" --arg DIM "$_C_DIM" --arg PUR "$_C_PUR" \
+     "$(_ghw_jq_defs)"'
+    (.environments // []) as $e
+    | if ($e | length) == 0 then [ $DIM + "  no environments — ctrl-n creates one" + $C0, "none" ] | @tsv else
+      ([$e[].name | length] | max) as $nw
+      | $e[]
+      | [ ( "🌍 " + $CB + (.name | rpad($nw)) + $C0 + "  "
+            + $DIM + "created " + (($now - (.created_at|secs)) | age) + " ago"
+            + (if (.protection_rules|length) > 0 then " · \(.protection_rules|length) protection rule(s)" else "" end) + $C0 ),
+          .name ] | @tsv end
+  ' "$json"
+}
+
+_ghw_pv_env() {
+  local name="$1"
+  [[ "$name" == none ]] && { printf '%sNothing here yet.\n\nctrl-n creates an environment.%s\n' "$_C_DIM" "$_C0"; return; }
+  local f="$D/env-$name.json"
+  if [[ ! -s "$f" ]] || (( $(date +%s) - $(_ghw_mtime "$f") > 60 )); then
+    gh api "repos/$R/environments/$name" > "$f.tmp" 2>/dev/null && mv "$f.tmp" "$f"
+  fi
+  printf '%s🌍 %s%s\n' "$_CB" "$name" "$_C0"
+  [[ -s "$f" ]] || { printf '%s❌ could not read environment%s\n' "$_C_RED" "$_C0"; return; }
+  jq -r --arg C0 "$_C0" --arg DIM "$_C_DIM" --arg YEL "$_C_YEL" --arg GRY "$_C_GRY" '
+    ($DIM + "created " + .created_at[:10] + " · updated " + .updated_at[:10] + $C0),
+    "",
+    ($GRY + "protection rules" + $C0),
+    (if (.protection_rules|length) == 0 then $DIM + "   none — any job may deploy here" + $C0
+     else .protection_rules[]
+       | if .type == "wait_timer" then "   ⏱  wait \(.wait_timer) min before deploying"
+         elif .type == "required_reviewers" then "   👤 reviewers: \([.reviewers[].reviewer.login] | join(", "))" + (if .prevent_self_review then " (no self-review)" else "" end)
+         elif .type == "branch_policy" then "   🌿 deployment branch policy"
+         else "   \(.type)" end end),
+    (if .deployment_branch_policy then
+       (if .deployment_branch_policy.protected_branches then "   🌿 only protected branches may deploy"
+        elif .deployment_branch_policy.custom_branch_policies then "   🌿 only selected branches/tags may deploy"
+        else empty end)
+     else "   🌿 any branch may deploy" end)
+  ' "$f"
+  echo ""
+  printf '%ssecrets%s\n' "$_C_GRY" "$_C0"
+  local s
+  s=$(gh secret list --env "$name" --json name,updatedAt --jq '.[] | "   🔑 \(.name)"' 2>/dev/null)
+  printf '%s\n' "${s:-   ${_C_DIM}none${_C0}}"
+  echo ""
+  printf '%srecent deployments%s\n' "$_C_GRY" "$_C0"
+  local d
+  d=$(gh api "repos/$R/deployments?environment=$(printf '%s' "$name" | jq -sRr @uri)&per_page=5" 2>/dev/null \
+      | jq -r --arg DIM "$_C_DIM" --arg C0 "$_C0" '.[] | "   " + (.created_at[:16] | gsub("T"; " ")) + " " + $DIM + .ref + " · " + (.creator.login // "?") + $C0' 2>/dev/null)
+  printf '%s\n' "${d:-   ${_C_DIM}none${_C0}}"
+}
+
+# ─── Hub ───────────────────────────────────────────────────────────
+
+# Everything the hub's previews and header show, fetched in parallel and
+# written pane by pane. Each pane POSTs a refresh as it lands, so the hub is
+# on screen instantly and fills in over the next second rather than opening
+# a second late. `$1` is the file the hub's own preview writes FZF_PORT to.
+_ghw_hub_prefetch() {
+  local portf="$1"
+  _hub_done() {   # <pane>
+    local port=""
+    [[ -s "$portf" ]] && port=$(<"$portf")
+    _ghw_notify 'refresh-preview' "$port"
+  }
+  (
+    {
+      gh pr list --limit 8 --state open --json number,title,reviewDecision,isDraft,author,updatedAt \
+        --jq --arg C0 "$_C0" --arg DIM "$_C_DIM" --arg TAN "$_C_TAN" '
+          if length == 0 then $DIM + "no open pull requests" + $C0 else
+          .[] | "\(if .isDraft then "📝" elif .reviewDecision == "APPROVED" then "✅"
+                   elif .reviewDecision == "CHANGES_REQUESTED" then "🔄" else "⏳" end) " + $DIM + "#\(.number)" + $C0
+                + "  \(.title)  " + $TAN + .author.login + $C0 end' 2>/dev/null
+    } > "$D/hub.prs.tmp"; mv "$D/hub.prs.tmp" "$D/hub.prs"; _hub_done prs
+  ) &
+  (
+    {
+      local sha br
+      sha=$(git rev-parse HEAD 2>/dev/null); br=$(git symbolic-ref --short HEAD 2>/dev/null)
+      printf '%sHEAD %s%s%s on %s%s%s\n\n' "$_C_DIM" "$_C0" "${sha:0:7}" "$_C_DIM" "$_C_ORG" "${br:-detached}" "$_C0"
+      gh api "repos/$R/commits/$sha/check-runs" 2>/dev/null \
+        | jq -r --argjson now "$(date +%s)" --arg C0 "$_C0" --arg DIM "$_C_DIM" "$(_ghw_jq_defs)"'
+            # Latest run of each check name: a rerun on the same commit reports
+            # every check twice, and the GitHub UI itself shows the newest.
+            ((.check_runs // []) | group_by(.name) | map(max_by(.started_at // ""))) as $c
+            | if ($c|length) == 0 then $DIM + "no checks reported for HEAD" + $C0 else
+              ($c | map(select(.conclusion == "success")) | length) as $ok
+              | ($c | map(select(.conclusion == "failure")) | length) as $bad
+              | ($c | map(select(.status != "completed")) | length) as $run
+              | ( (if $bad > 0 then "❌ \($bad) failed  " else "" end)
+                + (if $run > 0 then "⏳ \($run) running  " else "" end)
+                + (if $ok > 0 then "✅ \($ok) passed" else "" end) )
+              , ""
+              , ( $c[] | glyph + " " + .name
+                  + (if .started_at and .completed_at then $DIM + "  " + (((.completed_at|secs) - (.started_at|secs)) | dur) + $C0 else "" end) )
+              end'
+    } > "$D/hub.ci.tmp" 2>/dev/null; mv "$D/hub.ci.tmp" "$D/hub.ci"; _hub_done ci
+  ) &
+  (
+    {
+      local def br
+      def=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
+      br=$(git symbolic-ref --short HEAD 2>/dev/null)
+      printf '%sdefault %s%s%s · on %s%s%s\n\n' "$_C_DIM" "$_C0" "$def" "$_C_DIM" "$_C_ORG" "${br:-detached}" "$_C0"
+      gh api "repos/$R/branches?per_page=100" --paginate 2>/dev/null | jq -r --arg def "$def" '
+        .[] | (if .name == $def then "⭐ " elif .protected then "🛡  " else "   " end) + .name' 2>/dev/null | head -25
+    } > "$D/hub.branches.tmp"; mv "$D/hub.branches.tmp" "$D/hub.branches"; _hub_done branches
+  ) &
+  (
+    {
+      local n
+      n=$(gh secret list --json name --jq 'length' 2>/dev/null)
+      printf '%s%s repository secret(s)%s\n' "$_C_DIM" "${n:-0}" "$_C0"
+      gh secret list --json name,updatedAt --jq '.[] | "🔑 \(.name)"' 2>/dev/null
+    } > "$D/hub.secrets.tmp"; mv "$D/hub.secrets.tmp" "$D/hub.secrets"; _hub_done secrets
+  ) &
+  (
+    {
+      gh api "repos/$R/environments" --jq --arg DIM "$_C_DIM" --arg C0 "$_C0" '
+        if (.environments|length) == 0 then $DIM + "no environments" + $C0 else
+        .environments[] | "🌍 \(.name)" + (if (.protection_rules|length) > 0 then $DIM + "  \(.protection_rules|length) rule(s)" + $C0 else "" end) end' 2>/dev/null
+    } > "$D/hub.envs.tmp"; mv "$D/hub.envs.tmp" "$D/hub.envs"; _hub_done envs
+  ) &
+  (
+    {
+      # The header line: visibility, default branch, open PR count, HEAD CI.
+      local meta vis def prs
+      meta=$(gh repo view --json visibility,defaultBranchRef,stargazerCount 2>/dev/null)
+      vis=$(jq -r '.visibility | ascii_downcase' <<< "$meta" 2>/dev/null)
+      def=$(jq -r '.defaultBranchRef.name' <<< "$meta" 2>/dev/null)
+      prs=$(gh pr list --state open --json number --jq 'length' 2>/dev/null)
+      printf '%s · %s%s%s · %s open PR(s)' \
+        "$(if [[ "$vis" == public ]]; then printf '🌍 public'; else printf '🔒 %s' "${vis:-private}"; fi)" \
+        "$_C_ORG" "${def:-?}" "$_C0" "${prs:-0}"
+    } > "$D/hub.header.tmp"; mv "$D/hub.header.tmp" "$D/hub.header"
+    local port=""; [[ -s "$portf" ]] && port=$(<"$portf")
+    _ghw_notify "change-list-label: $(<"$D/hub.header") " "$port"
+  ) &
+  wait
+}
+
+_ghw_pv_hub() {
+  local pane="$1"
+  # Publish our port for the prefetch running alongside us.
+  [[ -n "${FZF_PORT:-}" ]] && printf '%s' "$FZF_PORT" > "$D/hub.port"
+  case "$pane" in
+    *Actions*)       pane=ci ;;
+    *Pull*)          pane="prs" ;;
+    *Branches*)      pane=branches ;;
+    *Secrets*)       pane=secrets ;;
+    *Environments*)  pane=envs ;;
+    *) return ;;
+  esac
+  if [[ -s "$D/hub.$pane" ]]; then
+    cat "$D/hub.$pane"
+  else
+    printf '%s⏳ loading…%s\n' "$_C_DIM" "$_C0"
+  fi
+}
 
 # ─── Per-screen help ──────────────────────────────────────────────
 #
-# `?` in any screen shows that screen's help. This used to live in `h`
-# in bash_productivity — 174 lines documenting screens in a different
-# file, reachable only if you already knew to type `h gh-tui`. Help for
-# an interactive tool belongs in the tool.
-#
-# Materialised to a file because fzf's ?:execute binding runs a command,
-# not a shell function — the subshell fzf spawns has no access to these
-# definitions. Written once per screen per session and cached.
-_gh_help_file() {
-  local screen="$1" dir="${TMPDIR:-/tmp}/gh-tui-help-$$"
-  mkdir -p "$dir" 2>/dev/null || return 1
-  local f="$dir/$screen"
-  [[ -s "$f" ]] || "_gh_help_$screen" > "$f" 2>/dev/null
-  [[ -s "$f" ]] && echo "$f"
-}
+# `?` in a menu and ctrl-/ in a list show the current screen's page. They
+# are written to $_GH_D/help/<name> once per session, because fzf's execute
+# binding runs a command, not a function. `h gh-tui` in bash_productivity
+# points here rather than repeating any of it.
 
 _gh_help_hub() {
   cat <<'HELP'
-gh-tui — GitHub in a TUI
+gh-tui — the repo, in one place
 
-  gh-tui             Opens interactive menu with live preview pane
+  Every screen is a list with a live preview. Screens open instantly and
+  fill in; nothing waits on the network before it appears. What you see in
+  the preview is the state of the thing right now — running workflows and
+  pending checks refresh under the cursor by themselves.
 
-  Top-level menu provides access to:
-    Pull Requests     List, filter, create, manage PRs
-    CI / Actions      Workflow status, logs, rerun, browser tab
-    Secrets           Repo & environment secrets
-    Environments      Create, configure, delete
-    Branches          Rulesets, required checks, defaults
+  Screens
+    🚀 Actions        every workflow run; jobs, steps and failing logs live
+    🔀 Pull Requests  review, merge, create; ctrl-f cycles open/mine/review/merged/closed
+    🌿 Branches       ahead/behind, rules, checkout, delete, rulesets editor
+    🔑 Secrets        repository and environment secrets — set, replace, delete
+    🌍 Environments   reviewers, wait timers, secrets, recent deployments
 
-  The preview pane shows live data as you navigate:
-    Hover "Pull Requests" → see open PR titles + status
-    Hover "CI / Actions"  → see workflow pass/fail for HEAD
-    Hover "Branches"      → see branch list with protection status
+  Keys — the same in every list
+    type            filter the list
+    enter           the main action for that row (open, act, page a log)
+    esc             back to the previous screen, exactly where you left it
+    ctrl-r          refresh the list and the preview
+    ctrl-o          open the row's thing in the browser
+    ctrl-/          this help, for the current screen
+    shift-↑↓ · alt-j/k · alt-u/d   scroll the preview
+    alt-p           hide the preview (the list gets the width) / show it
+    (each screen's other keys are in its footer)
 
-  gh-tui is the only entry point here. The one command outside it is
-  `gha`, which prints HEAD's check status and exits.
+  Keys — in a menu (this hub, and any action menu)
+    ↑↓ or j/k       move      enter   select      -/q   back      ?   help
+    r               refresh the hub's previews
+
+  Outside the TUI: `gha` prints HEAD's check status and exits — the one-shot
+  answer when a screen would be overkill.
 HELP
 }
 
 _gh_help_actions() {
   cat <<'HELP'
-GitHub Actions — CI/CD observability + log viewer
+🚀 Actions — workflow runs
 
-  gha             Workflow status for HEAD, as a table: check name,
-                  status, duration, and a summary line. Names are
-                  hyperlinks to the job — ctrl-click them in wezterm.
-                  The one-shot, outside the TUI — everything below is here
+  The list is the last 40 runs, newest first, across all branches:
+    status  age  duration  trigger  branch  title       ● marks HEAD's commit
+  Type to filter it — a branch name, "fail", a title.
 
-  This screen         Choose a scope:
-    📌 Current commit (HEAD)        The same checks gha prints, pickable
-    📋 Recent workflow runs         Last 15 runs, any branch
-    🌐 Open Actions tab in browser  The repo's Actions tab
+  The preview is the run: its jobs, and inside any job that failed or is
+  still running, its steps. A failed step shows the tail of its log right
+  there (▴ N earlier lines means enter has the rest). A running run
+  refreshes itself every few seconds — ▶ is the step running now, ○ the
+  ones still to come. When it completes, the list line updates too.
 
-                  Pick a workflow from either list, then choose:
+  Keys
+    enter     jobs & steps for this run — every step, its full log on the
+              right, enter pages it
+    ctrl-o    open the run on GitHub
+    ctrl-e    rerun — the failed jobs if any failed, else the whole run
+    ctrl-x    cancel a run in progress
+    ctrl-l    the whole run's log, every job, in a pager
+    ctrl-b    only runs from the branch you're on / all branches
+    ctrl-r    refresh      ctrl-/  help      esc  back
 
-    📋 Smart log view
-       Shows all steps with status, duration, and dot-fill alignment.
-       Passing steps are COLLAPSED (header only).
-       Failed steps are AUTO-EXPANDED with their full log output
-       shown inline beneath the step header, bordered with │.
-       Summary line shows pass/fail/skip counts.
-       Output goes through less for scrolling.
-       After scrolling: r to refresh (re-fetches), -/q to go back.
+  Glyphs   ✅ success  ❌ failure  ⏳ running  🕒 queued  🚫 cancelled
+           ⏭ skipped  ⏰ timed out  ⚠️ action required  💥 startup failure
 
-    🔍 Browse steps interactively
-       fzf list of all steps with ✅/❌/⏭ status.
-       Preview pane shows that step's log output as you arrow
-       through — no need to select first. ENTER opens the full
-       log in less. esc returns to the step list.
-       After exiting: r to refresh (re-fetches), -/q to go back.
-
-    🌐 Open in browser
-       Falls back to the GitHub Actions UI
-
-    🔁 Rerun this workflow
-       Triggers a rerun of the selected workflow
-
-  Navigation (consistent across all interactive commands):
-    Menus:  ↑↓ navigate  enter select  -/q back  (like nvim)
-    Lists:  type to search  enter select  esc back
-    Pagers: r refresh  -/q back
-
-  Your prompt also shows CI status on the right side:
-    [5/5 ✅ 1d]  = 5 of 5 passed, last run 1 day ago
-    [3/5 ❌ 2h]  = 3 of 5 passed (failures), 2 hours ago
-    [5/5 ⏳ now]  = workflows still running
+  Where the logs come from: GitHub serves one log per job, not per step, so
+  a step's lines are reconstructed from timestamps and the step's own
+  ##[group]Run marker — accurate for `run:` and `uses:` steps, a best
+  effort for the runner's own Set up / Post / Complete steps.
 HELP
 }
 
-_gh_help_pr() {
+_gh_help_steps() {
   cat <<'HELP'
-gpr — interactive PR management
+🧩 jobs & steps — one run
 
-  gpr              Filter picker → list PRs → pick one → action menu
-                   Filters: all open, needs my review, my PRs,
-                   recently closed, recently merged
-  gpr create       Create a new PR from current branch
-  gpr mine         Show only PRs you authored (shortcut)
+  Job lines are bold; the steps of each job sit under it. Filter by typing.
 
-  The PR list shows: number, review status, title, author,
-  branch, changes (+/-), and date. The preview pane (right side)
-  shows full PR details as you navigate.
+  Preview
+    on a job     the job: status, runner, every step, and every failed
+                 step's log in full
+    on a step    that step's log — coloured: ✖ errors, ⚠ warnings, ▸ groups
 
-  After selecting a PR, you get an action menu:
+  Keys
+    enter     page what the preview shows (the step's log, or the job's)
+    ctrl-o    open the run on GitHub
+    ctrl-l    the whole run's log, every job, in a pager
+    ctrl-r    refresh      ctrl-/  help      esc  back to the runs
 
-    👁  View details        Full PR info in terminal
-    📥 Checkout locally     Switch to the PR's branch
-    📝 View diff            Colored diff in pager
-    📊 View file changes    Browse individual changed files
-    💬 Add comment          Inline or open your editor
-    ✅ Approve              With optional message
-    🔄 Request changes      Opens editor for feedback
-    🏷  Manage labels        Add/remove from available labels
-    👤 Request reviewers    Pick from collaborators
-    ✏️  Edit title/body      Rename or rewrite description
-    🔀 Merge                Pick strategy (squash/merge/rebase)
-    ❌ Close PR             Close without merging
-    🌐 Open in browser      Fallback to GitHub UI
-    🔍 View CI checks       See pass/fail status
+  A step still running says so — GitHub only serves a job's log once the
+  job completes. The list and preview keep refreshing until then.
+HELP
+}
 
-  Most actions loop back to the menu so you can do multiple
-  things without re-running the command.
+_gh_help_prs() {
+  cat <<'HELP'
+🔀 Pull Requests
+
+  The list:  review · checks · #  author  age  title  branch  +/-
+    review   📝 draft  ✅ approved  🔄 changes requested  👀 review required
+             ⏳ no decision  🟣 merged  ⛔ closed
+    checks   ✓ all passing   ✗ something failed   … running
+
+  ctrl-f cycles what the list shows — the label at the top of the list says
+  which:  open → mine → needs my review → recently merged → recently closed.
+
+  Preview: state, author, branches, size, labels, review decision and each
+  reviewer's verdict, whether it can merge and why not, every check with
+  its duration, then the description. Pending checks refresh by themselves.
+
+  Keys
+    enter     the action menu for this PR (below)
+    ctrl-o    open on GitHub          ctrl-d   diff in a pager
+    ctrl-k    check it out locally    ctrl-a   its workflow runs (Actions,
+                                               scoped to the PR's commit)
+    ctrl-n    create a PR from the current branch
+    ctrl-f    cycle the filter        ctrl-r   refresh
+    ctrl-/    help                    esc      back
+
+  The action menu (-/q returns to the list; each action returns here)
+    📥 Checkout   📝 Diff   📊 Changed files (enter pages one file)
+    💬 Comment (in $EDITOR)   ✅ Approve   🔄 Request changes (in $EDITOR)
+    🏷  Labels (tab to multi-select)   👤 Reviewers   ✏️  Edit title / body
+    🔀 Merge (squash / merge / rebase, then delete branch or keep)
+    🔁 Mark ready / draft   ❌ Close   🌐 Open in browser
+HELP
+}
+
+_gh_help_branches() {
+  cat <<'HELP'
+🌿 Branches
+
+  The list is every branch on the remote, default branch first, then by
+  most recent commit:
+    ● checked out   ⭐ default   🛡 covered by a rule
+    age   ↑ahead ↓behind the default branch   author   last subject
+  "(not fetched yet)" means the remote has a branch this clone hasn't seen;
+  a fetch runs in the background on open and the list refreshes itself.
+
+  Preview: tracking state, the PR for this branch if any, the rules that
+  actually govern it (across every ruleset), and its recent commits.
+
+  Keys
+    enter     the branch menu (below)
+    ctrl-o    open on GitHub          ctrl-k   check it out
+    ctrl-x    delete the remote branch (never the default)
+    ctrl-s    the rulesets editor
+    ctrl-r    refresh                 ctrl-/   help      esc  back
+
+  The branch menu
+    📥 Checkout   🛡 Effective rules (with the bypass list — the difference
+    between a wall and guidance)   📜 Rulesets   ⭐ Set as default
+    🗑 Delete remote branch   ⚠️ Legacy classic protection (read + delete
+    only, for migrating off it)   🌐 Open in browser
+
+  Rulesets, not classic protection. The classic API 404s on a repo protected
+  by a ruleset. Nothing here creates a classic rule — a branch with both is a
+  branch where "why was this rejected" has two answers. Ruleset writes need
+  admin, and are PUT not PATCH (PATCH 404s and looks like permissions).
+
+  Required checks are picked from names CI actually reported, never typed:
+  a required check whose name matches no job never reports, and a check
+  that never reports blocks a PR forever.
 HELP
 }
 
 _gh_help_secrets() {
   cat <<'HELP'
-ghsecrets — manage repository & environment secrets
+🔑 Secrets
 
-  ghsecrets        Opens interactive secrets screen
+  One list: 🔑 repository secrets, then 🌍 environment secrets, with when
+  each was last set. GitHub never reveals a value — not to the API, not to
+  the CLI — so there is nothing to preview but the name and how to use it.
 
-  Menu options:
-    🔑 List repo secrets            Names + last updated (values hidden)
-    ➕ Set repo secret              Prompts for name, then secure value input
-    🗑  Delete repo secret           Pick from list, confirm delete
-    🌍 List environment secrets     Pick env first, then see its secrets
-    ➕ Set environment secret       Pick env, then name + value
-    🗑  Delete environment secret    Pick env, pick secret, confirm
+  Keys
+    enter     set this secret again (the only way to change a value)
+    ctrl-n    set a new secret — repository or environment, name, then
+              the value typed hidden straight into `gh secret set`
+    ctrl-x    delete, after confirming
+    ctrl-o    the repo's secrets settings on GitHub
+    ctrl-r    refresh      ctrl-/  help      esc  back
 
-  Important: GitHub NEVER reveals secret values — not even via API.
-  You can set, list (names only), and delete. If you need to see
-  a value, you must re-set it.
-
-  Secret names are auto-uppercased (GitHub convention).
-
-  Navigation: -/q back  │  r refresh on list views
+  Names are upper-cased for you (GitHub's convention). Environment secrets
+  resolve only in a job that declares `environment: <name>`.
 HELP
 }
 
-_gh_help_branch() {
+_gh_help_envs() {
   cat <<'HELP'
-ghbranch — branches & rulesets
+🌍 Environments
 
-  ghbranch         Opens interactive branch screen
+  Deployment targets (staging, production…). Each carries its own secrets,
+  required reviewers, wait timer and branch policy.
 
-  Menu options:
-    📋 List branches                Shows all with 🛡 for ruled branches
-    🛡  View effective rules        What actually governs a branch, across
-                                    every ruleset targeting it — plus the
-                                    bypass list, which decides whether any
-                                    of it is a wall or just guidance
-    📜 Manage rulesets              Pick a ruleset, then:
-                                      • Enforcement (active/evaluate/disabled)
-                                      • Require branches up to date (strict)
-                                      • Required checks — add/remove, picked
-                                        from names CI actually reported
-                                      • Bypass mode (pull_request/always)
-    🗑  Delete remote branch         With safety check (won't delete default)
-    ⭐ Set default branch            Change repo's default branch
-    ⚠️  Legacy classic protection    Read + delete only, for migrating off it
+  Preview: the protection rules, the branch policy, its secrets, and its
+  five most recent deployments.
 
-  Rulesets, not classic branch protection. The classic API 404s on a repo
-  protected by a ruleset, which is how the old version managed to call main
-  protected on one screen and unprotected on the next.
+  Keys
+    enter     configure (below)
+    ctrl-n    create — just a name
+    ctrl-x    delete, after confirming — this removes its secrets too
+    ctrl-o    the repo's environments settings on GitHub
+    ctrl-r    refresh      ctrl-/  help      esc  back
 
-  Nothing here creates a classic rule — a branch with both is a branch where
-  "why was this rejected" has two possible answers.
-
-  Writes need admin. Rulesets update with PUT, not PATCH (PATCH 404s and
-  looks like a permissions error).
-
-  Navigation: -/q back  │  r refresh on list views
+  Configure
+    ⏱ Set wait timer (minutes before a deployment proceeds)
+    👤 Set required reviewers (picked from collaborators, or typed)
+    🔑 Set a secret here   🗑 Delete   🌐 Open in browser
 HELP
-}
-
-_gh_help_env() {
-  cat <<'HELP'
-ghenv — environment management
-
-  ghenv            Opens interactive environment screen
-
-  Menu options:
-    📋 List environments            Names + creation dates
-    🔍 View environment details     Protection rules + secrets
-    ➕ Create environment           Just name it
-    ⏱  Set wait timer               Delay before deployment (minutes)
-    👤 Set required reviewers       Pick from collaborators or type username
-    🗑  Delete environment           Removes env AND all its secrets
-
-  Environments are used for deployment targets (staging, production).
-  Each can have its own secrets, wait timers, and required reviewers.
-
-  Navigation: -/q back  │  r refresh on list views
-  Depends on: gh, fzf, jq
-HELP
-}
-
-
-# ─── Interactive workflow picker + actions ─────────────────────────
-
-_gha_ui() { # _gha_ui: interactive workflow picker → action menu → logs
-  local scope
-  scope=$(printf '%s\n' \
-    "📌 Current commit (HEAD)" \
-    "📋 Recent workflow runs" \
-    "🌐 Open Actions tab in browser" \
-    | FZF_MENU_HELP="$(_gh_help_file actions)" __fzf_menu "GitHub Actions" \
-        --height=6)
-
-  [[ -z "$scope" ]] && return
-
-  case "$scope" in
-    *"Current commit"*)
-      _gha_ui_head
-      ;;
-    *"Recent"*)
-      _gha_ui_recent
-      ;;
-    *"Open Actions tab"*)
-      # The repo-level tab, not a single run's page — that one is in the
-      # action menu, and only exists once you've picked a run.
-      local url
-      url=$(gh repo view --json url -q .url 2>/dev/null)
-      [[ -n "$url" ]] && _open_url "$url/actions"
-      ;;
-  esac
-}
-
-_gha_ui_head() {
-  local repo sha
-  repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-  sha=$(git rev-parse HEAD)
-
-  local runs_data
-  runs_data=$(gh api "repos/$repo/commits/$sha/check-runs" \
-    | jq -r '
-      .check_runs[]
-      | [
-          .name,
-          (if .status == "completed" then
-              (if .conclusion == "success" then "✅"
-               elif .conclusion == "failure" then "❌"
-               elif .conclusion == "skipped" then "⏭"
-               else "❓" end)
-           else "⏳" end),
-          .html_url
-        ]
-      | @tsv
-    ')
-
-  if [[ -z "$runs_data" ]]; then
-    echo "No check runs found for HEAD"
-    return
-  fi
-
-  local selection
-  selection=$(echo "$runs_data" \
-    | FZF_LIST_HINT='enter=actions' __fzf_list "GitHub Actions (HEAD)" \
-        --preview 'echo {}' \
-        --delimiter=$'\t' \
-        --with-nth=1,2)
-
-  [[ -z "$selection" ]] && return
-
-  local name url run_id
-  name=$(echo "$selection" | awk -F'\t' '{print $1}')
-  url=$(echo "$selection" | awk -F'\t' '{print $3}')
-
-  run_id=$(echo "$url" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
-
-  if [[ -z "$run_id" ]]; then
-    _open_url "$url"
-    return
-  fi
-
-  _gha_action_menu "$run_id" "$name" "$url"
-}
-
-_gha_ui_recent() {
-  local runs_data
-  runs_data=$(gh run list --limit 15 --json databaseId,displayTitle,status,conclusion,headBranch,createdAt,name \
-    --jq '.[] | [
-      .databaseId,
-      (if .status == "completed" then
-        (if .conclusion == "success" then "✅"
-         elif .conclusion == "failure" then "❌"
-         elif .conclusion == "skipped" then "⏭"
-         else "❓" end)
-       else "⏳" end),
-      .displayTitle,
-      .headBranch,
-      .name,
-      .createdAt
-    ] | @tsv' 2>/dev/null)
-
-  if [[ -z "$runs_data" ]]; then
-    echo "No recent workflow runs found"
-    return
-  fi
-
-  local formatted_data
-  formatted_data=$(echo "$runs_data" | while IFS=$'\t' read -r id status title branch wf_name created; do
-    local age
-    age=$(__relative_time "$created")
-    printf "%s  %-50.50s  %-20.20s  %-12s %s\t%s\t%s\n" \
-      "$status" "$title" "$branch" "$wf_name" "${age:-}" "$id" "$title"
-  done)
-
-  local selection
-  selection=$(echo "$formatted_data" \
-    | fzf --ansi \
-        --header="Recent Runs  │  enter=actions  esc=back" \
-        --delimiter=$'\t' --with-nth=1 \
-        --preview 'echo {}')
-
-  [[ -z "$selection" ]] && return
-
-  local run_id job_name
-  run_id=$(echo "$selection" | awk -F'\t' '{print $2}')
-  job_name=$(echo "$selection" | awk -F'\t' '{print $3}')
-
-  [[ -n "$run_id" ]] && _gha_action_menu "$run_id" "$job_name" ""
-}
-
-# ─── Action menu after picking a workflow ──────────────────────────
-
-_gha_action_menu() {
-  local run_id="$1" job_name="$2" url="$3"
-
-  local action
-  while true; do
-    action=$(printf '%s\n' \
-      "📋 Smart log view (failures expanded)" \
-      "🔍 Browse steps interactively" \
-      "🌐 Open in browser" \
-      "🔁 Rerun this workflow" \
-      | __fzf_menu "$job_name  (run $run_id)" \
-          --height=7)
-
-    [[ -z "$action" ]] && break
-
-    case "$action" in
-      *"Smart log"*)     _gha_smart_log "$run_id" "$job_name" ;;
-      *"Browse steps"*)  _gha_step_browser "$run_id" "$job_name" ;;
-      *"Open"*)          _open_url "$url" ;;
-      *"Rerun"*)
-        gh run rerun "$run_id" 2>/dev/null \
-          && echo "✅ Rerun triggered for run $run_id" \
-          || echo "❌ Rerun failed — check permissions"
-        sleep 1
-        ;;
-    esac
-  done
-}
-
-# ─── Smart log view — collapsed/expanded ──────────────────────────
-#
-# Shows all steps with status. Passing steps are collapsed (header only).
-# Failed steps are auto-expanded with their full log output below.
-# Piped through less for scrolling. r to refresh, -/q to go back.
-
-_gha_smart_log() {
-  local run_id="$1" job_name="$2"
-
-  while true; do
-    echo "⏳ Fetching logs for: $job_name..."
-
-    local steps_json
-    steps_json=$(_gha_fetch_steps "$run_id" "$job_name")
-
-    if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-      echo "❌ Could not find steps for '$job_name'"
-      echo "   Run: gh run view $run_id --json jobs --jq '.jobs[].name'"
-      return 1
-    fi
-
-    local full_log
-    full_log=$(gh run view "$run_id" --log 2>/dev/null)
-
-    # Run timing metadata
-    local run_meta run_created run_updated run_status
-    run_meta=$(gh run view "$run_id" --json createdAt,updatedAt,status 2>/dev/null)
-    run_created=$(echo "$run_meta" | jq -r '.createdAt // empty')
-    run_updated=$(echo "$run_meta" | jq -r '.updatedAt // empty')
-    run_status=$(echo "$run_meta" | jq -r '.status // empty')
-
-    local passed_steps failed_steps skipped_steps
-    passed_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "success")] | length')
-    failed_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "failure")] | length')
-    skipped_steps=$(echo "$steps_json" | jq '[.[] | select(.conclusion == "skipped")] | length')
-
-    # Render into pager
-    {
-      echo ""
-      if (( failed_steps > 0 )); then
-        printf " \033[31m━━━ %s ━━━  %s passed  %s failed  %s skipped\033[0m\n" \
-          "$job_name" "$passed_steps" "$failed_steps" "$skipped_steps"
-      else
-        printf " \033[32m━━━ %s ━━━  %s passed  %s skipped\033[0m\n" \
-          "$job_name" "$passed_steps" "$skipped_steps"
-      fi
-
-      # Run timing header
-      if [[ -n "$run_created" ]]; then
-        local started_at duration_info
-        started_at=$(__local_time "$run_created")
-        if [[ "$run_status" == "completed" && -n "$run_updated" ]]; then
-          local total_dur
-          total_dur=$(__duration_str "$run_created" "$run_updated")
-          duration_info="took ${total_dur:-?}"
-        else
-          local so_far
-          so_far=$(__relative_time "$run_created")
-          duration_info="running (${so_far:-?} so far)"
-        fi
-        printf " \033[90mStarted %s  ·  %s\033[0m\n" "${started_at:-?}" "$duration_info"
-      fi
-      echo ""
-
-      echo "$steps_json" | jq -c '.[]' | while IFS= read -r step; do
-        local step_name step_conclusion
-        step_name=$(echo "$step" | jq -r '.name')
-        step_conclusion=$(echo "$step" | jq -r '.conclusion')
-
-        # Duration
-        local started completed duration_str=""
-        started=$(echo "$step" | jq -r '.started // empty')
-        completed=$(echo "$step" | jq -r '.completed // empty')
-        duration_str=$(__duration_str "$started" "$completed")
-
-        local emoji color
-        case "$step_conclusion" in
-          success)  emoji="✅"; color="32" ;;
-          failure)  emoji="❌"; color="31" ;;
-          skipped)  emoji="⏭ "; color="33" ;;
-          *)        emoji="⏳"; color="90" ;;
-        esac
-
-        local name_len=${#step_name}
-        local dots_count=$(( 52 - name_len ))
-        (( dots_count < 2 )) && dots_count=2
-        local dots
-        dots=$(printf '%*s' "$dots_count" '' | tr ' ' '·')
-
-        printf " %s  \033[%sm%s\033[0m \033[90m%s\033[0m %s\n" \
-          "$emoji" "$color" "$step_name" "$dots" "$duration_str"
-
-        # ─── EXPANDED: show logs for failed steps ──────────────
-        if [[ "$step_conclusion" == "failure" ]]; then
-          local step_logs
-          step_logs=$(_gha_extract_step_log "$full_log" "$job_name" "$step_name")
-
-          if [[ -n "$step_logs" ]]; then
-            echo -e " \033[31m│\033[0m"
-            echo "$step_logs" | while IFS= read -r line; do
-              local clean
-              clean=$(echo "$line" | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9.:]*Z //')
-              echo -e " \033[31m│\033[0m  $clean"
-            done
-            echo -e " \033[31m│\033[0m"
-          else
-            echo -e " \033[31m│\033[0m  \033[90m(no log output captured)\033[0m"
-            echo -e " \033[31m│\033[0m"
-          fi
-        fi
-      done
-
-      echo ""
-      printf " \033[90mRun ID: %s  •  Full logs: gh run view %s --log\033[0m\n" "$run_id" "$run_id"
-      echo ""
-
-    } | less -R
-
-    # ─── Post-pager navigation ────────────────────────────────
-    local key
-    echo ""
-    read -rsn1 -p "  r=refresh  -/q=back " key
-    echo ""
-    case "$key" in
-      r|R) continue ;;
-      *)   break ;;
-    esac
-  done
-
-  _gha_action_menu "$run_id" "$job_name" ""
-}
-
-# ─── Interactive step browser ──────────────────────────────────────
-#
-# fzf list of all steps with status. Preview pane shows that step's
-# logs as you navigate. ENTER opens full log in less.
-# After exiting fzf: r to refresh (re-fetch), -/q to go back.
-
-_gha_step_browser() {
-  local run_id="$1" job_name="$2"
-
-  while true; do
-    echo "⏳ Fetching logs..."
-
-    local tmpdir
-    tmpdir=$(mktemp -d /tmp/gha-steps-XXXXXX)
-
-    # Fetch full log
-    gh run view "$run_id" --log 2>/dev/null > "$tmpdir/full.log"
-
-    # Get step structure
-    local steps_json
-    steps_json=$(_gha_fetch_steps "$run_id" "$job_name")
-
-    if [[ -z "$steps_json" || "$steps_json" == "[]" ]]; then
-      echo "❌ Could not find steps for '$job_name'"
-      rm -rf "$tmpdir"
-      return 1
-    fi
-
-    # Split logs into per-step files and build picker list
-    echo "$steps_json" | jq -c '.[]' | while IFS= read -r step; do
-      local num name conclusion emoji
-      num=$(echo "$step" | jq -r '.number')
-      name=$(echo "$step" | jq -r '.name')
-      conclusion=$(echo "$step" | jq -r '.conclusion')
-
-      case "$conclusion" in
-        success) emoji="✅" ;;
-        failure) emoji="❌" ;;
-        skipped) emoji="⏭ " ;;
-        *)       emoji="⏳" ;;
-      esac
-
-      _gha_extract_step_log "$(cat "$tmpdir/full.log")" "$job_name" "$name" \
-        | sed 's/^[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}T[0-9.:]*Z //' \
-        > "$tmpdir/step_${num}.log"
-
-      printf "%s  %s\t%s\n" "$emoji" "$name" "$num"
-    done > "$tmpdir/picker.tsv"
-
-    if [[ ! -s "$tmpdir/picker.tsv" ]]; then
-      echo "❌ Failed to process steps"
-      rm -rf "$tmpdir"
-      return 1
-    fi
-
-    # ─── fzf browse loop (cached — fast navigation) ────────
-    local selection="initial"
-    while [[ -n "$selection" ]]; do
-      selection=$(cat "$tmpdir/picker.tsv" \
-        | fzf --ansi \
-            --delimiter=$'\t' \
-            --with-nth=1 \
-            --header="Steps: $job_name  │  enter=view log  esc=back" \
-            --preview "cat $tmpdir/step_{2}.log 2>/dev/null || echo 'No logs'" \
-            --preview-window=right:65%:wrap)
-
-      if [[ -n "$selection" ]]; then
-        local step_num
-        step_num=$(echo "$selection" | awk -F'\t' '{print $2}')
-        if [[ -s "$tmpdir/step_${step_num}.log" ]]; then
-          less -R "$tmpdir/step_${step_num}.log"
-        else
-          echo "(no log output for this step)"
-          sleep 1
-        fi
-      fi
-    done
-
-    rm -rf "$tmpdir"
-
-    # ─── Post-browser navigation ──────────────────────────────
-    local key
-    echo ""
-    read -rsn1 -p "  r=refresh  -/q=back " key
-    echo ""
-    case "$key" in
-      r|R) continue ;;
-      *)   break ;;
-    esac
-  done
-
-  _gha_action_menu "$run_id" "$job_name" ""
-}
-
-# ─── Shared: fetch steps with fallback logic ──────────────────────
-
-_gha_fetch_steps() {
-  local run_id="$1" job_name="$2"
-  local steps_json
-
-  steps_json=$(gh run view "$run_id" --json jobs --jq "
-    [.jobs[] | select(.name == \"$job_name\") | .steps[] |
-     {name: .name, conclusion: .conclusion, number: .number,
-      started: .startedAt, completed: .completedAt}]
-  " 2>/dev/null)
-  [[ -n "$steps_json" && "$steps_json" != "[]" ]] && { echo "$steps_json"; return; }
-
-  steps_json=$(gh run view "$run_id" --json jobs --jq "
-    [.jobs[] | select(.name | contains(\"$job_name\")) | .steps[] |
-     {name: .name, conclusion: .conclusion, number: .number,
-      started: .startedAt, completed: .completedAt}]
-  " 2>/dev/null)
-  [[ -n "$steps_json" && "$steps_json" != "[]" ]] && { echo "$steps_json"; return; }
-
-  local job_count
-  job_count=$(gh run view "$run_id" --json jobs --jq '.jobs | length' 2>/dev/null)
-  if [[ "$job_count" == "1" ]]; then
-    steps_json=$(gh run view "$run_id" --json jobs --jq "
-      [.jobs[0].steps[] |
-       {name: .name, conclusion: .conclusion, number: .number,
-        started: .startedAt, completed: .completedAt}]
-    " 2>/dev/null)
-    [[ -n "$steps_json" && "$steps_json" != "[]" ]] && { echo "$steps_json"; return; }
-  fi
-
-  echo "[]"
-}
-
-# ─── Log extraction helper ─────────────────────────────────────────
-
-_gha_extract_step_log() {
-  local full_log="$1" job_name="$2" step_name="$3"
-  local result
-
-  result=$(echo "$full_log" | awk -F'\t' -v job="$job_name" -v step="$step_name" \
-    '$1 == job && $2 == step { print $3 }')
-  [[ -n "$result" ]] && { echo "$result"; return; }
-
-  result=$(echo "$full_log" | awk -F'\t' -v step="$step_name" \
-    '$2 == step { print $3 }')
-  [[ -n "$result" ]] && { echo "$result"; return; }
-
-  result=$(echo "$full_log" | awk -F'\t' -v step="$step_name" \
-    'BEGIN { IGNORECASE=1 } index($2, step) > 0 { print $3 }')
-  [[ -n "$result" ]] && { echo "$result"; return; }
-
-  return 1
-}
-
-# ─── Helpers ──────────────────────────────────────────────────────
-
-# Picks a remote branch via fzf (searchable — branch names contain -)
-_gh_pick_branch() {
-  local header="${1:-Select branch}"
-  git branch -r 2>/dev/null \
-    | sed 's|origin/||; s|^[[:space:]]*||' \
-    | grep -v '^HEAD' \
-    | sort -u \
-    | __fzf_list "$header" --height=15
 }
 
 # ─────────────────────────────────────────────────────────────────
-#  gh-tui — Unified GitHub Hub
+#  gh-tui — the hub
 # ─────────────────────────────────────────────────────────────────
-
-# Fills $2 with the preview panes the hub menu shows. Eight gh calls, run in
-# parallel inside one subshell so job-control notices don't leak to the
-# terminal. Split out of gh-tui so it can be called once per session rather
-# than once per menu render — see the loop below.
-_gh_tui_prefetch() {
-  local repo="$1" tmpdir="$2"
-  (
-    gh pr list --limit 8 --state open \
-      --json number,title,reviewDecision,isDraft,author \
-      --jq '.[] | "#\(.number)  \(
-        if .isDraft then "📝"
-        elif .reviewDecision == "APPROVED" then "✅"
-        elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
-        else "⏳" end)  \(.title)  (\(.author.login))"' \
-      > "$tmpdir/prs" 2>/dev/null &
-
-    gh pr list --limit 8 --state open --author=@me \
-      --json number,title,reviewDecision,isDraft \
-      --jq '.[] | "#\(.number)  \(
-        if .isDraft then "📝"
-        elif .reviewDecision == "APPROVED" then "✅"
-        elif .reviewDecision == "CHANGES_REQUESTED" then "🔄"
-        else "⏳" end)  \(.title)"' \
-      > "$tmpdir/mine" 2>/dev/null &
-
-    {
-      branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached)")
-      default_br=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
-      echo "Branch: $branch → $default_br"
-      unpushed=$(git log --oneline "@{u}..HEAD" 2>/dev/null | head -5)
-      if [[ -n "$unpushed" ]]; then
-        count=$(git log --oneline "@{u}..HEAD" 2>/dev/null | wc -l)
-        echo "$count unpushed commit(s):"
-        echo "$unpushed"
-      else
-        echo "(no unpushed commits)"
-      fi
-    } > "$tmpdir/branch" 2>/dev/null &
-
-    {
-      repo_ci=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
-      sha_ci=$(git rev-parse HEAD 2>/dev/null)
-      gh api "repos/$repo_ci/commits/$sha_ci/check-runs" 2>/dev/null \
-        | jq -r '.check_runs[] | [.name, (if .status == "completed" then (if .conclusion == "success" then "✅" elif .conclusion == "failure" then "❌" elif .conclusion == "skipped" then "⏭" else "❓" end) else "⏳" end), (.completed_at // .started_at // "")] | @tsv' 2>/dev/null \
-        | while IFS=$'\t' read -r name status ts; do
-            local age=""
-            [[ -n "$ts" ]] && age=$(__relative_time "$ts")
-            printf "%-40s %s  %s\n" "$name" "$status" "${age:-}"
-          done
-    } > "$tmpdir/ci" 2>/dev/null &
-
-    gh secret list > "$tmpdir/secrets" 2>/dev/null &
-
-    gh api "repos/$repo/environments" \
-      --jq '.environments[] | "\(.name)   created: \(.created_at[:10])"' \
-      > "$tmpdir/envs" 2>/dev/null &
-
-    gh api "repos/$repo/branches" --paginate \
-      --jq '.[] | "\(if .protected then "🛡 " else "   " end)\(.name)\(if .protected then "  (protected)" else "" end)"' \
-      > "$tmpdir/branches" 2>/dev/null &
-
-    wait
-  ) 2>/dev/null
-}
 
 gh-tui() {
   __gh_check || return 1
+  _gh_fzf_ok || return 1
 
-  local repo tmpdir out key action
+  local repo
   repo=$(__gh_repo)
-  tmpdir=$(mktemp -d /tmp/gh-tui-XXXXXX)
-  # Covers the paths a plain `rm` after the loop would miss — a SIGINT out of
-  # a screen unwinds the function without reaching the bottom.
-  trap 'rm -rf "$tmpdir"' RETURN
-
-  # Once per session, not once per render. This used to sit inside the body of
-  # a tail-recursive gh-tui, so every return to the hub re-ran eight gh calls —
-  # about a second of refetching data it already had, on the screen you pass
-  # through most. `r` is the way to ask for fresh data now, matching the pagers.
-  _gh_tui_prefetch "$repo" "$tmpdir"
-
-  # A loop rather than the `gh-tui` tail call this used to end with: every
-  # navigation added a stack frame, so a long session grew the call stack in
-  # proportion to how much you used it.
-  while true; do
-    out=$(printf '%s\n' \
-      "🔀 Pull Requests" \
-      "📋 Pull Requests (mine)" \
-      "➕ Create Pull Request" \
-      "─────────────────────────────" \
-      "🚀 CI / Actions" \
-      "─────────────────────────────" \
-      "🔑 Secrets" \
-      "🌍 Environments" \
-      "🌿 Branches" \
-      | FZF_MENU_BACK='exit' FZF_MENU_EXPECT='r' \
-           FZF_MENU_HELP="$(_gh_help_file hub)" __fzf_menu "GitHub — $repo" \
-          --preview "case {} in
-            *'Pull Requests (mine)'*) cat $tmpdir/mine 2>/dev/null || echo '(none)' ;;
-            *'Pull Requests'*) cat $tmpdir/prs 2>/dev/null || echo '(none)' ;;
-            *'Create'*) cat $tmpdir/branch 2>/dev/null ;;
-            *'CI'*) cat $tmpdir/ci 2>/dev/null ;;
-            *'Secrets'*) cat $tmpdir/secrets 2>/dev/null ;;
-            *'Environments'*) cat $tmpdir/envs 2>/dev/null || echo '(none)' ;;
-            *'Branches'*) cat $tmpdir/branches 2>/dev/null || echo '(none)' ;;
-            *) echo '' ;;
-          esac" \
-          --preview-window=right:50%:wrap)
-
-    # --expect puts the pressed key on the first line (empty for a plain
-    # enter) and the selection on the second. An abort gives neither.
-    key="${out%%$'\n'*}"
-    action=""
-    [[ "$out" == *$'\n'* ]] && action="${out#*$'\n'}"
-
-    if [[ "$key" == "r" ]]; then
-      _gh_tui_prefetch "$repo" "$tmpdir"
-      continue
-    fi
-
-    [[ -z "$action" || "$action" == *"───"* ]] && break
-
-    case "$action" in
-      *"Pull Requests (mine)"*)  _gpr mine ;;
-      *"Create Pull Request"*)   _gpr create ;;
-      *"Pull Requests"*)         _gpr ;;
-      *"CI / Actions"*)          _gha_ui ;;
-      *"Secrets"*)               _ghsecrets ;;
-      *"Environments"*)          _ghenv ;;
-      *"Branches"*)              _ghbranch ;;
-    esac
-  done
-}
-
-# ─────────────────────────────────────────────────────────────────
-#  _gpr — Interactive Pull Request Management
-# ─────────────────────────────────────────────────────────────────
-
-_gpr() {
-  __gh_check || return 1
-
-  case "${1:-}" in
-    create) _gpr_create; return ;;
-    mine)   _gpr_list "--author=@me"; return ;;
-  esac
-
-  # Filter picker for bare `_gpr`
-  local filter
-  filter=$(printf '%s\n' \
-    "📋 All open PRs" \
-    "👀 Needs my review" \
-    "📝 My PRs" \
-    "─────────────────────────────" \
-    "🔒 Recently closed" \
-    "✅ Recently merged" \
-    | __fzf_menu "Pull Requests" \
-        --height=9)
-
-  [[ -z "$filter" || "$filter" == *"───"* ]] && return
-
-  case "$filter" in
-    *"All open"*)        _gpr_list ;;
-    *"Needs my review"*) _gpr_list "--search review-requested:@me" ;;
-    *"My PRs"*)          _gpr_list "--author=@me" ;;
-    *"Recently closed"*) _gpr_list "--state closed" ;;
-    *"Recently merged"*) _gpr_list "--state merged" ;;
-  esac
-}
-
-# ─── Create PR ────────────────────────────────────────────────────
-
-_gpr_create() {
-  local current_branch default_branch
-  current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-  default_branch=$(__gh_default_branch)
-
-  if [[ "$current_branch" == "$default_branch" ]]; then
-    echo "❌ You're on '$default_branch' — switch to a feature branch first"
+  if [[ -z "$repo" ]]; then
+    echo "❌ Not a GitHub repository, or gh isn't signed in (gh auth login)" >&2
     return 1
   fi
 
-  echo "━━━ Create Pull Request ━━━"
-  echo ""
-  echo "  📌 Source: $current_branch → $default_branch"
+  _gh_palette; _gh_style
+  _GH_REPO="$repo"
+  _GH_D=$(mktemp -d "${TMPDIR:-/tmp}/gh-tui-XXXXXX") || return 1
+  # Immutable things — bodies of completed runs, logs of completed jobs —
+  # outlive the session so the second look at a run is instant. Two weeks
+  # is long enough to matter and short enough not to.
+  _GH_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/gh-tui/$repo"
+  mkdir -p "$_GH_CACHE" "$_GH_D/help"
+  find "$_GH_CACHE" -type f -mtime +14 -delete 2>/dev/null
 
-  local unpushed
-  unpushed=$(git log --oneline "@{u}..HEAD" 2>/dev/null)
-  if [[ -n "$unpushed" ]]; then
-    local count
-    count=$(echo "$unpushed" | wc -l)
-    echo "  📤 $count unpushed commit(s):"
-    echo "$unpushed" | sed 's/^/       /'
-    echo ""
-  fi
+  # A SIGINT out of a screen unwinds past the rm at the bottom; the trap
+  # doesn't. Cleared on the way out so it can't fire for later functions.
+  # The tab glyph rides the same trap for the same reason — a var left set
+  # would leave the pane wearing the GitHub mark for the life of the shell.
+  trap 'rm -rf "$_GH_D"; _gh_tab_var 0; trap - RETURN' RETURN
+  _gh_tab_var 1
 
-  local draft_flag=""
-  local choice
-  choice=$(printf '%s\n' "Ready for review" "Draft" \
-    | __fzf_menu "PR type:" --height=5)
-  [[ -z "$choice" ]] && return
-  [[ "$choice" == "Draft" ]] && draft_flag="--draft"
+  local n
+  for n in hub actions steps prs branches secrets envs; do
+    "_gh_help_$n" > "$_GH_D/help/$n"
+  done
+  _gh_worker_write
 
-  echo ""
-  gh pr create $draft_flag
+  # The hub's previews and label, filled in behind the menu as they land.
+  ( bash "$_GH_W" hub-prefetch "$_GH_D/hub.port" ) >/dev/null 2>&1 </dev/null &
+
+  # enter runs the screen INSIDE the menu (execute), so coming back lands on
+  # the row you left. r re-runs the prefetch. -/q leave.
+  printf '%s\n' \
+    "🚀 Actions         runs · jobs · logs, live" \
+    "🔀 Pull Requests   review · merge · create" \
+    "🌿 Branches        rules · default · delete" \
+    "🔑 Secrets         repository · environment" \
+    "🌍 Environments    reviewers · timers · deploys" \
+  | FZF_MENU_BACK=exit FZF_MENU_HELP="$_GH_D/help/hub" _gh_menu "GitHub" \
+      --listen \
+      --border-label=" 🐙 $repo " \
+      --list-label=" ⏳ " \
+      --delimiter='  +' \
+      --preview="bash '$_GH_W' pv-hub {1}" "${_GH_PREVIEW[@]}" \
+      --bind="focus:transform-preview-label(echo ' {1} ')" \
+      --bind="enter:execute(bash '$_GH_W' screen {1})+refresh-preview" \
+      --bind="r:execute-silent(bash '$_GH_W' hub-refresh)" \
+      >/dev/null
+
+  rm -rf "$_GH_D"
 }
 
-# ─── List & pick PRs ─────────────────────────────────────────────
-
-_gpr_list() {
-  local extra_flags="${1:-}"
-
-  local pr_lines
-  pr_lines=$(gh pr list --limit 50 --state open $extra_flags \
-    --json number,title,author,headRefName,reviewDecision,additions,deletions,isDraft,createdAt \
-    --jq '.[] | [
-      .number,
-      (if .isDraft then "DRAFT"
-       elif .reviewDecision == "APPROVED" then "APPROVED"
-       elif .reviewDecision == "CHANGES_REQUESTED" then "CHANGES"
-       else "PENDING" end),
-      .title,
-      .author.login,
-      .headRefName,
-      "+\(.additions)/-\(.deletions)",
-      .createdAt
-    ] | @tsv' 2>/dev/null)
-
-  if [[ -z "$pr_lines" ]]; then
-    echo "No open PRs found."
-    return
-  fi
-
-  local formatted_prs
-  formatted_prs=$(echo "$pr_lines" | while IFS=$'\t' read -r num status title author branch changes created; do
-    local emoji age
-    case "$status" in
-      APPROVED) emoji="✅" ;;
-      CHANGES)  emoji="🔄" ;;
-      DRAFT)    emoji="📝" ;;
-      *)        emoji="⏳" ;;
-    esac
-    age=$(__relative_time "$created")
-    printf "#%-5s %s %-10s  %-48.48s  %-10s  %-22.22s  %s  %s\n" \
-      "$num" "$emoji" "$status" "$title" "$author" "$branch" "$changes" "${age:-}"
-  done)
-
-  local selection
-  selection=$(echo "$formatted_prs" \
-    | fzf --ansi --no-sort \
-        --header="  PR     Status       Title                                              Author      Branch                  Changes  Age
-$(printf '─%.0s' {1..130})
-  type to filter  │  enter=actions  esc=back" \
-        --preview 'gh pr view $(echo {} | awk "{print \$1}" | tr -d "#")' \
-        --preview-window=right:50%:wrap)
-
-  [[ -z "$selection" ]] && return
-
-  local pr_number
-  pr_number=$(echo "$selection" | awk '{print $1}' | tr -d '#')
-
-  _gpr_actions "$pr_number"
+# ─── Worker: materialise ───────────────────────────────────────────
+#
+# Writes $_GH_D/w: the session facts, then every function the worker side
+# is allowed to use, then the dispatcher call. `declare -f` prints a
+# function exactly as bash holds it, so the worker script IS this file's
+# code — there is no second copy to drift.
+_gh_worker_write() {
+  local w="$_GH_D/w"
+  {
+    echo '#!/usr/bin/env bash'
+    printf 'D=%q\nR=%q\nCACHE=%q\n' "$_GH_D" "$_GH_REPO" "$_GH_CACHE"
+    printf '_GH_D=$D\n_GH_REPO=$R\n_GH_CACHE=$CACHE\n_GH_W=$D/w\n'
+    declare -f __parse_iso_epoch __relative_age __relative_time __duration_str __local_time \
+               __fzf_menu __fzf_list __gh_repo __gh_default_branch _open_url
+    # Every _gh_* / _ghw_* / _ghbranch_* function in this file. Names are
+    # words by construction, so the unquoted expansion is the point.
+    # shellcheck disable=SC2046
+    declare -f $(compgen -A function | grep '^_gh')
+    # The hub sets these for ITS menu; a `VAR=x fn` prefix in bash reaches
+    # the environment of everything fn runs, fzf included, so without this
+    # every nested menu would say "-/q exit" and ? would open the hub's help.
+    echo 'unset FZF_MENU_BACK FZF_MENU_HELP FZF_MENU_EXPECT'
+    echo '_gh_palette; _gh_style'
+    echo '_ghw_main "$@"'
+  } > "$w"
+  _GH_W="$w"
 }
 
-# ─── Action menu for a selected PR ───────────────────────────────
+# ─── Screens ───────────────────────────────────────────────────────
+#
+# Each screen is ONE fzf call. Its list arrives through `start:reload`, its
+# preview is a worker verb, and its keys are bindings — `execute(...)` for
+# anything that needs the terminal (a nested screen, a pager, a y/N prompt),
+# `reload(...)` for anything that changes what the list should say.
+#
+# Screens open other screens with execute() too, which is what makes back
+# feel like back: the parent fzf is still running underneath with its
+# cursor, filter and scroll intact, and esc simply returns to it. Nothing
+# here loops back to a menu; there is no menu to loop back to.
+#
+# Because they run inside execute, the screens themselves live in the
+# worker script (`bash $W screen-<name>`), which is why they are written
+# in the same restricted dialect as the `_ghw_` verbs — every function they
+# touch is one that _gh_worker_write ships.
 
-_gpr_actions() {
-  local number="$1"
-  local pr_title
-  pr_title=$(gh pr view "$number" --json title -q .title 2>/dev/null)
+# The universal footer suffix and the universal binds every list screen has.
+# The footer sits under the list column, ~65 columns at the default split,
+# so a screen passes one or two SHORT lines and this adds the universal one.
+_gh_footer() {
+  printf '%s\nctrl-r refresh   alt-p preview   ctrl-/ help   esc back' "$1"
+}
 
-  local action
+_gh_screen_actions() {
+  local W="$_GH_W" D="$_GH_D"
+  rm -f "$D"/tick.* 2>/dev/null
+  printf '' | _gh_fzf actions \
+    --border-label=" 🚀 Actions — $_GH_REPO " \
+    --list-label="$(bash "$W" runs-label)" \
+    --header="● HEAD commit   type to filter — branch, title, status" \
+    --footer="$(_gh_footer $'enter jobs & logs   ctrl-o browser   ctrl-e rerun\nctrl-x cancel   ctrl-l full log   ctrl-b this branch / all')" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --no-sort --tiebreak=index \
+    --preview="bash '$W' pv-run {2} {3} {4} {5} {6} {7} {8} {9} {10} {11} {12} {13} {14} {15} {16}" \
+    --bind="start:reload(bash '$W' list-runs)" \
+    --bind="ctrl-r:reload(bash '$W' list-runs fresh)+refresh-preview" \
+    --bind="ctrl-b:transform-list-label(bash '$W' runs-toggle)+reload(bash '$W' list-runs)" \
+    --bind="ctrl-o:execute-silent(bash '$W' open {5})" \
+    --bind="ctrl-e:execute(bash '$W' rerun {2})+reload(bash '$W' list-runs fresh)+refresh-preview" \
+    --bind="ctrl-x:execute(bash '$W' cancel {2})+reload(bash '$W' list-runs fresh)+refresh-preview" \
+    --bind="ctrl-l:execute(bash '$W' log-run {2} {14} | less -R)" \
+    --bind="enter:execute(bash '$W' screen-steps {2} {9} {14})+refresh-preview" \
+    >/dev/null
+}
+
+# jobs › steps of one run. Enter on a step pages its log; on a job, the
+# whole job's log. The list itself reloads with the preview while the run
+# is live, so a step flips from ○ to ▶ to ✅ under the cursor.
+_gh_screen_steps() {
+  local run="$1" title="${2:-}" att="${3:-}" W="$_GH_W"
+  [[ "$run" == none || -z "$run" ]] && return 0
+  printf '' | _gh_fzf steps \
+    --border-label=" 🧩 jobs & steps — ${title:-run $run} " \
+    --header="type to filter   job lines preview the whole job, step lines the step" \
+    --footer="$(_gh_footer 'enter log in pager   ctrl-o browser   ctrl-l whole run log')" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --no-sort --tiebreak=index \
+    --preview="bash '$W' pv-{2} {3} {4} {5} {6}" \
+    --bind="start:reload(bash '$W' list-steps $run $att)" \
+    --bind="ctrl-r:reload(bash '$W' list-steps $run $att)+refresh-preview" \
+    --bind="ctrl-o:execute-silent(bash '$W' open-run $run)" \
+    --bind="ctrl-l:execute(bash '$W' log-run $run $att | less -R)" \
+    --bind="enter:execute(bash '$W' log-{2} {3} {4} {5} {6} | less -R)" \
+    >/dev/null
+}
+
+_gh_screen_prs() {
+  local W="$_GH_W"
+  printf '' | _gh_fzf prs \
+    --border-label=" 🔀 Pull Requests — $_GH_REPO " \
+    --list-label="$(bash "$W" prs-label)" \
+    --header="review · ci · #   author   age   title   branch   ±" \
+    --footer="$(_gh_footer $'enter actions   ctrl-o browser   ctrl-d diff   ctrl-k checkout\nctrl-a its runs   ctrl-n new PR   ctrl-f filter')" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --no-sort --tiebreak=index \
+    --preview="bash '$W' pv-pr {2}" \
+    --bind="start:reload(bash '$W' list-prs)" \
+    --bind="ctrl-r:reload(bash '$W' list-prs fresh)+refresh-preview" \
+    --bind="ctrl-f:transform-list-label(bash '$W' prs-next)+reload(bash '$W' list-prs)" \
+    --bind="ctrl-o:execute-silent(bash '$W' open {3})" \
+    --bind="ctrl-d:execute(gh pr diff {2} --color=always | less -R)" \
+    --bind="ctrl-k:execute(bash '$W' pr-checkout {2})" \
+    --bind="ctrl-a:execute(bash '$W' screen-actions-for {5} {2})" \
+    --bind="ctrl-n:execute(bash '$W' pr-create)+reload(bash '$W' list-prs fresh)" \
+    --bind="enter:execute(bash '$W' pr-menu {2})+reload(bash '$W' list-prs fresh)+refresh-preview" \
+    >/dev/null
+}
+
+# The Actions screen scoped to one commit — the PR screen's ctrl-a. The
+# scope is a file the run list reads, so it is the same screen.
+_gh_screen_actions_for() {
+  local sha="$1" num="$2"
+  [[ -z "$sha" || "$sha" == none ]] && return 0
+  printf '%s' "$sha" > "$_GH_D/runs.sha"
+  rm -f "$_GH_D"/runs.*.json
+  _gh_screen_actions
+  rm -f "$_GH_D/runs.sha" "$_GH_D"/runs.*.json
+}
+
+_gh_screen_branches() {
+  local W="$_GH_W"
+  printf '' | _gh_fzf branches \
+    --border-label=" 🌿 Branches — $_GH_REPO " \
+    --header="● checked out   ⭐ default   🛡 ruled     ↑ahead ↓behind the default branch" \
+    --footer="$(_gh_footer $'enter actions   ctrl-o browser   ctrl-k checkout\nctrl-x delete remote   ctrl-s rulesets')" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --no-sort --tiebreak=index \
+    --preview="bash '$W' pv-branch {2} {3} {4} {5}" \
+    --bind="start:reload(bash '$W' list-branches)" \
+    --bind="ctrl-r:reload(bash '$W' list-branches fresh)+refresh-preview" \
+    --bind="ctrl-o:execute-silent(bash '$W' open-branch {2})" \
+    --bind="ctrl-k:execute(bash '$W' branch-checkout {2})+reload(bash '$W' list-branches)+refresh-preview" \
+    --bind="ctrl-x:execute(bash '$W' branch-delete {2} {4})+reload(bash '$W' list-branches fresh)" \
+    --bind="ctrl-s:execute(bash '$W' rulesets)+reload(bash '$W' list-branches fresh)+refresh-preview" \
+    --bind="enter:execute(bash '$W' branch-menu {2} {3} {4} {5})+reload(bash '$W' list-branches fresh)+refresh-preview" \
+    >/dev/null
+}
+
+_gh_screen_secrets() {
+  local W="$_GH_W"
+  printf '' | _gh_fzf secrets \
+    --border-label=" 🔑 Secrets — $_GH_REPO " \
+    --header="🔑 repository   🌍 environment     values are write-only" \
+    --footer="$(_gh_footer 'enter set again   ctrl-n new   ctrl-x delete   ctrl-o browser')" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --no-sort --tiebreak=index \
+    --preview="bash '$W' pv-secret {2} {3} {4}" \
+    --bind="start:reload(bash '$W' list-secrets)" \
+    --bind="ctrl-r:reload(bash '$W' list-secrets fresh)+refresh-preview" \
+    --bind="ctrl-o:execute-silent(bash '$W' open-settings secrets/actions)" \
+    --bind="ctrl-n:execute(bash '$W' secret-set)+reload(bash '$W' list-secrets fresh)+refresh-preview" \
+    --bind="ctrl-x:execute(bash '$W' secret-delete {2} {3} {4})+reload(bash '$W' list-secrets fresh)+refresh-preview" \
+    --bind="enter:execute(bash '$W' secret-set {2} {3} {4})+reload(bash '$W' list-secrets fresh)+refresh-preview" \
+    >/dev/null
+}
+
+_gh_screen_envs() {
+  local W="$_GH_W"
+  printf '' | _gh_fzf envs \
+    --border-label=" 🌍 Environments — $_GH_REPO " \
+    --header="deployment targets: each carries its own secrets, reviewers and wait timer" \
+    --footer="$(_gh_footer 'enter configure   ctrl-n create   ctrl-x delete   ctrl-o browser')" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --no-sort --tiebreak=index \
+    --preview="bash '$W' pv-env {2}" \
+    --bind="start:reload(bash '$W' list-envs)" \
+    --bind="ctrl-r:reload(bash '$W' list-envs fresh)+refresh-preview" \
+    --bind="ctrl-o:execute-silent(bash '$W' open-settings environments)" \
+    --bind="ctrl-n:execute(bash '$W' env-create)+reload(bash '$W' list-envs fresh)+refresh-preview" \
+    --bind="ctrl-x:execute(bash '$W' env-delete {2})+reload(bash '$W' list-envs fresh)+refresh-preview" \
+    --bind="enter:execute(bash '$W' env-menu {2})+reload(bash '$W' list-envs fresh)+refresh-preview" \
+    >/dev/null
+}
+
+# ─── Actions on things (run inside execute) ─────────────────────────
+
+_ghw_open_run()      { _open_url "https://github.com/$R/actions/runs/$1"; }
+_ghw_open_branch()   { _open_url "https://github.com/$R/tree/$1"; }
+_ghw_open_settings() { _open_url "https://github.com/$R/settings/$1"; }
+
+# ── pull requests ──
+
+_ghw_pr_checkout() {
+  local num="$1"
+  [[ "$num" == none || -z "$num" ]] && return 0
+  echo ""
+  gh pr checkout "$num" && echo "  ✅ checked out PR #$num" || echo "  ❌ checkout failed"
+  sleep 1.2
+}
+
+_ghw_pr_create() {
+  local cur def
+  cur=$(git symbolic-ref --short HEAD 2>/dev/null)
+  def=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
+  if [[ "$cur" == "$def" ]]; then
+    echo ""; echo "  ❌ you're on '$def' — switch to a feature branch first"; sleep 2; return
+  fi
+  local kind
+  kind=$(printf '%s\n' "Ready for review" "Draft" \
+    | _gh_menu "New PR: $cur → $def" --border-label=" ➕ create pull request ")
+  [[ -z "$kind" ]] && return
+  echo ""
+  if [[ "$kind" == Draft ]]; then gh pr create --draft; else gh pr create; fi
+  _gh_pause
+}
+
+# The per-PR action menu. Everything a PR can have done to it, from one
+# place; each action returns here, -/q returns to the list.
+_ghw_pr_menu() {
+  local num="$1"
+  [[ "$num" == none || -z "$num" ]] && return 0
+  local title action
+  title=$(gh pr view "$num" --json title -q .title 2>/dev/null)
   while true; do
     action=$(printf '%s\n' \
-      "👁  View details" \
       "📥 Checkout locally" \
-      "📝 View diff" \
-      "📊 View file changes" \
-      "💬 Add comment" \
+      "📝 Diff" \
+      "📊 Changed files" \
+      "💬 Comment" \
       "✅ Approve" \
       "🔄 Request changes" \
-      "🏷  Manage labels" \
-      "👤 Request reviewers" \
-      "✏️  Edit title/body" \
+      "🏷  Labels" \
+      "👤 Reviewers" \
+      "✏️  Edit title / body" \
       "🔀 Merge" \
-      "❌ Close PR" \
+      "🔁 Mark ready / draft" \
+      "❌ Close" \
       "🌐 Open in browser" \
-      "🔍 View CI checks" \
-      | FZF_MENU_HELP="$(_gh_help_file pr)" __fzf_menu "PR #${number}: ${pr_title}")
-
-    [[ -z "$action" ]] && break
-
+      | FZF_MENU_HELP="$_GH_D/help/prs" _gh_menu "PR #$num" \
+          --border-label=" 🔀 #$num  $title " \
+          --preview="bash '$_GH_W' pv-pr $num" "${_GH_PREVIEW[@]}")
+    [[ -z "$action" ]] && return 0
+    rm -f "$_GH_D/pr-$num.json"   # every action below may change the preview
     case "$action" in
-      *"View details"*)
-        gh pr view "$number"
-        echo ""
-        local key; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-        [[ "$key" == "r" || "$key" == "R" ]] && continue
-        ;;
-
-      *"Checkout"*)
-        gh pr checkout "$number"
-        echo "✅ Checked out PR #${number} locally"
-        ;;
-
-      *"View diff"*)
-        gh pr diff "$number" --color=always | less -R
-        ;;
-
-      *"View file changes"*)
-        _gpr_files "$number"
-        ;;
-
-      *"Add comment"*)
-        _gpr_comment "$number"
-        ;;
-
-      *"Approve"*)
-        local msg=""
-        read -rp "Approval message (optional, enter to skip): " msg
-        if [[ -n "$msg" ]]; then
-          gh pr review "$number" --approve --body "$msg"
-        else
-          gh pr review "$number" --approve
-        fi
-        echo "✅ PR #${number} approved"
-        ;;
-
+      *Checkout*)   _ghw_pr_checkout "$num" ;;
+      *Diff*)       gh pr diff "$num" --color=always | less -R ;;
+      *"Changed files"*) _ghw_pr_files "$num" ;;
+      *Comment*)    _ghw_pr_comment "$num" ;;
+      *Approve*)
+        local msg
+        msg=$(_gh_input "Approval message (optional):")
+        if [[ -n "$msg" ]]; then gh pr review "$num" --approve --body "$msg"
+        else gh pr review "$num" --approve; fi && { echo "  ✅ approved #$num"; sleep 1; } ;;
       *"Request changes"*)
-        echo "Enter feedback (opens editor if EDITOR is set, otherwise type below):"
-        local feedback
-        if [[ -n "${EDITOR:-}" ]]; then
-          local tmpfile
-          tmpfile=$(mktemp /tmp/pr-review-XXXXXX.md)
-          $EDITOR "$tmpfile"
-          feedback=$(cat "$tmpfile")
-          rm -f "$tmpfile"
-        else
-          echo "(Ctrl+D when done, Ctrl+C to cancel)"
-          feedback=$(cat)
+        local tmpfile
+        tmpfile=$(mktemp "${TMPDIR:-/tmp}/pr-review-XXXXXX.md")
+        ${EDITOR:-vi} "$tmpfile"
+        if [[ -s "$tmpfile" ]]; then
+          gh pr review "$num" --request-changes --body-file "$tmpfile" && { echo "  ✅ changes requested"; sleep 1; }
         fi
-        if [[ -n "$feedback" ]]; then
-          gh pr review "$number" --request-changes --body "$feedback"
-          echo "✅ Changes requested on PR #${number}"
-        fi
-        ;;
-
-      *"Manage labels"*)
-        _gpr_labels "$number"
-        ;;
-
-      *"Request reviewers"*)
-        _gpr_reviewers "$number"
-        ;;
-
+        rm -f "$tmpfile" ;;
+      *Labels*)     _ghw_pr_labels "$num" ;;
+      *Reviewers*)  _ghw_pr_reviewers "$num" ;;
       *"Edit title"*)
-        _gpr_edit "$number"
-        # The menu header shows the title, and it is fetched once above rather
-        # than on every render. This is the one action that can invalidate it.
-        pr_title=$(gh pr view "$number" --json title -q .title 2>/dev/null)
-        ;;
-
-      *"Merge"*)
-        _gpr_merge "$number"
-        ;;
-
-      *"Close PR"*)
-        read -rp "Close PR #${number}? (y/N): " confirm
-        if [[ "$confirm" =~ ^[yY]$ ]]; then
-          gh pr close "$number"
-          echo "✅ PR #${number} closed"
-        fi
-        ;;
-
-      *"Open in browser"*)
-        gh pr view "$number" --web
-        ;;
-
-      *"CI checks"*)
-        local checks
-        checks=$(gh pr checks "$number" 2>/dev/null)
-        if [[ -z "$checks" ]]; then
-          echo "  No checks found"
-          sleep 1
+        _ghw_pr_edit "$num"
+        title=$(gh pr view "$num" --json title -q .title 2>/dev/null) ;;
+      *Merge*)      _ghw_pr_merge "$num" ;;
+      *"Mark ready"*)
+        if [[ "$(gh pr view "$num" --json isDraft -q .isDraft)" == true ]]; then
+          gh pr ready "$num" && { echo "  ✅ marked ready for review"; sleep 1; }
         else
-          local pick
-          pick=$(echo "$checks" \
-            | fzf --ansi \
-                --header="CI for PR #${number}  │  enter=view logs  esc=back" \
-                --preview 'echo {}' --preview-window=right:50%:wrap)
-          if [[ -n "$pick" ]]; then
-            local check_url run_id check_name
-            check_url=$(echo "$pick" | awk '{print $NF}')
-            run_id=$(echo "$check_url" | sed -n 's|.*/runs/\([0-9]*\).*|\1|p')
-            check_name=$(echo "$pick" | awk '{print $1}')
-            if [[ -n "$run_id" ]]; then
-              _gha_action_menu "$run_id" "$check_name" "$check_url"
-            else
-              _open_url "$check_url"
-            fi
-          fi
-        fi
-        ;;
+          gh pr ready --undo "$num" && { echo "  ✅ converted to draft"; sleep 1; }
+        fi ;;
+      *Close*)
+        _gh_confirm "Close PR #$num without merging?" "Close it" "Keep it open" || continue
+        gh pr close "$num" && { echo "  ✅ closed #$num"; sleep 1; } ;;
+      *browser*)    gh pr view "$num" --web ;;
     esac
   done
 }
 
-# ─── Browse changed files in a PR ────────────────────────────────
-
-_gpr_files() {
-  local number="$1"
-
-  local file
-  file=$(gh pr diff "$number" --name-only 2>/dev/null \
-    | FZF_LIST_HINT='enter=view diff' __fzf_list "Changed files in PR #${number}" \
-        --preview "gh pr diff $number -- {} --color=always" \
-        --preview-window=right:60%:wrap)
-
-  if [[ -n "$file" ]]; then
-    gh pr diff "$number" -- "$file" --color=always | less -R
-  fi
+_ghw_pr_files() {
+  local num="$1"
+  gh pr diff "$num" --name-only 2>/dev/null \
+    | _gh_fzf prs --border-label=" 📊 files changed in #$num " \
+        --header="enter pages the diff for one file   esc back" \
+        --preview="gh pr diff $num -- {} --color=always" \
+        --bind="enter:execute(gh pr diff $num -- {} --color=always | less -R)" >/dev/null
+  return 0
 }
 
-# ─── Comment on a PR ─────────────────────────────────────────────
-
-_gpr_comment() {
-  local number="$1"
-
-  local method
-  method=$(printf '%s\n' "Type inline" "Open in editor" \
-    | __fzf_menu "How to write your comment?" \
-        --height=5)
-
-  [[ -z "$method" ]] && return
-
-  local body=""
-  case "$method" in
-    *"inline"*)
-      echo "Enter comment (Ctrl+D when done):"
-      body=$(cat)
-      ;;
-    *"editor"*)
-      local tmpfile
-      tmpfile=$(mktemp /tmp/pr-comment-XXXXXX.md)
-      ${EDITOR:-vi} "$tmpfile"
-      body=$(cat "$tmpfile")
-      rm -f "$tmpfile"
-      ;;
-  esac
-
-  if [[ -n "$body" ]]; then
-    gh pr comment "$number" --body "$body"
-    echo "✅ Comment added to PR #${number}"
-  fi
+_ghw_pr_comment() {
+  local num="$1" body="" tmpfile
+  tmpfile=$(mktemp "${TMPDIR:-/tmp}/pr-comment-XXXXXX.md")
+  ${EDITOR:-vi} "$tmpfile"
+  body=$(cat "$tmpfile"); rm -f "$tmpfile"
+  [[ -n "$body" ]] && gh pr comment "$num" --body "$body" && { echo "  ✅ comment added"; sleep 1; }
 }
 
-# ─── Merge a PR ──────────────────────────────────────────────────
-
-_gpr_merge() {
-  local number="$1"
-
+_ghw_pr_merge() {
+  local num="$1"
   local mergeable
-  mergeable=$(gh pr view "$number" --json mergeable -q .mergeable 2>/dev/null)
+  mergeable=$(gh pr view "$num" --json mergeable -q .mergeable 2>/dev/null)
   if [[ "$mergeable" == "CONFLICTING" ]]; then
-    echo "⚠️  PR has merge conflicts — resolve before merging"
-    return
+    echo ""; echo "  ⚠️  PR has merge conflicts — resolve before merging"; sleep 2; return
   fi
-
   local strategy
   strategy=$(printf '%s\n' \
-    "Squash and merge  (recommended: clean history)" \
-    "Merge commit      (preserves all commits)" \
-    "Rebase and merge  (linear history, no merge commit)" \
-    | __fzf_menu "Merge strategy for PR #${number}" \
-        --height=6)
-
+    "Squash and merge   (one commit, clean history)" \
+    "Merge commit       (keeps every commit)" \
+    "Rebase and merge   (linear, no merge commit)" \
+    | _gh_menu "Merge #$num" --border-label=" 🔀 merge strategy ")
   [[ -z "$strategy" ]] && return
-
   local flag
   case "$strategy" in
-    *Squash*)  flag="--squash" ;;
-    *commit*)  flag="--merge" ;;
-    *Rebase*)  flag="--rebase" ;;
+    Squash*) flag="--squash" ;;
+    Merge*)  flag="--merge" ;;
+    Rebase*) flag="--rebase" ;;
   esac
-
-  local delete_flag=""
-  read -rp "Delete branch after merge? (Y/n): " del
-  [[ ! "$del" =~ ^[nN]$ ]] && delete_flag="--delete-branch"
-
-  gh pr merge "$number" $flag $delete_flag \
-    && echo "✅ PR #${number} merged" \
-    || echo "❌ Merge failed — check requirements"
-}
-
-# ─── Labels ───────────────────────────────────────────────────────
-
-_gpr_labels() {
-  local number="$1"
-
-  local current
-  current=$(gh pr view "$number" --json labels --jq '.labels[].name' 2>/dev/null)
-  echo "Current labels: ${current:-none}"
+  local del=""
+  _gh_confirm "Delete the branch after merging?" "Delete branch" "Keep branch" && del="--delete-branch"
   echo ""
+  # shellcheck disable=SC2086  # $del is a flag or empty
+  gh pr merge "$num" "$flag" $del \
+    && echo "  ✅ merged #$num" || echo "  ❌ merge failed — check requirements"
+  sleep 1.5
+}
 
-  local action
-  action=$(printf '%s\n' "Add label" "Remove label" \
-    | __fzf_menu "Labels for PR #${number}" \
-        --height=5)
-
+_ghw_pr_labels() {
+  local num="$1" current action
+  current=$(gh pr view "$num" --json labels --jq '.labels[].name' 2>/dev/null)
+  action=$(printf '%s\n' "Add labels" "Remove labels" \
+    | _gh_menu "Labels on #$num: ${current:-none}" --border-label=" 🏷  labels ")
   [[ -z "$action" ]] && return
-
+  local pick joined
   case "$action" in
-    "Add label")
-      local available
-      available=$(gh label list --json name --jq '.[].name' 2>/dev/null)
-      if [[ -z "$available" ]]; then
-        echo "No labels in this repo. Create them on GitHub first."
-        return
-      fi
-      local labels
-      labels=$(echo "$available" \
-        | fzf --multi --header="Select labels (TAB toggle, ENTER confirm)  │  esc=back")
-      if [[ -n "$labels" ]]; then
-        local joined
-        joined=$(echo "$labels" | paste -sd,)
-        gh pr edit "$number" --add-label "$joined" && echo "✅ Added: $joined"
-      fi
-      ;;
-    "Remove label")
-      if [[ -z "$current" ]]; then
-        echo "No labels to remove"
-        return
-      fi
-      local labels
-      labels=$(echo "$current" \
-        | fzf --multi --header="Select labels to remove (TAB toggle, ENTER confirm)  │  esc=back")
-      if [[ -n "$labels" ]]; then
-        local joined
-        joined=$(echo "$labels" | paste -sd,)
-        gh pr edit "$number" --remove-label "$joined" && echo "✅ Removed: $joined"
-      fi
-      ;;
+    "Add labels")
+      pick=$(gh label list --json name --jq '.[].name' 2>/dev/null \
+        | _gh_fzf prs --multi --border-label=" 🏷  add labels " \
+            --header="tab toggles   enter applies   esc back")
+      [[ -z "$pick" ]] && return
+      joined=$(printf '%s\n' "$pick" | paste -sd,)
+      gh pr edit "$num" --add-label "$joined" && { echo "  ✅ added: $joined"; sleep 1; } ;;
+    "Remove labels")
+      [[ -z "$current" ]] && return
+      pick=$(printf '%s\n' "$current" \
+        | _gh_fzf prs --multi --border-label=" 🏷  remove labels " \
+            --header="tab toggles   enter applies   esc back")
+      [[ -z "$pick" ]] && return
+      joined=$(printf '%s\n' "$pick" | paste -sd,)
+      gh pr edit "$num" --remove-label "$joined" && { echo "  ✅ removed: $joined"; sleep 1; } ;;
   esac
 }
 
-# ─── Reviewers ────────────────────────────────────────────────────
-
-_gpr_reviewers() {
-  local number="$1"
-  local repo
-  repo=$(__gh_repo)
-
-  local collabs
-  collabs=$(gh api "repos/$repo/collaborators" --jq '.[].login' 2>/dev/null)
-
+_ghw_pr_reviewers() {
+  local num="$1" collabs pick joined
+  collabs=$(gh api "repos/$R/collaborators" --jq '.[].login' 2>/dev/null)
   if [[ -n "$collabs" ]]; then
-    local reviewers
-    reviewers=$(echo "$collabs" \
-      | fzf --multi --header="Select reviewers (TAB toggle, ENTER confirm)  │  esc=back")
-    if [[ -n "$reviewers" ]]; then
-      local joined
-      joined=$(echo "$reviewers" | paste -sd,)
-      gh pr edit "$number" --add-reviewer "$joined" \
-        && echo "✅ Reviewers requested: $joined"
-    fi
+    pick=$(printf '%s\n' "$collabs" \
+      | _gh_fzf prs --multi --border-label=" 👤 request reviewers " \
+          --header="tab toggles   enter requests   esc back")
   else
-    read -rp "Reviewer username(s), comma-separated: " reviewer
-    [[ -n "$reviewer" ]] && gh pr edit "$number" --add-reviewer "$reviewer" \
-      && echo "✅ Reviewer requested: $reviewer"
+    pick=$(_gh_input "Reviewer username(s), comma-separated:")
   fi
+  [[ -z "$pick" ]] && return
+  joined=$(printf '%s\n' "$pick" | paste -sd,)
+  gh pr edit "$num" --add-reviewer "$joined" && { echo "  ✅ requested: $joined"; sleep 1; }
 }
 
-# ─── Edit PR title/body ──────────────────────────────────────────
-
-_gpr_edit() {
-  local number="$1"
-
-  local field
+_ghw_pr_edit() {
+  local num="$1" field
   field=$(printf '%s\n' "Title" "Body (description)" \
-    | __fzf_menu "Edit PR #${number}" \
-        --height=5)
-
+    | _gh_menu "Edit #$num" --border-label=" ✏  edit ")
   [[ -z "$field" ]] && return
-
   case "$field" in
-    "Title")
-      local current
-      current=$(gh pr view "$number" --json title -q .title)
-      read -rp "New title [$current]: " new_title
-      new_title="${new_title:-$current}"
-      gh pr edit "$number" --title "$new_title"
-      echo "✅ Title updated"
-      ;;
-    *"Body"*)
+    Title)
+      local current new
+      current=$(gh pr view "$num" --json title -q .title)
+      new=$(_gh_input "Title:" "$current")
+      [[ -n "$new" && "$new" != "$current" ]] && gh pr edit "$num" --title "$new" && { echo "  ✅ title updated"; sleep 1; } ;;
+    *Body*)
       local tmpfile
-      tmpfile=$(mktemp /tmp/pr-body-XXXXXX.md)
-      gh pr view "$number" --json body -q .body > "$tmpfile"
+      tmpfile=$(mktemp "${TMPDIR:-/tmp}/pr-body-XXXXXX.md")
+      gh pr view "$num" --json body -q .body > "$tmpfile"
       ${EDITOR:-vi} "$tmpfile"
-      gh pr edit "$number" --body-file "$tmpfile"
-      rm -f "$tmpfile"
-      echo "✅ Description updated"
-      ;;
+      gh pr edit "$num" --body-file "$tmpfile" && { echo "  ✅ description updated"; sleep 1; }
+      rm -f "$tmpfile" ;;
   esac
 }
 
+# ── branches ──
 
-# ─────────────────────────────────────────────────────────────────
-#  _ghsecrets — Repository & Environment Secrets
-# ─────────────────────────────────────────────────────────────────
+_ghw_branch_checkout() {
+  local name="$1"
+  [[ -z "$name" || "$name" == none ]] && return 0
+  echo ""
+  git checkout "$name" 2>&1 && echo "  ✅ on $name" || echo "  ❌ checkout failed"
+  sleep 1.2
+}
 
-_ghsecrets() {
-  __gh_check || return 1
+_ghw_branch_delete() {
+  local name="$1" isdef="$2"
+  [[ -z "$name" || "$name" == none ]] && return 0
+  if (( isdef )); then echo ""; echo "  ❌ that is the default branch"; sleep 1.5; return; fi
+  _gh_confirm "Delete remote branch '$name'?" "Delete it" "Keep it" || return 0
+  echo ""
+  git push origin --delete "$name" 2>&1 && echo "  ✅ deleted origin/$name" || echo "  ❌ delete failed"
+  sleep 1.5
+}
 
-  local action
+_ghw_branch_menu() {
+  local name="$1" protected="$2" isdef="$3" iscur="$4" action
+  [[ -z "$name" || "$name" == none ]] && return 0
   while true; do
     action=$(printf '%s\n' \
-      "🔑 List repo secrets" \
-      "➕ Set repo secret" \
-      "🗑  Delete repo secret" \
-      "─────────────────────────────" \
-      "🌍 List environment secrets" \
-      "➕ Set environment secret" \
-      "🗑  Delete environment secret" \
-      | FZF_MENU_HELP="$(_gh_help_file secrets)" \
-          __fzf_menu "Secrets Management (values are write-only)" \
-          --height=10)
-
-    [[ -z "$action" || "$action" == *"───"* ]] && break
-
+      "📥 Checkout" \
+      "🛡  Effective rules" \
+      "📜 Rulesets" \
+      "⭐ Set as default branch" \
+      "🗑  Delete remote branch" \
+      "⚠️  Legacy classic protection" \
+      "🌐 Open in browser" \
+      | FZF_MENU_HELP="$_GH_D/help/branches" _gh_menu "$name" \
+          --border-label=" 🌿 $name " \
+          --preview="bash '$_GH_W' pv-branch '$name' '$protected' '$isdef' '$iscur'" "${_GH_PREVIEW[@]}")
+    [[ -z "$action" ]] && return 0
     case "$action" in
-      *"List repo secrets"*)
-        while true; do
-          echo ""
-          echo "━━━ Repository Secrets ━━━"
-          echo ""
-          gh secret list 2>/dev/null || echo "  (none)"
-          echo ""
-          echo "  ℹ  Values are hidden by design — only names and last updated shown"
-          local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-          [[ "$key" == "r" || "$key" == "R" ]] || break
-        done
-        ;;
-
-      *"Set repo secret"*)
-        read -rp "Secret name (e.g. API_KEY): " name
-        if [[ -n "$name" ]]; then
-          name=$(echo "$name" | tr '[:lower:]' '[:upper:]')
-          echo "Paste the value (input is hidden):"
-          gh secret set "$name"
-          echo "✅ Secret '$name' saved"
-        fi
-        ;;
-
-      *"Delete repo secret"*)
-        local secrets
-        secrets=$(gh secret list --json name --jq '.[].name' 2>/dev/null)
-        if [[ -z "$secrets" ]]; then
-          echo "No repo secrets found."
-          sleep 1
-          continue
-        fi
-        local secret
-        secret=$(echo "$secrets" \
-          | __fzf_list "Select secret to delete")
-        if [[ -n "$secret" ]]; then
-          read -rp "Delete '$secret'? This cannot be undone. (y/N): " confirm
-          [[ "$confirm" =~ ^[yY]$ ]] && gh secret delete "$secret" && echo "✅ Deleted: $secret"
-        fi
-        ;;
-
-      *"List environment secrets"*)
-        local env
-        env=$(_ghenv_pick "Select environment to view secrets")
-        [[ -z "$env" ]] && continue
-        while true; do
-          echo ""
-          echo "━━━ Secrets for environment: $env ━━━"
-          echo ""
-          gh secret list --env "$env" 2>/dev/null || echo "  (none)"
-          local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-          [[ "$key" == "r" || "$key" == "R" ]] || break
-        done
-        ;;
-
-      *"Set environment secret"*)
-        local env
-        env=$(_ghenv_pick "Select environment")
-        [[ -z "$env" ]] && continue
-        read -rp "Secret name: " name
-        if [[ -n "$name" ]]; then
-          name=$(echo "$name" | tr '[:lower:]' '[:upper:]')
-          echo "Paste the value (input is hidden):"
-          gh secret set "$name" --env "$env"
-          echo "✅ Secret '$name' saved to environment '$env'"
-        fi
-        ;;
-
-      *"Delete environment secret"*)
-        local env
-        env=$(_ghenv_pick "Select environment")
-        [[ -z "$env" ]] && continue
-        local secrets
-        secrets=$(gh secret list --env "$env" --json name --jq '.[].name' 2>/dev/null)
-        if [[ -z "$secrets" ]]; then
-          echo "No secrets in environment '$env'."
-          sleep 1
-          continue
-        fi
-        local secret
-        secret=$(echo "$secrets" \
-          | __fzf_list "Select secret to delete from '$env'")
-        if [[ -n "$secret" ]]; then
-          read -rp "Delete '$secret' from '$env'? (y/N): " confirm
-          [[ "$confirm" =~ ^[yY]$ ]] && gh secret delete "$secret" --env "$env" \
-            && echo "✅ Deleted: $secret from $env"
-        fi
-        ;;
+      *Checkout*)  _ghw_branch_checkout "$name"; iscur=1 ;;
+      *"Effective rules"*)
+        echo ""; echo "━━━ Effective rules: $name ━━━"; echo ""
+        _ghbranch_effective "$R" "$name"; _gh_pause ;;
+      *Rulesets*)  _ghbranch_rulesets "$R" ;;
+      *default*)
+        _gh_confirm "Make '$name' the default branch?" "Yes, set default" "No" || continue
+        gh repo edit --default-branch "$name" 2>/dev/null \
+          && { echo "  ✅ default branch is now $name"; isdef=1; } || echo "  ❌ failed — needs admin"
+        sleep 1.5 ;;
+      *Delete*)    _ghw_branch_delete "$name" "$isdef"; return 0 ;;
+      *Legacy*)    _ghbranch_legacy "$R" "$name" ;;
+      *browser*)   _ghw_open_branch "$name" ;;
     esac
   done
 }
 
+_ghw_rulesets() { _ghbranch_rulesets "$R"; }
 
-# ─────────────────────────────────────────────────────────────────
-#  _ghenv — Environment Management
-# ─────────────────────────────────────────────────────────────────
+# ── secrets ──
 
-# Shared picker used by _ghsecrets too
-_ghenv_pick() {
-  local header="${1:-Select environment}"
-  local repo
-  repo=$(__gh_repo)
-  local envs
-  envs=$(gh api "repos/$repo/environments" --jq '.environments[].name' 2>/dev/null)
-  if [[ -z "$envs" ]]; then
-    echo "No environments found. Use _ghenv to create one." >&2
-    return 1
+# Set (or replace) a secret. With arguments it pre-fills scope and name —
+# enter on an existing secret is "set it again", which is the only way to
+# change one. The value goes straight to `gh secret set`, which reads it
+# hidden from the tty; it never passes through a variable here.
+_ghw_secret_set() {
+  local scope="${1:-}" env="${2:-}" name="${3:-}"
+  [[ "$scope" == none ]] && scope=""
+  if [[ -z "$scope" ]]; then
+    local pick
+    pick=$(printf '%s\n' "🔑 Repository secret" "🌍 Environment secret" \
+      | _gh_menu "Where does it live?" --border-label=" 🔑 new secret ")
+    [[ -z "$pick" ]] && return 0
+    case "$pick" in *Repository*) scope="repo" ;; *) scope="env" ;; esac
   fi
-  echo "$envs" | __fzf_list "$header" --height=10
+  if [[ "$scope" == env && -z "$env" ]]; then
+    env=$(gh api "repos/$R/environments" --jq '.environments[].name' 2>/dev/null \
+      | _gh_fzf envs --border-label=" 🌍 which environment? " --header="enter select   esc back")
+    [[ -z "$env" ]] && return 0
+  fi
+  if [[ -z "$name" ]]; then
+    name=$(_gh_input "Secret name:")
+    [[ -z "$name" ]] && return 0
+  fi
+  name=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+  echo ""
+  echo "  🔑 $name${env:+  (environment: $env)}"
+  echo "  Paste the value — input is hidden, enter to save:"
+  if [[ "$scope" == env ]]; then gh secret set "$name" --env "$env"; else gh secret set "$name"; fi \
+    && echo "  ✅ saved $name" || echo "  ❌ not saved"
+  sleep 1.2
 }
 
-_ghenv() {
-  __gh_check || return 1
+_ghw_secret_delete() {
+  local scope="$1" env="$2" name="$3"
+  [[ "$scope" == none || -z "$name" ]] && return 0
+  _gh_confirm "Delete secret $name${env:+ from $env}? This cannot be undone." "Delete it" "Keep it" || return 0
+  echo ""
+  if [[ "$scope" == env ]]; then gh secret delete "$name" --env "$env"; else gh secret delete "$name"; fi \
+    && echo "  ✅ deleted $name" || echo "  ❌ delete failed"
+  sleep 1.2
+}
 
-  local repo
-  repo=$(__gh_repo)
+# ── environments ──
 
-  local action
+_ghw_env_create() {
+  local name
+  name=$(_gh_input "Environment name:")
+  [[ -z "$name" ]] && return 0
+  echo ""
+  gh api -X PUT "repos/$R/environments/$name" --silent 2>/dev/null \
+    && echo "  ✅ created $name" || echo "  ❌ failed — needs admin"
+  sleep 1.2
+}
+
+_ghw_env_delete() {
+  local name="$1"
+  [[ -z "$name" || "$name" == none ]] && return 0
+  _gh_confirm "Delete environment '$name' and every secret in it?" "Delete it" "Keep it" || return 0
+  echo ""
+  gh api -X DELETE "repos/$R/environments/$name" --silent 2>/dev/null \
+    && echo "  ✅ deleted $name" || echo "  ❌ failed — needs admin"
+  sleep 1.2
+}
+
+_ghw_env_menu() {
+  local name="$1" action
+  [[ -z "$name" || "$name" == none ]] && return 0
   while true; do
     action=$(printf '%s\n' \
-      "📋 List environments" \
-      "🔍 View environment details" \
-      "➕ Create environment" \
       "⏱  Set wait timer" \
       "👤 Set required reviewers" \
+      "🔑 Set a secret here" \
       "🗑  Delete environment" \
-      | FZF_MENU_HELP="$(_gh_help_file env)" \
-          __fzf_menu "Environment Management — $repo" \
-          --height=9)
-
-    [[ -z "$action" ]] && break
-
+      "🌐 Open in browser" \
+      | FZF_MENU_HELP="$_GH_D/help/envs" _gh_menu "$name" \
+          --border-label=" 🌍 $name " \
+          --preview="bash '$_GH_W' pv-env '$name'" "${_GH_PREVIEW[@]}")
+    [[ -z "$action" ]] && return 0
+    rm -f "$_GH_D/env-$name.json"
     case "$action" in
-      *"List environments"*)
-        while true; do
-          echo ""
-          echo "━━━ Environments ━━━"
-          echo ""
-          gh api "repos/$repo/environments" \
-            --jq '.environments[] | "  \(.name)   created: \(.created_at[:10])"' 2>/dev/null \
-            || echo "  No environments configured"
-          local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-          [[ "$key" == "r" || "$key" == "R" ]] || break
-        done
-        ;;
-
-      *"View environment details"*)
-        local env
-        env=$(_ghenv_pick "View details for which environment?")
-        [[ -z "$env" ]] && continue
-        while true; do
-          echo ""
-          echo "━━━ Environment: $env ━━━"
-          echo ""
-          echo "Protection rules:"
-          gh api "repos/$repo/environments/$env" \
-            --jq '
-              if (.protection_rules | length) == 0 then "  (none)"
-              else .protection_rules[] |
-                if .type == "wait_timer" then "  ⏱  Wait timer: \(.wait_timer) minutes"
-                elif .type == "required_reviewers" then "  👤 Required reviewers: \([.reviewers[].reviewer.login] | join(", "))"
-                else "  \(.type)"
-                end
-              end' 2>/dev/null || echo "  (none)"
-          echo ""
-          echo "Secrets:"
-          gh secret list --env "$env" 2>/dev/null | sed 's/^/  /' || echo "  (none)"
-          local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-          [[ "$key" == "r" || "$key" == "R" ]] || break
-        done
-        ;;
-
-      *"Create environment"*)
-        read -rp "Environment name: " name
-        if [[ -n "$name" ]]; then
-          gh api -X PUT "repos/$repo/environments/$name" --silent 2>/dev/null \
-            && echo "✅ Environment '$name' created" \
-            || echo "❌ Failed — check permissions"
-        fi
-        ;;
-
-      *"Set wait timer"*)
-        local env
-        env=$(_ghenv_pick "Set wait timer for which environment?")
-        [[ -z "$env" ]] && continue
-        read -rp "Wait time in minutes (0-43200, 0 to disable): " minutes
+      *"wait timer"*)
+        local minutes
+        minutes=$(_gh_input "Wait before deploying, in minutes (0 disables):")
         if [[ "$minutes" =~ ^[0-9]+$ ]]; then
-          gh api -X PUT "repos/$repo/environments/$env" \
-            --input <(jq -n --argjson m "$minutes" \
-              '{wait_timer: $m}') --silent 2>/dev/null \
-            && echo "✅ Wait timer set to ${minutes}m for '$env'" \
-            || echo "❌ Failed — check permissions"
-        fi
-        ;;
-
-      *"Set required reviewers"*)
-        local env
-        env=$(_ghenv_pick "Set reviewers for which environment?")
-        [[ -z "$env" ]] && continue
-
-        local collabs
-        collabs=$(gh api "repos/$repo/collaborators" --jq '.[].login' 2>/dev/null)
-
-        local reviewer
+          gh api -X PUT "repos/$R/environments/$name" \
+            --input <(jq -n --argjson m "$minutes" '{wait_timer: $m}') --silent 2>/dev/null \
+            && echo "  ✅ wait timer: ${minutes}m" || echo "  ❌ failed — needs admin"
+          sleep 1.2
+        fi ;;
+      *reviewers*)
+        local collabs reviewer uid
+        collabs=$(gh api "repos/$R/collaborators" --jq '.[].login' 2>/dev/null)
         if [[ -n "$collabs" ]]; then
-          reviewer=$(echo "$collabs" \
-            | __fzf_list "Select reviewer")
+          reviewer=$(printf '%s\n' "$collabs" \
+            | _gh_fzf envs --border-label=" 👤 required reviewer " --header="enter select   esc back")
         fi
-        if [[ -z "$reviewer" ]]; then
-          read -rp "Reviewer username: " reviewer
+        [[ -z "$reviewer" ]] && reviewer=$(_gh_input "Reviewer username:")
+        [[ -z "$reviewer" ]] && continue
+        uid=$(gh api "users/$reviewer" --jq '.id' 2>/dev/null)
+        if [[ -n "$uid" ]]; then
+          gh api -X PUT "repos/$R/environments/$name" \
+            --input <(jq -n --argjson uid "$uid" '{reviewers: [{type: "User", id: $uid}]}') --silent 2>/dev/null \
+            && echo "  ✅ reviewer: $reviewer" || echo "  ❌ failed — needs admin"
+        else
+          echo "  ❌ no GitHub user '$reviewer'"
         fi
-
-        if [[ -n "$reviewer" ]]; then
-          local user_id
-          user_id=$(gh api "users/$reviewer" --jq '.id' 2>/dev/null)
-          if [[ -n "$user_id" ]]; then
-            gh api -X PUT "repos/$repo/environments/$env" \
-              --input <(jq -n --argjson uid "$user_id" \
-                '{reviewers: [{type: "User", id: $uid}]}') --silent 2>/dev/null \
-              && echo "✅ Reviewer '$reviewer' set for '$env'" \
-              || echo "❌ Failed — check permissions"
-          else
-            echo "❌ User '$reviewer' not found on GitHub"
-          fi
-        fi
-        ;;
-
-      *"Delete environment"*)
-        local env
-        env=$(_ghenv_pick "Delete which environment?")
-        [[ -z "$env" ]] && continue
-        read -rp "⚠️  Delete environment '$env'? This removes all its secrets too. (y/N): " confirm
-        if [[ "$confirm" =~ ^[yY]$ ]]; then
-          gh api -X DELETE "repos/$repo/environments/$env" --silent 2>/dev/null \
-            && echo "✅ Environment '$env' deleted" \
-            || echo "❌ Failed — check permissions"
-        fi
-        ;;
+        sleep 1.2 ;;
+      *secret*)    _ghw_secret_set env "$name" ;;
+      *Delete*)    _ghw_env_delete "$name"; return 0 ;;
+      *browser*)   _ghw_open_settings "environments" ;;
     esac
   done
 }
 
-# ─────────────────────────────────────────────────────────────────
-#  _ghbranch — Branches & Rulesets
-# ─────────────────────────────────────────────────────────────────
+# ── hub ──
+
+_ghw_hub_refresh() {
+  rm -f "$D"/hub.prs "$D"/hub.ci "$D"/hub.branches "$D"/hub.secrets "$D"/hub.envs
+  ( _ghw_hub_prefetch "$D/hub.port" ) >/dev/null 2>&1 </dev/null &
+}
+
+_ghw_screen() {
+  case "$1" in
+    *Actions*)      _gh_screen_actions ;;
+    *Pull*)         _gh_screen_prs ;;
+    *Branches*)     _gh_screen_branches ;;
+    *Secrets*)      _gh_screen_secrets ;;
+    *Environments*) _gh_screen_envs ;;
+  esac
+}
+
+# ─── Rulesets ──────────────────────────────────────────────────────
 #
 # Rulesets, not classic branch protection.
 #
@@ -1598,99 +2174,9 @@ _ghenv() {
 #
 # Classic protection is still reachable under "Legacy" for migrating a repo off
 # it. It is deliberately read-and-delete only — nothing here creates one.
-
-_ghbranch() {
-  __gh_check || return 1
-
-  local repo
-  repo=$(__gh_repo)
-
-  local action
-  while true; do
-    action=$(printf '%s\n' \
-      "📋 List branches (with rule status)" \
-      "🛡  View effective rules for a branch" \
-      "📜 Manage rulesets" \
-      "🗑  Delete remote branch" \
-      "⭐ Set default branch" \
-      "⚠️  Legacy classic protection" \
-      | FZF_MENU_HELP="$(_gh_help_file branch)" \
-          __fzf_menu "Branches & Rulesets — $repo" \
-          --height=9)
-
-    [[ -z "$action" ]] && break
-
-    case "$action" in
-      *"List branches"*)
-        while true; do
-          echo ""
-          echo "━━━ Branches ━━━"
-          echo ""
-          # `.protected` is true when ANY rule covers the branch — ruleset or
-          # classic. It doesn't say which, which is why the next screen exists.
-          gh api "repos/$repo/branches" --paginate \
-            --jq '.[] | "  \(if .protected then "🛡 " else "   " end)\(.name)"' \
-            2>/dev/null || echo "  Failed to fetch branches"
-          echo ""
-          echo "  🛡  = covered by at least one rule (ruleset or classic)"
-          local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-          [[ "$key" == "r" || "$key" == "R" ]] || break
-        done
-        ;;
-
-      *"View effective rules"*)
-        local branch
-        branch=$(_gh_pick_branch "Effective rules for which branch?")
-        [[ -z "$branch" ]] && continue
-        while true; do
-          echo ""
-          echo "━━━ Effective rules: $branch ━━━"
-          echo ""
-          _ghbranch_effective "$repo" "$branch"
-          local key; echo ""; read -rsn1 -p "  r=refresh  -/q=back " key; echo ""
-          [[ "$key" == "r" || "$key" == "R" ]] || break
-        done
-        ;;
-
-      *"Manage rulesets"*)
-        _ghbranch_rulesets "$repo"
-        ;;
-
-      *"Delete remote"*)
-        local default_branch branch
-        default_branch=$(__gh_default_branch)
-        branch=$(_gh_pick_branch "Delete which remote branch?")
-        [[ -z "$branch" ]] && continue
-        if [[ "$branch" == "$default_branch" ]]; then
-          echo "❌ Cannot delete the default branch ('$default_branch')"
-          sleep 1; _ghbranch; return
-        fi
-        read -rp "Delete remote branch '$branch'? (y/N): " confirm
-        if [[ "$confirm" =~ ^[yY]$ ]]; then
-          git push origin --delete "$branch" 2>/dev/null \
-            && echo "✅ Remote branch '$branch' deleted" \
-            || echo "❌ Failed to delete '$branch'"
-        fi
-        ;;
-
-      *"Set default"*)
-        local branch
-        branch=$(_gh_pick_branch "Set which branch as default?")
-        [[ -z "$branch" ]] && continue
-        read -rp "Set '$branch' as default branch? (y/N): " confirm
-        if [[ "$confirm" =~ ^[yY]$ ]]; then
-          gh repo edit --default-branch "$branch" 2>/dev/null \
-            && echo "✅ Default branch set to '$branch'" \
-            || echo "❌ Failed — check permissions"
-        fi
-        ;;
-
-      *"Legacy"*)
-        _ghbranch_legacy "$repo"
-        ;;
-    esac
-  done
-}
+#
+# These are reached from the Branches screen (ctrl-s, or a branch's menu) and
+# so run in the worker like everything else there.
 
 # ─── Effective rules for a branch ─────────────────────────────────
 #
@@ -1751,15 +2237,14 @@ _ghbranch_rulesets() {
       echo "  Create one in the UI (/settings/rules) — authoring a ruleset from"
       echo "  scratch needs more structure than a picker can offer honestly."
       echo ""
-      read -rsn1 -p "  any key to go back " _; echo ""
+      _gh_pause
       return
     fi
 
     local pick
     pick=$(printf '%s\n' "$list" \
       | awk -F'\t' '{printf "%-10s %-9s %s\n", $1, $2, $3}' \
-      | __fzf_menu "Rulesets — $repo  │  id  enforcement  name" \
-          --height=12)
+      | _gh_menu "Rulesets — $repo   id  enforcement  name" --border-label=" 📜 rulesets ")
     [[ -z "$pick" ]] && return
 
     local id
@@ -1789,8 +2274,7 @@ _ghbranch_ruleset_menu() {
       "🔀 Require branches up to date: $strict" \
       "✅ Required checks: $nchecks" \
       "🪪 Bypass mode: $bypass" \
-      | __fzf_menu "$name (id $id) — $repo" \
-          --height=8)
+      | _gh_menu "$name (id $id) — $repo" --border-label=" 📜 ruleset $id ")
     [[ -z "$action" ]] && return
 
     case "$action" in
@@ -1800,14 +2284,13 @@ _ghbranch_ruleset_menu() {
           | jq '{name, enforcement, conditions, bypass_actors,
                  rules: [.rules[] | {type, parameters}]}' 2>/dev/null
         echo ""
-        read -rsn1 -p "  any key to go back " _; echo ""
+        _gh_pause
         ;;
 
       *"Enforcement"*)
         local mode
         mode=$(printf '%s\n' active evaluate disabled \
-          | __fzf_menu "Enforcement  │  evaluate = report without blocking" \
-              --height=6)
+          | _gh_menu "Enforcement — evaluate = report without blocking" --border-label=" 📜 enforcement ")
         [[ -z "$mode" ]] && continue
         _ghbranch_ruleset_apply "$repo" "$id" ".enforcement = \"$mode\"" "enforcement → $mode"
         ;;
@@ -1839,8 +2322,7 @@ _ghbranch_ruleset_menu() {
         fi
         local mode
         mode=$(printf '%s\n' pull_request always \
-          | __fzf_menu "Bypass mode  │  pull_request = no direct pushes" \
-              --height=6)
+          | _gh_menu "Bypass mode — pull_request = no direct pushes" --border-label=" 📜 bypass ")
         [[ -z "$mode" ]] && continue
         _ghbranch_ruleset_apply "$repo" "$id" \
           "(.bypass_actors[].bypass_mode) |= \"$mode\"" "bypass mode → $mode"
@@ -1911,13 +2393,13 @@ _ghbranch_checks() {
     echo ""
     local act
     act=$(printf '%s\n' "➕ Require a check CI reports" "➖ Stop requiring a check" "↩  Back" \
-      | __fzf_menu "Required checks — ruleset $id" --height=6)
+      | _gh_menu "Required checks — ruleset $id" --border-label=" ✅ required checks ")
     case "$act" in
       *"Require a check"*)
         [[ -z "$available" ]] && { echo "  No run to pick from."; sleep 2; continue; }
         local add
         add=$(printf '%s\n' "$available" | sort -u \
-          | __fzf_list "Add which check?" --height=15)
+          | _gh_fzf branches --border-label=" ✅ require which check? " --header="enter select   esc back")
         [[ -z "$add" ]] && continue
         _ghbranch_ruleset_apply "$repo" "$id" \
           "(.rules[] | select(.type==\"required_status_checks\") | .parameters.required_status_checks) += [{\"context\": \"$add\"}]" \
@@ -1927,7 +2409,7 @@ _ghbranch_checks() {
         [[ -z "$current" ]] && { echo "  Nothing required."; sleep 2; continue; }
         local del
         del=$(printf '%s\n' "$current" \
-          | __fzf_list "Remove which check?" --height=15)
+          | _gh_fzf branches --border-label=" ➖ stop requiring which check? " --header="enter select   esc back")
         [[ -z "$del" ]] && continue
         _ghbranch_ruleset_apply "$repo" "$id" \
           "(.rules[] | select(.type==\"required_status_checks\") | .parameters.required_status_checks) |= map(select(.context != \"$del\"))" \
@@ -1974,10 +2456,9 @@ _ghbranch_ruleset_apply() {
 # taking this.
 
 _ghbranch_legacy() {
-  local repo="$1"
-
-  local branch
-  branch=$(_gh_pick_branch "Inspect classic protection on which branch?")
+  local repo="$1" branch="${2:-}"
+  [[ -z "$branch" ]] && branch=$(git branch -r 2>/dev/null | sed 's|origin/||; s|^[[:space:]]*||' \
+    | grep -v '^HEAD' | sort -u | _gh_fzf branches --border-label=" ⚠  classic protection on which branch? " --header="enter select   esc back")
   [[ -z "$branch" ]] && return
 
   echo ""
@@ -1989,7 +2470,7 @@ _ghbranch_legacy() {
     echo "  None. (404 here is normal — it does NOT mean the branch is unprotected."
     echo "   Use 'View effective rules' for the ruleset answer.)"
     echo ""
-    read -rsn1 -p "  any key to go back " _; echo ""
+    _gh_pause
     return
   fi
 

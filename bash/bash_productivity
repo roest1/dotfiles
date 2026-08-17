@@ -814,7 +814,8 @@ h() {
     gprune             Fetch + delete branches with gone remotes
 
   GitHub TUI                                              [gh, fzf, jq]
-    gh-tui             All of GitHub in a TUI  (? in any screen for help)
+    gh-tui             The repo on GitHub, live: actions · PRs · branches ·
+                       secrets · environments  (ctrl-/ or ? for help)
 
   GitHub Actions (one-shot, no TUI)                        [gh, jq]
     gha                Workflow status for HEAD
@@ -1167,8 +1168,11 @@ HELP
       cat <<'HELP'
 GitHub — one TUI, plus one one-shot
 
-  gh-tui      Everything GitHub, in one interactive hub
-              Pull Requests · CI/Actions · Secrets · Environments · Branches
+  gh-tui      The current repo on GitHub, in one TUI: Actions, Pull
+              Requests, Branches, Secrets, Environments. Every screen is a
+              list with a live preview — hover a workflow run and its jobs
+              appear with only the failed steps expanded, log tail inline;
+              a running one refreshes under the cursor by itself.
 
   gha         Workflow status for HEAD — a bordered table of every
               check with its status and how long it took, plus a
@@ -1192,12 +1196,17 @@ GitHub — one TUI, plus one one-shot
   described. It now sits next to what it documents.
 
   Navigation, everywhere:
-    Menus:  ↑↓ nav   enter select   -/q back   ? help
-    Lists:  type to filter   enter select   esc back
-    Pagers: r refresh   -/q back
+    Lists:  type to filter   enter select   esc back   ctrl-r refresh
+            ctrl-o browser   ctrl-/ help   (the footer lists the rest)
+    Menus:  ↑↓ / jk   enter select   -/q back   ? help
+    Preview: shift-↑↓ · alt-j/k scroll   alt-p hide/show
 
-  The hub prefetches its preview panes once per session; press r to
-  refresh them.
+  Back is back: a screen opens inside the one below it, so esc returns to
+  the row you left, filter and all. The hub's panes fill in behind the
+  menu as they load; r refetches them.
+
+  Needs fzf ≥ 0.65 (deps.conf installs it through mise for that reason);
+  the shell's other fzf uses don't care.
 
   Your prompt also shows CI status on the right:
     [5/5 ✅ 1d]  5 of 5 passed, last run a day ago

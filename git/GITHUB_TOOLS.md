@@ -1,187 +1,205 @@
 # GitHub Terminal Tools
 
-Interactive GitHub management from the terminal — no browser needed for most workflows.
+The current repo on GitHub, from the terminal — one TUI for the things you'd
+otherwise open a browser tab for.
 
-> **One command: `gh-tui`.** (`gh-ui` is an alias for it.)
+> **One command: `gh-tui`.**
 
-| Command     | What it does                                      |
-| ----------- | ------------------------------------------------- |
-| `gh-tui`    | **The hub** → every screen below, with preview    |
-| `gha`       | HEAD's checks as a table, names linked to their jobs |
+| Command  | What it does                                                          |
+| -------- | --------------------------------------------------------------------- |
+| `gh-tui` | **The hub** → Actions · Pull Requests · Branches · Secrets · Environments |
+| `gha`    | HEAD's checks as a table, names linked to their jobs — the one-shot     |
 
-The screens — PRs, CI/Actions, Secrets, Branches, Environments — are reached
-through the hub rather than as separate commands. Press `?` in any of them for
-that screen's help.
+Press `ctrl-/` in any list, or `?` in any menu, for that screen's help.
 
-## Navigation
+## The shape of it
 
-Consistent across every screen — learn once, use everywhere:
+Every screen is one fzf window: a list on the left, a **live preview** on the
+right, and single-key actions on the list (the footer names them). Screens open
+instantly and fill in — nothing waits on the network before it appears. What
+the preview shows is the state of the thing *now*: a running workflow or a PR
+with pending checks refreshes under the cursor by itself.
+
+Screens open inside the screen below them, so **back is back**: `esc` returns
+to the row you left, filter and scroll intact.
 
 ```
-Menus:   ↑↓ navigate    enter select    -/q back     (nvim-like)
-Lists:   type to filter  enter select    esc back
-Pagers:  r refresh       -/q back
+Lists:    type to filter   enter select   esc back   ctrl-r refresh
+          ctrl-o open in browser   ctrl-/ help   (the footer has the rest)
+Menus:    ↑↓ / jk   enter select   -/q back   ? help
+Preview:  shift-↑↓ · alt-j/k · alt-u/d scroll   alt-p hide / show
 ```
 
 ## Dependencies
 
 ```sh
-brew install gh fzf jq
-gh auth login
+gh auth login          # gh, jq, and fzf ≥ 0.65 come from `make install bash`
 ```
+
+fzf's floor is real: the live previews use `--listen`, and the chrome uses
+`--style` and `--footer`, none of which the older fzf in apt has. `deps.conf`
+installs fzf through mise for that reason; `gh-tui` says so if it finds an old
+one instead of half-working.
 
 ---
 
-## gh-tui — the hub
-
-One command, live preview, access to everything.
-
-
-The hub pre-fetches data in parallel (open PRs, CI status, secrets, environments, branches) and shows it in a live preview pane as you navigate. Select an item to jump into the full tool — when you're done, you return to the hub.
+## The hub
 
 ```
-┌─────────────────────────────┬──────────────────────────────┐
-│ 🔀 Pull Requests          > │ #42 Fix auth flow     ⏳     │
-│ 📋 Pull Requests (mine)     │ #41 Add dark mode     ✅     │
-│ ➕ Create Pull Request       │ #39 Refactor API      🔄     │
-│ ───────────────────────────  │                              │
-│ 🚀 CI / Actions              │                              │
-│ ───────────────────────────  │                              │
-│ 🔑 Secrets                   │                              │
-│ 🌍 Environments              │                              │
-│ 🌿 Branches                  │                              │
-└─────────────────────────────┴──────────────────────────────┘
+╭──────────────────────────────── 🐙 roest1/dotfiles ─────────────────────────────╮
+│ ╭─────── 🌍 public · main · 0 open PR(s) ───────╮╭────────── 🚀 Actions ──────────╮ │
+│ │ ▶ 🚀 Actions         runs · jobs · logs, live ││ HEAD 1ce6692 on main           │ │
+│ │   🔀 Pull Requests   review · merge · create  ││                                │ │
+│ │   🌿 Branches        rules · default · delete ││ ✅ 12 passed                   │ │
+│ │   🔑 Secrets         repository · environment ││                                │ │
+│ │   🌍 Environments    reviewers · timers       ││ ✅ shellcheck  17s             │ │
+│ ╰───────────────────────────────────────────────╯│ ✅ manifest parses  18s        │ │
+╰──────────────────────────────────────────────────╰────────────────────────────────╯─╯
 ```
 
-Each screen is reached through the hub. Press `?` inside one for its own help.
+The panes and the label fill in behind the menu as they load; `r` refetches
+them. `enter` opens the screen; when you come back you're on the same row.
 
 ---
 
-## CI / Actions — workflow viewer + logs
+## 🚀 Actions
 
-Choose scope first: **current commit (HEAD)** or **recent workflow runs** (cross-branch). Then pick a workflow → action menu → smart logs or step browser.
+The last 40 runs, newest first, across every branch (`ctrl-b` narrows to the
+branch you're on). `●` marks HEAD's commit. Type to filter — a branch, "fail",
+a title.
 
-
-### Smart log view
-
-Passing steps collapse to one line. Failed steps auto-expand with full output:
+**Hover a run and its jobs appear.** Passing jobs are one line. A job that
+failed or is still running opens up to its steps, and a failed step shows the
+tail of its own log right there — no menu, no second screen:
 
 ```
- ━━━ Build ━━━  4 passed  1 failed  0 skipped
+❌ failure · 37s · started 05:03 UTC
 
- ✅  Set up job ·····································  2s
- ✅  Checkout ·······································  1s
- ✅  Install dependencies ···························  23s
- ❌  Run tests ······································  45s
- │
- │  FAIL src/utils.test.js
- │    ● should handle negative numbers
- │      Expected: -1
- │      Received: 1
- │
- ✅  Post checkout ··································  0s
+✅ bun audit (transitive advisories) ··············     6s
+✅ link only (linux) ······························     3s
+❌ install (macos / brew) ·························     7s
+   ✅ Set up job ··································     1s
+   ✅ Run actions/checkout@v7 ·····················     1s
+   ❌ Install the bash section ····················     1s
+     ┃ ▸ Run make install bash
+     ┃ make install bash
+     ┃ Unknown section: bash
+     ┃ make: *** [install] Error 1
+     ┃ ✖ Process completed with exit code 2.
+   ⏭  Verify the bash section ·····················     0s
+✅ install (ubuntu / apt) ·························    32s
+
+✅ 9 passed   ❌ 2 failed
 ```
 
-Press `r` after pushing a fix to re-fetch — watch the failure turn green without leaving the terminal.
+A run in progress refreshes every few seconds while you look at it — `▶` is
+the step running now, `○` the ones still to come — and when it completes, the
+list line flips from ⏳ to ✅/❌ on its own.
 
-### Step browser
+| Key      | Does                                                                 |
+| -------- | -------------------------------------------------------------------- |
+| `enter`  | jobs & steps: every step of every job, its full log on the right, `enter` pages it |
+| `ctrl-o` | open the run on GitHub                                               |
+| `ctrl-e` | rerun — the failed jobs if any failed, else the whole run (asks first) |
+| `ctrl-x` | cancel a run in progress (asks first)                                |
+| `ctrl-l` | the whole run's log, every job, in a pager                           |
+| `ctrl-b` | this branch only / all branches                                      |
 
-fzf list of all steps. Preview pane shows logs as you arrow through — no need to open anything. `enter` for full log in a pager.
-
+Where the logs come from: GitHub serves one log per *job*, not per step (the
+run zip stopped carrying per-step files, which is why `gh run view --log` now
+says `UNKNOWN STEP`). A step's lines are reconstructed — its timestamp window,
+anchored on its own `##[group]Run …` marker and cut at its closing
+`##[error]`. Exact for `run:` and `uses:` steps; the runner's own Set up /
+Post / Complete steps get their whole window. Logs of completed jobs and
+rendered bodies of completed runs are cached under `~/.cache/gh-tui/`, so a
+second look is instant even in a new shell.
 
 ---
 
-## Pull Requests — Pull Request Management
+## 🔀 Pull Requests
 
-Full PR lifecycle without leaving the terminal.
-
-
-### Getting here
-
-```sh
-gh-tui        # then: 🔀 Pull Requests · 📋 Pull Requests (mine) · ➕ Create
+```
+review · ci · #      author   age   title                          branch      ±
+🟣 ✓ #36   roest1  46m  let tests return early before expected …  fix-test  +2/-1
 ```
 
-The hub's three PR entries map to the filter picker, your own PRs, and the
-creation flow respectively. Creating walks you through draft/ready and hands
-off to gh's interactive flow.
+`ctrl-f` cycles the view — the list's label says which: **open → mine → needs
+my review → recently merged → recently closed**.
 
-The filter picker lets you choose what to view:
+The preview answers "can I merge this" first: state, author, `head → base`,
+size, labels, the review decision and each reviewer's verdict, whether it's
+mergeable and why not, every check with its duration, then the description.
+Pending checks refresh by themselves.
 
-| Filter               | What it shows                        |
-| -------------------- | ------------------------------------ |
-| All open PRs         | Every open PR in the repo            |
-| Needs my review      | PRs where your review is requested   |
-| My PRs               | PRs you authored                     |
-| Recently closed      | Last 50 closed PRs                   |
-| Recently merged      | Last 50 merged PRs                   |
+| Key      | Does                                                       |
+| -------- | ---------------------------------------------------------- |
+| `enter`  | the action menu (below)                                    |
+| `ctrl-o` | open on GitHub                                             |
+| `ctrl-d` | the diff, in a pager                                       |
+| `ctrl-k` | check it out locally                                       |
+| `ctrl-a` | its workflow runs — the Actions screen scoped to the PR's commit |
+| `ctrl-n` | create a PR from the current branch (draft or ready)       |
+| `ctrl-f` | cycle the filter                                           |
 
-Select a PR to get the action menu:
+The action menu — `-`/`q` returns to the list, each action returns to the menu:
 
-| Action               | What it does                              |
-| -------------------- | ----------------------------------------- |
-| 👁 View details      | Full PR info in terminal                  |
-| 📥 Checkout locally  | Switch to the PR's branch                 |
-| 📝 View diff         | Colored diff in pager                     |
-| 📊 View file changes | Browse individual files with diff preview |
-| 💬 Add comment       | Inline or open your editor                |
-| ✅ Approve           | With optional message                     |
-| 🔄 Request changes   | Opens editor for feedback                 |
-| 🏷 Manage labels     | Multi-select (TAB toggle) add/remove      |
-| 👤 Request reviewers | Multi-select from collaborators            |
-| ✏️ Edit title/body   | Rename or rewrite description             |
-| 🔀 Merge             | Strategy picker (squash/merge/rebase)     |
-| ❌ Close PR          | Close without merging                     |
-| 🌐 Open in browser   | Fallback to GitHub UI                     |
-| 🔍 View CI checks    | Pick a check → drill into logs/rerun      |
-
-Most actions loop back to the menu — do multiple things on the same PR without re-running the command.
-
-### Merge flow
-
-Picks strategy → asks about branch deletion → merges. Checks for conflicts first.
-
+| Action                 | What it does                                          |
+| ---------------------- | ----------------------------------------------------- |
+| 📥 Checkout            | switch to the PR's branch                             |
+| 📝 Diff                | coloured diff in a pager                              |
+| 📊 Changed files       | one file per row, diff on the right, `enter` pages it |
+| 💬 Comment             | in `$EDITOR`                                          |
+| ✅ Approve             | with an optional message                              |
+| 🔄 Request changes     | in `$EDITOR`                                          |
+| 🏷 Labels              | add / remove, `tab` to multi-select                   |
+| 👤 Reviewers           | multi-select from collaborators                       |
+| ✏️ Edit title / body   | title inline, body in `$EDITOR`                        |
+| 🔀 Merge               | squash / merge / rebase, then delete the branch or keep it |
+| 🔁 Mark ready / draft  | flip draft state                                      |
+| ❌ Close               | close without merging (asks first)                    |
+| 🌐 Open in browser     |                                                       |
 
 ---
 
-## Secrets — Secrets Management
+## 🌿 Branches
 
-
-Manage repo-level and environment-scoped secrets. Values are **write-only** by design — GitHub never reveals them, not even through the API.
-
-| Action        | Scope                                |
-| ------------- | ------------------------------------ |
-| List secrets  | Names + last updated (values hidden) |
-| Set secret    | Secure input, auto-uppercased        |
-| Delete secret | Pick from list, confirm              |
-
-Works for both repo secrets and per-environment secrets (pick the environment first).
+Every branch on the remote, default first, then by most recent commit:
 
 ```
-━━━ Repository Secrets ━━━
-
-MY_API_KEY        Updated 2026-03-15
-DATABASE_URL      Updated 2026-03-10
-
-  ℹ  Values are hidden by design — only names and last updated shown
+● ⭐ main               46m            Riley Oest    Merge pull request #36 …
+     feat/thing          2h   ↑ 3 ↓ 0  roest1        add the thing
 ```
 
----
+`●` checked out, `⭐` default, `🛡` covered by a rule; `↑`/`↓` are ahead/behind
+the default branch. A fetch runs in the background on open and the list
+refreshes itself when it lands.
 
-## Branches — Branches + Rulesets
+The preview: tracking state, the PR for this branch if there is one, the rules
+that actually govern it — across every ruleset — and its recent commits.
 
+| Key      | Does                                          |
+| -------- | --------------------------------------------- |
+| `enter`  | the branch menu (below)                       |
+| `ctrl-o` | open on GitHub                                |
+| `ctrl-k` | check it out                                  |
+| `ctrl-x` | delete the remote branch (never the default; asks first) |
+| `ctrl-s` | the rulesets editor                           |
 
-**Rulesets, not classic branch protection.** This changed for a reason worth
-knowing: the old version drove `/repos/{o}/{r}/branches/{b}/protection`, and on
-a repo protected by a *ruleset* that endpoint returns `404 Branch not
-protected`. So it reported `main` as protected in the branch list — that field
-does account for rulesets — and unprotected on the very next screen. It would
-also write a classic rule *alongside* a ruleset, leaving two overlapping
-mechanisms and no clear answer to "which one blocked my push".
+The branch menu: 📥 Checkout · 🛡 Effective rules · 📜 Rulesets · ⭐ Set as
+default · 🗑 Delete remote branch · ⚠️ Legacy classic protection · 🌐 Open.
 
-### Effective rules for a branch
+### Rulesets, not classic branch protection
 
-Answers what actually governs a branch, across every ruleset that targets it:
+This changed for a reason worth knowing: the old version drove
+`/repos/{o}/{r}/branches/{b}/protection`, and on a repo protected by a
+*ruleset* that endpoint returns `404 Branch not protected`. So it reported
+`main` as protected in the branch list — that field does account for rulesets
+— and unprotected on the very next screen. It would also write a classic rule
+*alongside* a ruleset, leaving two overlapping mechanisms and no clear answer
+to "which one blocked my push".
+
+**Effective rules** answers what actually governs a branch, across every
+ruleset that targets it:
 
 ```
 ━━━ Effective rules: main ━━━
@@ -190,7 +208,7 @@ Answers what actually governs a branch, across every ruleset that targets it:
     • deletion
     • non_fast_forward
     • pull_request  approvals=1  codeowners=true
-    • required_status_checks  strict=true  checks=10
+    • required_status_checks  strict=true  checks=11
 
   ruleset 20169814 bypass: RepositoryRole/5:pull_request
 ```
@@ -200,22 +218,18 @@ bypass you can merge red and stale, so the rules are guidance you override
 rather than a wall. Without one, and with required approvals on a solo repo,
 nothing can ever merge. Either way you want it on screen.
 
-### Managing a ruleset
+**Managing a ruleset** — pick one, then toggle the things worth toggling:
 
-Pick a ruleset, then toggle the things worth toggling:
+| Action                       | Notes                                                                 |
+| ---------------------------- | --------------------------------------------------------------------- |
+| View full ruleset            | rules, conditions and bypass list as JSON                             |
+| Enforcement                  | `active` / `evaluate` / `disabled` — evaluate reports without blocking |
+| Require branches up to date  | the `strict` flag; on, every merge invalidates every other open PR    |
+| Required checks              | add / remove, picking from names CI actually reported                 |
+| Bypass mode                  | `pull_request` (no direct pushes) or `always`                         |
 
-| Action                        | Notes                                                  |
-| ----------------------------- | ------------------------------------------------------ |
-| View full ruleset             | Rules, conditions and bypass list as JSON               |
-| Enforcement                   | `active` / `evaluate` / `disabled` — evaluate reports without blocking |
-| Require branches up to date   | The `strict` flag. Turning it on means every merge invalidates every other open PR |
-| Required checks               | Add/remove, picking from names CI actually reported     |
-| Bypass mode                   | `pull_request` (no direct pushes) or `always`           |
-
-### Required checks are picked, not typed
-
-The add-a-check picker offers **only names the last CI run reported**, and the
-screen flags both directions of drift:
+**Required checks are picked, not typed.** The add-a-check picker offers only
+names the last CI run reported, and the screen flags both directions of drift:
 
 ```
   ✅ shellcheck
@@ -233,58 +247,47 @@ That second list is the dangerous one. A required check that never reports
 doesn't fail a PR — it blocks it forever, waiting on a status that will never
 arrive. Typing check names by hand is how that happens.
 
-### Other actions
-
-| Action                     | What it does                                        |
-| -------------------------- | --------------------------------------------------- |
-| List branches              | 🛡 marks any branch covered by a rule                |
-| Delete remote branch       | Safety check — won't delete the default branch       |
-| Set default branch         | Change the repo's default                            |
-| Legacy classic protection  | Read + delete only, for migrating a repo off it      |
-
 Nothing in here *creates* a classic protection rule. Rulesets supersede them,
 and a branch carrying both is a branch where "why was this rejected" has two
-possible answers.
+possible answers. Legacy classic protection is read + delete only, for
+migrating a repo off it.
 
-### Under the hood
-
-Writes are read-modify-write through a single helper, because `PUT` replaces the
-fields it receives — every edit passes a `jq` filter over the current ruleset
-rather than assembling a payload, so no edit can silently drop a field.
-
-And rulesets update with **`PUT`, not `PATCH`**. `PATCH` returns a bare `404`
-that reads exactly like a permissions failure and isn't.
+Under the hood: writes are read-modify-write through a single helper, because
+`PUT` replaces the fields it receives — every edit passes a `jq` filter over
+the current ruleset rather than assembling a payload, so no edit can silently
+drop a field. And rulesets update with **`PUT`, not `PATCH`**: `PATCH` returns
+a bare `404` that reads exactly like a permissions failure and isn't.
 
 ---
 
-## Environments — Environment Management
+## 🔑 Secrets
 
+One list: 🔑 repository secrets, then 🌍 environment secrets, with when each
+was last set. Values are **write-only** by design — GitHub never reveals them,
+not even through the API — so the preview is the name, its scope, and how to
+reference it.
 
-Manage deployment environments (staging, production, etc.) with their own secrets, wait timers, and required reviewers.
+| Key      | Does                                                                          |
+| -------- | ----------------------------------------------------------------------------- |
+| `enter`  | set this secret again — the only way to change a value                        |
+| `ctrl-n` | set a new one: repository or environment, name, then the value typed hidden straight into `gh secret set` |
+| `ctrl-x` | delete (asks first)                                                           |
+| `ctrl-o` | the repo's secrets settings on GitHub                                         |
 
-### Environment details view
-
-```
-━━━ Environment: production ━━━
-
-Protection rules:
-  ⏱  Wait timer: 30 minutes
-  👤 Required reviewers: roest1
-
-Secrets:
-  DEPLOY_KEY        Updated 2026-03-12
-  AWS_SECRET        Updated 2026-03-10
-```
-
-### Actions
-
-| Action                 | What it does                        |
-| ---------------------- | ----------------------------------- |
-| List environments      | Names + creation dates              |
-| View details           | Protection rules + secrets together |
-| Create environment     | Just name it                        |
-| Set wait timer         | Minutes before deployment proceeds  |
-| Set required reviewers | Pick from collaborators             |
-| Delete environment     | Removes env AND all its secrets     |
+Names are upper-cased for you. Environment secrets resolve only in a job that
+declares `environment: <name>`.
 
 ---
+
+## 🌍 Environments
+
+Deployment targets — each with its own secrets, required reviewers, wait timer
+and branch policy. The preview shows the protection rules, the branch policy,
+its secrets and its five most recent deployments.
+
+| Key      | Does                                                    |
+| -------- | ------------------------------------------------------- |
+| `enter`  | configure: ⏱ wait timer · 👤 required reviewers · 🔑 set a secret here · 🗑 delete |
+| `ctrl-n` | create — just a name                                    |
+| `ctrl-x` | delete, after confirming — this removes its secrets too |
+| `ctrl-o` | the repo's environments settings on GitHub              |

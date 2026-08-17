@@ -6,6 +6,7 @@
 
 [tools]
 bun = "1.3.14"
+fzf = "0.74.2"
 lua-language-server = "3.19.0"
 neovim = "0.12.4"
 qsv = "22.0.1"
