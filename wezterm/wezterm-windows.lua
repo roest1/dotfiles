@@ -23,6 +23,39 @@ local config = wezterm.config_builder()
 -- the fallback chain quietly uses JetBrains Mono.
 config.font = wezterm.font_with_fallback { '0xProto Nerd Font', 'JetBrains Mono' }
 
+-- ─── Science Gothic Mono, for `make` output ──────────────────────────────────
+--
+-- Kept in sync with wezterm.lua BY HAND, like the colours below, and for the
+-- same reason: this file is never symlinked out of the repo.
+--
+-- This one is easy to think is unnecessary. `make` runs in the WSL guest, but
+-- the guest only writes an escape sequence — wezterm.exe out here is what
+-- draws it. Without these rules the output arrives as SGR 6 with no font
+-- attached to it, and 'rapid blink' is exactly what it would then mean.
+--
+-- windows\install.ps1 links wezterm\fonts alongside this config, and
+-- config_dir follows the config file's own path, so the same expression works
+-- on both sides.
+config.font_dirs = { wezterm.config_dir .. '/fonts' }
+config.text_blink_rate_rapid = 0
+config.font_rules = {
+	{
+		blink = 'Rapid',
+		intensity = 'Bold',
+		font = wezterm.font_with_fallback {
+			{ family = 'Science Gothic Mono', weight = 'Bold' },
+			'0xProto Nerd Font',
+		},
+	},
+	{
+		blink = 'Rapid',
+		font = wezterm.font_with_fallback {
+			{ family = 'Science Gothic Mono', weight = 'Regular' },
+			'0xProto Nerd Font',
+		},
+	},
+}
+
 -- ─── Colors ──────────────────────────────────────────────────────────────────
 --
 -- Kept in sync with wezterm.lua BY HAND, and it has to be: this file is never

@@ -149,6 +149,53 @@ you write code here. Reasoning, revisit conditions and current status:
   to get you into WSL; it declares no `unix_domains`, because that socket path is a Linux
   path belonging to a process inside the guest.
 
+- **`make` output is rendered in Science Gothic Mono, and the carrier is `SGR 6`.**
+  `lib/sgr.sh` is the only thing that emits it, and every escape it defines is empty
+  unless **all three** of `[ -t 1 ]`, `TERM_PROGRAM=WezTerm`, and a linked
+  `~/.config/wezterm/fonts` hold. That guard is not belt-and-braces; each condition is a
+  different failure. Without the tty half, escapes reach a pipe — and CI itself greps
+  `make check bash | tee`. Without the WezTerm half, SGR 6 means what it actually says on
+  every other terminal: **rapid blink**, over ssh, in GNOME Terminal, on a Mac. And being
+  *in* WezTerm still isn't enough, because WezTerm only honours the attribute if this
+  repo's config is the live one — on a machine that hasn't run `make link`, or one
+  pointed at a stock config, it blinks again. The linked font directory is the cheapest
+  true proxy for that, since `deps.conf` links config and fonts together. All three
+  directions are asserted in the `manifest` CI job, because none of them is visible to
+  whoever writes the code — they're always in WezTerm, always on a tty, always linked.
+
+  Italic looks like the obvious carrier and is wrong: rose-pine italicises nvim's
+  comments, so the whole editor would silently change font.
+
+  The font is **generated, not downloaded** — `wezterm/mkmono.py` (PEP 723, run by `make
+  mono-font`, same arrangement as `mise.toml`) derives a monospaced cut from upstream's
+  variable Science Gothic, and the two `.ttf` files it writes are committed under
+  `wezterm/fonts/`. A fresh machine builds nothing. It exists because a terminal is a
+  fixed grid and Science Gothic is proportional: its `m` wants 0.99em against a 0.62em
+  cell while its `l` wants 0.30em, so raw Science Gothic collides and gaps. It works in
+  the tab bar only because that is proportional text laid out proportionally.
+
+  **The fonts are read via `font_dirs`, never installed into the system font path.**
+  `deps.conf` links `wezterm/fonts` → `~/.config/wezterm/fonts` and both configs say
+  `wezterm.config_dir .. "/fonts"`. That is what makes this portable in one line each:
+  no `fc-cache` (which macOS hasn't got), no `~/Library/Fonts` vs `~/.local/share/fonts`
+  split, and — the real reason — no chance of a stale copy elsewhere shadowing it. Two
+  files claiming family `Science Gothic Mono` style `Regular` resolve by first match,
+  and the loser is silently the wrong glyphs. That already happened once during
+  development and cost an afternoon.
+
+  `wezterm-windows.lua` needs the same rules, and it is easy to talk yourself out of:
+  `make` runs in the WSL guest, but the guest only writes the escape — `wezterm.exe` on
+  the host draws it.
+
+  **The two `.ttf` files are OFL, not MIT, and `LICENSE` carves them out explicitly.**
+  That is required, not tidy: OFL 1.1 §5 says the font must be distributed *entirely*
+  under the OFL and under no other licence, so a repo-wide MIT grant would conflict.
+  `wezterm/fonts/OFL.txt` is the standalone copy, and `mkmono.py` deliberately preserves
+  name IDs 0/13/14 (upstream copyright and licence) — don't "clean up" those fields.
+  Upstream declares **no** Reserved Font Name, which is the only OFL clause that would
+  have restricted the derivative's name, so `Science Gothic Mono` is permissible. CI
+  asserts both the licence file and the carve-out survive.
+
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
   writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
   Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will

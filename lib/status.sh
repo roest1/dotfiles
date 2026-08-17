@@ -27,6 +27,11 @@ HERE_STATUS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_ROOT="$(cd "$HERE_STATUS/.." && pwd)"
 # shellcheck source=./manifest.sh
 source "$HERE_STATUS/manifest.sh"
+# Sets SG / SG_B / SG_OFF — all empty unless stdout is a WezTerm terminal, so
+# the printf calls below interpolate them unconditionally and this file needs
+# no branching. See lib/sgr.sh for why the guard has two halves.
+# shellcheck source=./sgr.sh
+source "$HERE_STATUS/sgr.sh"
 
 # STATUS_DRIFT is the total, and is what callers outside this file read
 # (ci.yml asserts on it after calling status_links alone). The two halves are
@@ -125,7 +130,7 @@ status_links() {
   while IFS=$'\t' read -r section src dest; do
     [[ -z "$section" ]] && continue
     if [[ "$section" != "$current" ]]; then
-      current="$section"; echo ""; echo "[$section] links"
+      current="$section"; echo ""; printf "%s[%s] links%s\n" "$SG_B" "$section" "$SG_OFF"
     fi
 
     target="$DOTFILES_ROOT/$src"
@@ -133,16 +138,16 @@ status_links() {
     if [[ -L "$dest" ]]; then
       local actual; actual="$(readlink "$dest")"
       if [[ "$actual" == "$target" ]]; then
-        printf "  ✓ %-38s\n" "${dest/#$HOME/\~}"
+        printf "%s  ✓ %-38s%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
       else
-        printf "  ✗ %-38s points at %s\n" "${dest/#$HOME/\~}" "${actual/#$HOME/\~}"
+        printf "%s  ✗ %-38s points at %s%s\n" "$SG" "${dest/#$HOME/\~}" "${actual/#$HOME/\~}" "$SG_OFF"
         _drift_link
       fi
     elif [[ -e "$dest" ]]; then
-      printf "  ✗ %-38s is a real file, not a link into this repo\n" "${dest/#$HOME/\~}"
+      printf "%s  ✗ %-38s is a real file, not a link into this repo%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
       _drift_link
     else
-      printf "  · %-38s not linked (run: make link)\n" "${dest/#$HOME/\~}"
+      printf "%s  · %-38s not linked (run: make link)%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
       _drift_link
     fi
   done < <(manifest_lines link "$@")
@@ -155,24 +160,24 @@ status_tools() {
   while IFS=$'\t' read -r section provider cmd pkg; do
     [[ -z "$section" ]] && continue
     if [[ "$section" != "$current" ]]; then
-      current="$section"; echo ""; echo "[$section] tools"
+      current="$section"; echo ""; printf "%s[%s] tools%s\n" "$SG_B" "$section" "$SG_OFF"
     fi
 
     actual="$(provider_of "$cmd")"
 
     if [[ "$actual" == "absent" ]]; then
-      printf "  · %-14s not installed (declared %s)\n" "$cmd" "$provider"
+      printf "%s  · %-14s not installed (declared %s)%s\n" "$SG" "$cmd" "$provider" "$SG_OFF"
       _drift_tool
     elif [[ "$actual" == "mise-stale" ]]; then
       IFS=$'\t' read -r want have <<<"$(_mise_pin_versions "$cmd")"
-      printf "  ✗ %-14s pinned %s not installed (active: %s)\n" \
-        "$cmd" "${want:-?}" "${have:-none}"
+      printf "%s  ✗ %-14s pinned %s not installed (active: %s)%s\n" \
+        "$SG" "$cmd" "${want:-?}" "${have:-none}" "$SG_OFF"
       _drift_stale
     elif provider_satisfies "$provider" "$actual"; then
-      printf "  ✓ %-14s %s\n" "$cmd" "$actual"
+      printf "%s  ✓ %-14s %s%s\n" "$SG" "$cmd" "$actual" "$SG_OFF"
     else
-      printf "  ✗ %-14s declared %-12s actual %-8s %s\n" \
-        "$cmd" "$provider" "$actual" "$(command -v "$cmd" | sed "s|^$HOME|~|")"
+      printf "%s  ✗ %-14s declared %-12s actual %-8s %s%s\n" \
+        "$SG" "$cmd" "$provider" "$actual" "$(command -v "$cmd" | sed "s|^$HOME|~|")" "$SG_OFF"
       _drift_tool
     fi
   done < <(manifest_lines tool "$@")
@@ -185,18 +190,18 @@ status_all() {
   STATUS_DRIFT_TOOLS=0
   STATUS_DRIFT_STALE=0
   echo ""
-  echo "sync status — deps.conf vs. this machine"
-  echo "==========================================="
+  printf "%ssync status — deps.conf vs. this machine%s\n" "$SG_B" "$SG_OFF"
+  printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
   status_links "$@"
   status_tools "$@"
   STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE ))
 
   echo ""
-  echo "==========================================="
+  printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
   if [[ $STATUS_DRIFT -eq 0 ]]; then
-    echo "in sync"
+    printf "%sin sync%s\n" "$SG" "$SG_OFF"
   else
-    echo "$STATUS_DRIFT item(s) out of sync"
+    printf "%s%s item(s) out of sync%s\n" "$SG" "$STATUS_DRIFT" "$SG_OFF"
     echo ""
     if [[ $STATUS_DRIFT_LINKS -gt 0 ]]; then
       echo "  ✗ links ($STATUS_DRIFT_LINKS) — run 'make link' to repoint them"
