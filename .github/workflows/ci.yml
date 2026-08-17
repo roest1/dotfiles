@@ -103,6 +103,11 @@ jobs:
       - name: No target overrides its own recipe
         run: |
           fail=0
+          # A throwaway HOME because the list includes `link`, and this step is
+          # only reading make's warnings — it has no business installing
+          # symlinks into the runner's home where a later step can trip on
+          # them. Which is exactly what it used to do.
+          tmphome=$(mktemp -d); export HOME="$tmphome"
           for t in help sections status check test sync link lint; do
             if make $t 2>&1 | grep -qE "warning: (overriding|ignoring old) recipe"; then
               echo "make $t triggers a recipe override"; fail=1
@@ -119,33 +124,64 @@ jobs:
       # actually says: RAPID BLINK. In a pipe it is plain corruption, and CI
       # itself does `make check bash | tee /tmp/check.txt` and greps it.
       #
-      # Both directions are asserted because a regression in either is
-      # invisible to the author, who is always in wezterm and always on a tty.
+      # Every direction is asserted because a regression in any of them is
+      # invisible to the author, who is always in wezterm, always on a tty and
+      # always linked.
       - name: make output carries escapes only on a wezterm tty
         run: |
           fail=0
-          esc=$'\033['
+          esc=$'\033['       # any escape at all
+          carrier=$'\033[6'  # the carrier specifically: SGR 6, plain or bold
           for t in help status check; do
             if make $t 2>/dev/null | grep -qF "$esc"; then
               echo "make $t leaked escapes into a pipe"; fail=1
             fi
           done
-          if command -v script >/dev/null 2>&1; then
-            # In wezterm, but the config isn't linked yet -> still plain, because
-            # being in wezterm does not mean wezterm has the font_rules.
-            if TERM_PROGRAM=WezTerm script -qec "make help" /dev/null | grep -qF "$esc"; then
-              echo "escapes emitted before the wezterm config was linked"; fail=1
-            fi
-            make link wezterm >/dev/null 2>&1 || true
-            # a tty, but not wezterm -> must still be plain
-            if TERM_PROGRAM=xterm script -qec "make help" /dev/null | grep -qF "$esc"; then
-              echo "make help emits escapes on a non-wezterm tty"; fail=1
-            fi
-            # a wezterm tty with the config linked -> the carrier must appear,
-            # or the feature has quietly become a no-op and nobody would notice
-            if ! TERM_PROGRAM=WezTerm script -qec "make help" /dev/null | grep -qF "$esc"; then
-              echo "carrier missing on a linked wezterm tty"; fail=1
-            fi
+          if ! command -v script >/dev/null 2>&1; then
+            echo "no script(1) here; the tty cases below were skipped"; exit $fail
+          fi
+
+          # What follows is a truth table over the guard's three inputs, so
+          # every row states its own preconditions in its own fixture home.
+          # Reading $HOME would make the answer depend on whether some earlier
+          # step in this job had run `make link` — and the result would be a
+          # test that passes or fails on step ORDER, which is not a property
+          # anyone editing lib/sgr.sh is thinking about.
+          #
+          # The linked home is built by the real installer rather than a
+          # hand-written `ln -s`, so changing deps.conf's destination cannot
+          # leave this asserting against a path nothing installs any more.
+          unlinked=$(mktemp -d)
+          linked=$(mktemp -d)
+          HOME="$linked" make link wezterm >/dev/null
+
+          # $1 home, $2 TERM_PROGRAM, $3 pattern — true when $3 reaches the tty
+          on_tty() {
+            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+              script -qec "make help" /dev/null | grep -qF "$3"
+          }
+
+          # In wezterm, but the config isn't linked: being in wezterm does not
+          # mean wezterm has the font_rules.
+          if on_tty "$unlinked" WezTerm "$esc"; then
+            echo "escapes on a wezterm tty before the config was linked"; fail=1
+          fi
+          # A tty, but not wezterm: here SGR 6 would mean rapid blink.
+          if on_tty "$linked" xterm "$esc"; then
+            echo "escapes on a non-wezterm tty"; fail=1
+          fi
+          # All three hold, so the carrier itself must appear — grepping for
+          # any escape would keep passing if SGR 6 were swapped for something
+          # else, such as the italic that rose-pine already spends on nvim's
+          # comments.
+          if ! on_tty "$linked" WezTerm "$carrier"; then
+            echo "carrier missing on a linked wezterm tty"; fail=1
+          fi
+          # The rows above go through the $HOME/.config fallback; this one
+          # proves the XDG_CONFIG_HOME half of the guard is live too.
+          if ! HOME="$unlinked" XDG_CONFIG_HOME="$linked/.config" TERM_PROGRAM=WezTerm \
+               script -qec "make help" /dev/null | grep -qF "$carrier"; then
+            echo "carrier missing when XDG_CONFIG_HOME names the config"; fail=1
           fi
           exit $fail
 
