@@ -41,10 +41,11 @@ monospace. Real monospaced faces draw the narrow glyphs wider instead of
 respacing them, because on a fixed grid a narrow glyph is always going to sit
 in a pool of air. The shapes below were measured off 0xProto:
 
-    l  top-left flag + tail turning right   67% ink
-    i  top-left flag + bottom serif + dot   72%
-    I  symmetric top and bottom serifs      71%
-    1  bottom serif, keeps its own flag     74%
+    l  top-left flag + tail turning right        67% ink
+    i  top-left flag + bottom serif + dot        72%
+    j  top-left flag + tail turning left + dot   62%
+    I  symmetric top and bottom serifs           71%
+    1  bottom serif, keeps its own flag          74%
 
 Two details are load-bearing and were both learned the hard way. The top-left
 flag is what separates 'l' from 'L' -- a bare stem with a flat foot IS a
@@ -54,12 +55,32 @@ the stroke and above the stem starts curving away halfway down and reads as a
 hockey stick, while a tight radius with an upturned end balls up into a blob.
 0xProto keeps the stem dead straight and turns late, which is 0.4x, flat end,
 no upturn.
+
+'j' is in that table for the opposite reason to the others, and it is the one
+glyph the instance pick above gets wrong. Its tail hangs to the LEFT of the
+origin -- xMin reaches -595 at wdth=200 -- so the advance never counts it, the
+selector reads 812 against a 1240 cell and takes the most extended cut on the
+axis. What the width axis stretches is precisely the tail: the stem is 285.65
+units at every wdth, while the tail's reach grows from 285 at wdth=50 to 868
+at wdth=200. That produced a stem pinned to the right cell wall above a foot
+spanning 93% of the cell, with the dot sat directly over the stem so it read
+as one broken vertical -- which is a bare stem with a flat foot, i.e. exactly
+the backwards-capital-L failure the flag exists to prevent on 'l'. Bold was
+worse again: 1308 units of ink against the 1160 budget, so it also came back
+squashed to 0.887 and its stem no longer matched 'i' and 'l'.
+
+Hence two things. The tail is redrawn here rather than taken from the axis,
+mirroring 'l' -- and since 'j' and 'l' keep nothing from the instance but the
+stem and the dot, neither of which moves with wdth, monospace() sources them
+from wdth=100 and never scales them. The reach fractions differ because the
+sides do: on 'l' the flag goes left and the tail right, so the two split the
+growth between them, while on 'j' both go left and the tail alone spends it.
 """
 import math
 import sys
 
 from fontTools.misc.transform import Transform
-from fontTools.pens.recordingPen import DecomposingRecordingPen
+from fontTools.pens.recordingPen import DecomposingRecordingPen, replayRecording
 from fontTools.pens.transformPen import TransformPen
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
@@ -70,12 +91,20 @@ CELL_EM = 0.62                        # 0xProto's uniform advance
 WIDTHS = list(range(50, 205, 5))
 CUTS = [("ScienceGothicMono.ttf", "Regular", 500), ("ScienceGothicMono-Bold.ttf", "Bold", 700)]
 
-# glyph -> flag?  tail?  top serif?  bottom serif?  target ink fill
+# flag and tail are reach fractions -- how much of `grow`, the ink the glyph is
+# short of its fill target, each feature spends. The flag always reaches left,
+# because a top-LEFT flag is the whole point of it; the tail is signed, turning
+# right when positive and left when negative. 0 means the feature is absent.
+# Off 0xProto's 'j': a 196-unit stem with 573 of growth, spending 568 on the
+# tail and 452 on the flag -- both leftward, so the tail alone sets the extent.
+#
+# glyph -> flag reach  tail reach  top serif?  bottom serif?  target ink fill
 PLAN = {
-    "l": dict(flag=True, tail=True, top=False, bottom=False, fill=0.67),
-    "i": dict(flag=True, tail=False, top=False, bottom=True, fill=0.72),
-    "I": dict(flag=False, tail=False, top=True, bottom=True, fill=0.71),
-    "1": dict(flag=False, tail=False, top=False, bottom=True, fill=0.74),
+    "l": dict(flag=0.40, tail=+0.60, top=False, bottom=False, fill=0.67),
+    "j": dict(flag=0.79, tail=-1.00, top=False, bottom=False, fill=0.62),
+    "i": dict(flag=0.55, tail=0, top=False, bottom=True, fill=0.72),
+    "I": dict(flag=0, tail=0, top=True, bottom=True, fill=0.71),
+    "1": dict(flag=0, tail=0, top=False, bottom=True, fill=0.74),
 }
 
 
@@ -94,23 +123,44 @@ def arc(cx, cy, r, a0, a1, n=10):
             for k in range(n + 1)]
 
 
+def cross(pts, y):
+    """Left and right edge of a contour at height y."""
+    xs = []
+    for i in range(len(pts)):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % len(pts)]
+        if (y0 > y) != (y1 > y):
+            xs.append(x0 + (y - y0) * (x1 - x0) / (y1 - y0))
+    return (min(xs), max(xs)) if xs else None
+
+
 def contours_of(rec):
-    out, cur = [], []
+    """One (points, ops) pair per contour.
+
+    The points are for measuring and are flat -- control points are treated as
+    on-curve, which is exact on a stem and close enough elsewhere. The ops are
+    the untouched recording, so a contour that is kept rather than measured --
+    'j's dot, the one thing to survive its redraw -- goes back as the curves it
+    actually is, not as a polygon of its control points.
+    """
+    out, pts, ops = [], [], []
     for op, args in rec.value:
         if op == "moveTo":
-            if cur:
-                out.append(cur)
-            cur = [args[0]]
-        elif op == "lineTo":
-            cur.append(args[0])
+            if pts:
+                out.append((pts, ops))
+            pts, ops = [args[0]], [(op, args)]
+            continue
+        ops.append((op, args))
+        if op == "lineTo":
+            pts.append(args[0])
         elif op in ("qCurveTo", "curveTo"):
-            cur.extend([p for p in args if p is not None])
+            pts.extend([p for p in args if p is not None])
         elif op == "closePath":
-            if cur:
-                out.append(cur)
-            cur = []
-    if cur:
-        out.append(cur)
+            if pts:
+                out.append((pts, ops))
+            pts, ops = [], []
+    if pts:
+        out.append((pts, ops))
     return out
 
 
@@ -128,17 +178,29 @@ def monospace(src, wght):
     upm = base["head"].unitsPerEm
     target = round(CELL_EM * upm)
     order = base.getGlyphOrder()
+    cmap = base.getBestCmap()
+    # add_feet() redraws these two outright, keeping only the stem and the dot,
+    # and neither moves along wdth. Reading them off the axis therefore buys
+    # nothing and costs: 'j' hides its tail behind its advance, so the pick
+    # below lands on wdth=200 and the Bold cut arrives 1308 units wide against
+    # an 1160 budget -- squashed 11%, stem and dot included, before the feet
+    # are ever sized from it. Take them from the natural instance instead.
+    redrawn = {cmap[ord(ch)] for ch, spec in PLAN.items()
+               if spec["tail"] and ord(ch) in cmap}
     scaled = 0
 
     for gname in order:
-        # Widest instance that still fits; fall back to the most condensed.
-        best_w, best_adv = None, None
-        for w in WIDTHS:
-            adv = insts[w]["hmtx"][gname][0]
-            if adv <= target and (best_adv is None or adv > best_adv):
-                best_w, best_adv = w, adv
-        if best_w is None:
-            best_w = WIDTHS[0]
+        if gname in redrawn:
+            best_w = 100
+        else:
+            # Widest instance that still fits; fall back to the most condensed.
+            best_w, best_adv = None, None
+            for w in WIDTHS:
+                adv = insts[w]["hmtx"][gname][0]
+                if adv <= target and (best_adv is None or adv > best_adv):
+                    best_w, best_adv = w, adv
+            if best_w is None:
+                best_w = WIDTHS[0]
 
         src_f = insts[best_w]
         glyf = src_f["glyf"]
@@ -188,17 +250,29 @@ def add_feet(f, adv):
         if not cons:
             continue
 
-        ymin = min(p[1] for c in cons for p in c)
-        # The stem is the contour standing on the baseline; for 'i' that
-        # excludes the dot, whose top must not be taken for the stem's.
-        stem = min(cons, key=lambda c: min(p[1] for p in c))
+        ymin = min(p[1] for c, _ in cons for p in c)
+        # The stem is the contour reaching lowest; for 'i' and 'j' that
+        # excludes the dot, whose top must not be taken for the stem's. The
+        # rest is whatever the glyph carries besides it -- 'j' keeps its dot.
+        si = min(range(len(cons)), key=lambda i: min(p[1] for p in cons[i][0]))
+        stem = cons[si][0]
+        rest = [op for i, (_, ops) in enumerate(cons) if i != si for op in ops]
         clockwise = signed_area(stem) < 0
         stem_top = max(p[1] for p in stem)
-        # Stem width AT THE BASELINE, not the contour bbox -- '1' carries its
-        # flag in the same contour, and a serif sized off that swallows it.
-        onbase = [p[0] for p in stem if abs(p[1] - ymin) < 1]
-        sx0, sx1 = ((min(onbase), max(onbase)) if onbase else
-                    (min(p[0] for p in stem), max(p[0] for p in stem)))
+        if spec["tail"]:
+            # 'j' has nothing to measure at the baseline -- the baseline runs
+            # through its tail, so an edge-to-edge reading there returns the
+            # foot. Both stems are dead straight above the bend, so take the
+            # cross-section at half height; on 'l' it lands on the same two
+            # numbers the baseline does.
+            sx0, sx1 = cross(stem, stem_top * 0.5)
+        else:
+            # Stem width AT THE BASELINE, not the contour bbox -- '1' carries
+            # its flag in the same contour, and a serif sized off that
+            # swallows it.
+            onbase = [p[0] for p in stem if abs(p[1] - ymin) < 1]
+            sx0, sx1 = ((min(onbase), max(onbase)) if onbase else
+                        (min(p[0] for p in stem), max(p[0] for p in stem)))
         stem_w = sx1 - sx0
         serif_h = max(120, int(stem_w * 0.9))
         target = spec["fill"] * adv
@@ -220,28 +294,38 @@ def add_feet(f, adv):
 
         if spec["tail"]:
             # Stem, bend and tail as ONE contour, so the stem flows into the
-            # foot rather than having a shape bolted onto it.
+            # foot rather than having a shape bolted onto it. `d` is the side
+            # the tail turns toward, and everything below is written against
+            # the stem's outer wall so the two directions share one shape:
+            # 'l' turns right off its left wall, 'j' left off its right one.
+            d = 1 if spec["tail"] > 0 else -1
             t = stem_w
             R = 0.40 * t
-            cx, cy = sx0 + t + R, ymin + t + R
-            X = sx0 + t + grow * 0.60
-            pts = [(sx0, stem_top), (sx0, cy)]
-            pts += arc(cx, cy, R + t, 180, 270)
+            ox = sx0 if d > 0 else sx1              # wall the tail curves off
+            ix = ox + d * t                         # and the one it returns to
+            cx, cy = ox + d * (t + R), ymin + t + R
+            X = ox + d * (t + grow * abs(spec["tail"]))
+            a0, a1 = (180, 270) if d > 0 else (0, -90)
+            pts = [(ox, stem_top), (ox, cy)]
+            pts += arc(cx, cy, R + t, a0, a1)
             pts += [(X, ymin), (X, ymin + t)]
-            pts += arc(cx, cy, R, 270, 180)
-            pts += [(sx0 + t, cy), (sx0 + t, stem_top)]
+            pts += arc(cx, cy, R, a1, a0)
+            pts += [(ix, cy), (ix, stem_top)]
             poly(pts)
-            rect(sx0 - grow * 0.40, stem_top - serif_h, sx1, stem_top)
+            rect(sx0 - grow * spec["flag"], stem_top - serif_h, sx1, stem_top)
+            # The original outline is gone -- only what sits apart from the
+            # stem survives, which is 'j's dot and, on 'l', nothing at all.
+            replayRecording(rest, out)
         else:
             rec.replay(out)
             mid = (sx0 + sx1) / 2.0
             if spec["bottom"]:
                 rect(mid - target / 2.0, ymin, mid + target / 2.0, ymin + serif_h)
             if spec["top"]:
-                ytop = max(p[1] for c in cons for p in c)
+                ytop = max(p[1] for c, _ in cons for p in c)
                 rect(mid - target / 2.0, ytop - serif_h, mid + target / 2.0, ytop)
             if spec["flag"]:
-                rect(sx0 - grow * 0.55, stem_top - serif_h, sx1, stem_top)
+                rect(sx0 - grow * spec["flag"], stem_top - serif_h, sx1, stem_top)
 
         ng = out.glyph()
         ng.recalcBounds(None)
