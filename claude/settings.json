@@ -1,13 +1,14 @@
 {
   "permissions": {
     "defaultMode": "auto",
-    "read": {
-      "deny": [
-        "**/.env*",
-        "**/.ssh/**",
-        "**/*password*"
-      ]
-    }
+    "deny": [
+      "Read(~/.bash_local)",
+      "Read(~/.bash_password_commands)",
+      "Read(~/.ssh/**)",
+      "Read(**/.ssh/**)",
+      "Read(**/.env*)",
+      "Read(**/*password*)"
+    ]
   },
   "model": "opus[1m]",
   "hooks": {
