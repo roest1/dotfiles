@@ -29,6 +29,11 @@ run_tools() {
       echo "[$section]"
       echo "-------------------------------------------"
     fi
+    if ! tool_applies_here "$cmd"; then
+      echo "  ↷  $cmd — the Windows host installs this, not the WSL guest"
+      ran_any=1
+      continue
+    fi
     provider_install "$provider" "$cmd" "$pkg" || true
     ran_any=1
   done < <(manifest_lines tool "$@")
@@ -92,7 +97,9 @@ run_check() {
       echo "-------------------------------------------"
     fi
 
-    if command -v "$cmd" >/dev/null 2>&1; then
+    if ! tool_applies_here "$cmd"; then
+      printf "  %-14s n/a (Windows host — see windows/README.md)\n" "$cmd"
+    elif command -v "$cmd" >/dev/null 2>&1; then
       printf "  %-14s ok\n" "$cmd"
     elif [[ "$cmd" == "bat" ]] && command -v batcat >/dev/null 2>&1; then
       printf "  %-14s ok (batcat)\n" "$cmd"

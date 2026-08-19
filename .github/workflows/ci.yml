@@ -495,6 +495,49 @@ jobs:
             echo "links drifted immediately after make link"; exit 1
           fi
 
+      # No runner here is WSL, so every direction of this is invisible to
+      # whoever writes the code — the same problem the SGR 6 guard has. Assert
+      # both, by overriding the predicate rather than by faking /proc/version.
+      #
+      # It matters in both directions. If tool_applies_here wrongly said "not
+      # here" on a normal Linux box, wezterm would silently stop installing and
+      # `make check` would report n/a for a tool that genuinely is missing.
+      - name: wezterm is skipped under WSL, and only under WSL
+        run: |
+          set -euo pipefail
+          source lib/pkg.sh
+
+          # Real predicate, real runner: CI is not WSL, so nothing is suppressed.
+          if is_wsl; then echo "runner reports WSL — it isn't"; exit 1; fi
+          tool_applies_here wezterm || { echo "wezterm suppressed on plain Linux"; exit 1; }
+
+          # Forced off: wezterm still installs, on every platform CI does run.
+          is_wsl() { return 1; }
+          tool_applies_here wezterm || { echo "not-WSL: wezterm must apply"; exit 1; }
+          tool_applies_here rg      || { echo "not-WSL: rg must apply"; exit 1; }
+
+          # Forced on: wezterm is the ONLY thing that drops out. A predicate that
+          # started suppressing rg would break the shell inside every WSL guest.
+          is_wsl() { return 0; }
+          if tool_applies_here wezterm; then echo "WSL: wezterm must not apply"; exit 1; fi
+          tool_applies_here rg || { echo "WSL: rg must still apply"; exit 1; }
+          for t in fzf bat eza gh jq nvim bun uv; do
+            tool_applies_here "$t" || { echo "WSL: $t must still apply"; exit 1; }
+          done
+          echo "ok: WSL suppresses wezterm and nothing else"
+
+      # The links are NOT part of that skip, and the reason is easy to lose:
+      # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
+      # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
+      - name: '[wezterm] still declares its links'
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          n=$(manifest_lines link wezterm | wc -l)
+          [ "$n" -eq 2 ] || { echo "[wezterm] should declare 2 links, found $n"; exit 1; }
+          manifest_lines link wezterm | grep -q 'wezterm/fonts' || {
+            echo "the fonts link vanished from [wezterm]"; exit 1; }
+
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
   link-only:

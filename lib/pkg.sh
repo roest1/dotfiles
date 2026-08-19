@@ -18,6 +18,45 @@
 #   pkg_detect          # sets $PM
 #   pkg_install rg
 
+# ─── Detect the host ─────────────────────────────────────────────────────────
+
+# WSL is Linux by every test this repo already makes — uname says Linux, apt is
+# real, $PM is apt — and yet some things belong to the Windows host rather than
+# the guest. The terminal is the whole of it today: wezterm.exe draws the pixels
+# out there, so a wezterm installed in here is a GUI nothing launches and fonts
+# nothing renders.
+#
+# /proc/version rather than $WSL_DISTRO_NAME: the env var is set by the WSL
+# init for interactive shells, and `make` runs neither login nor interactive,
+# so it is frequently absent exactly when this is asked. The kernel string is
+# always there.
+is_wsl() {
+  grep -qiE "microsoft|wsl" /proc/version 2>/dev/null
+}
+
+# Is this tool ours to install on THIS host?
+#
+# One case, and it earns naming a tool outside deps.conf the way the bat/batcat
+# and fd/fdfind fallbacks in run_check already do. The alternative was a section
+# applicability line in the manifest, which is the `platform` mechanism that was
+# deliberately deleted — a whole line type, a parser change and a CI rule to
+# describe a single tool.
+#
+# wezterm is the case: under WSL the terminal is wezterm.exe on the Windows
+# host. `make install` in the guest cannot install it, and `make check` calling
+# it MISSING is advice that can never be satisfied — it tells you to run
+# `make install wezterm`, which is precisely what just failed to help.
+#
+# Note this covers the TOOL only. The [wezterm] links are still made in the
+# guest: wezterm.lua declares the `mux` unix domain on a guest socket path, so
+# a wezterm-mux-server running in WSL reads it.
+tool_applies_here() {
+  case "$1" in
+    wezterm) ! is_wsl ;;
+    *)       true ;;
+  esac
+}
+
 # ─── Detect package manager ──────────────────────────────────────────────────
 
 # On macOS, brew IS the system package manager. On Linux it is a supplementary
@@ -94,6 +133,20 @@ pkg_install() {
     apt)
       local pkg
       pkg=$(apt_pkg_name "$cmd")
+      # Ask before escalating. `sudo apt install wezterm` on a distro that has
+      # no such package still prompts for a password first and only THEN says
+      # "Unable to locate package" — so the cost of a package apt was never
+      # going to provide is an interactive stop, in the middle of an install
+      # that had been running unattended. apt-cache reads the local lists, so
+      # this costs nothing and needs no network.
+      #
+      # apt only. dnf's equivalent either hits the network or trusts a cache
+      # that may be empty, and a false "no such package" there would silently
+      # skip a package that does exist — worse than the prompt this avoids.
+      if ! apt-cache show "$pkg" >/dev/null 2>&1; then
+        echo "  ↩︎  apt has no package '$pkg'"
+        return 1
+      fi
       sudo apt install -y "$pkg" || { echo "  ⚠️  apt install $pkg failed"; return 1; }
       ;;
     dnf)
