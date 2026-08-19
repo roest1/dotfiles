@@ -139,7 +139,7 @@ function Show-ElevationStatus {
 
     Write-Host '  no elevation helper - the admin launcher entry will not work' -ForegroundColor Yellow
     Write-Host '    Windows 11 24H2+: enable sudo in Settings > System > For developers.'
-    Write-Host '    Otherwise uncomment the gsudo line in deps.conf and re-run.'
+    Write-Host '    Otherwise uncomment the gsudo line in windows\install.ps1 and re-run.'
 }
 
 Install-ProtoFont

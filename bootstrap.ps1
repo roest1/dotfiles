@@ -49,6 +49,13 @@
     if ($linkOnly) { Write-Host '  target: links only' } else { Write-Host '  target: install' }
     Write-Host ''
 
+    # Said up front rather than only in the failure path. Without Developer Mode
+    # the link is denied and install.ps1 falls back to copying - which works, so
+    # nothing looks wrong, and the config quietly stops tracking the repo.
+    Write-Host 'Developer Mode lets this link the config instead of copying it.'
+    Write-Host '  Not on yet?  start ms-settings:developers'
+    Write-Host ''
+
     # --- git ---------------------------------------------------------------
 
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
