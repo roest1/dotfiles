@@ -48,6 +48,20 @@ pins that.
   the right-hand pane only when the *selection* changes, because the pane can
   hold an ~88KB PNG. Re-sending that at 60fps is ~5MB/s down a pty for an
   animation the image is not part of. See the header of `app.rs`.
+- **cargo is required, and this section does not apologise for it.**
+  `tui/deps.sh` used to warn and return 0 when Rust was absent, so `make
+  install` finished green and left the picker missing — the silently-dead
+  install `[nvim]` already learned from. It now fails loudly, because not
+  wanting Rust finally has a real place to live: leave `tui` out of
+  `~/.config/dotfiles/sections`. An opt-out that survives a pull is worth more
+  than a skip that pretends the install worked. `ensure_cargo` (lib/pkg.sh)
+  installs rustup if it has to; CI asserts there is no second copy of that
+  bootstrap here.
+
+  rustup rather than the distro package, which inverts this repo's usual
+  preference for the same reason [nvim] does: the workspace sets a
+  rust-version floor and distro rust lags it, so a too-old toolchain fails at
+  the END of a long install rather than the start.
 - **`deps.conf` says `manual`, not `cargo`.** The cargo provider installs by
   crate NAME from crates.io, and `font` is a name someone else owns there — it
   would install a stranger's crate and report success. The install is

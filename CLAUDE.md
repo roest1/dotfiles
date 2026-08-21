@@ -272,6 +272,16 @@ you write code here. Reasoning, revisit conditions and current status:
   else owns there — it would fetch a stranger's crate and report success. The
   real install is `cargo install --path` in `tui/deps.sh`.
 
+  cargo is REQUIRED by this section, not preferred, and it fails loudly rather
+  than skipping: these binaries are built from the tree, so there is no route to
+  them without a toolchain. `tui/deps.sh` calls `ensure_cargo` in `lib/pkg.sh`,
+  which installs rustup when it has to — the same curl-piped route `uv`, `mise`
+  and `zoxide` already take, kept in the one file allowed to hold it.
+
+  That is affordable only because opting out is durable: leave `tui` out of
+  `~/.config/dotfiles/sections` and the section is never swept. An offline
+  machine does not select it and `make install bash nvim` is unaffected.
+
   A bash function may never be named after one of these binaries; a function
   wins over PATH, so a `font()` would silently shadow it. CI asserts both.
   Details next to the code: [`tui/CLAUDE.md`](tui/CLAUDE.md).

@@ -195,6 +195,45 @@ pip_install() {
 }
 
 # Install a cargo crate. Usage: cargo_install <command_name> [crate_name]
+# Make sure `cargo` exists, installing rustup if it does not. Usage: ensure_cargo
+#
+# Lifted out of cargo_install because a second caller appeared: tui/deps.sh
+# builds this repo's own crates with `cargo install --path`, which the manifest's
+# cargo provider cannot express, and it should not get to hold its own opinion
+# about what a missing cargo means. One implementation, two callers.
+#
+# rustup rather than the distro package, which is the opposite of this repo's
+# usual preference and the same exception [nvim] makes for the same reason: the
+# workspace declares a rust-version floor, distro rust lags it, and a toolchain
+# too old to build the tree fails at the END of a long install rather than at
+# the start. rustup also keeps itself current, which `dnf install rust` cannot.
+#
+# The curl-piped installer is not a new precedent here: uv, mise and zoxide all
+# arrive this way when a package manager cannot serve them.
+ensure_cargo() {
+  command -v cargo >/dev/null 2>&1 && return 0
+
+  echo "  ⚠️  cargo not found — installing rustup..."
+  curl https://sh.rustup.rs -sSf | sh -s -- -y || {
+    echo "  ❌ rustup install failed. Install it manually: https://rustup.rs"
+    return 1
+  }
+  # The installer only edits shell rc files, which this shell has already read.
+  # Without this the very next `command -v cargo` still fails.
+  # shellcheck disable=SC1091
+  source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
+
+  # Both checks are load-bearing, and it is not belt-and-braces. `curl | sh`
+  # exits with SH's status, so a curl that 404s still reports success unless
+  # the caller set pipefail — and whether it did is the caller's business, not
+  # this function's. Asking whether cargo is now runnable is the only test that
+  # does not depend on that.
+  command -v cargo >/dev/null 2>&1 || {
+    echo "  ❌ cargo still not on PATH. Install rustup manually: https://rustup.rs"
+    return 1
+  }
+}
+
 cargo_install() {
   local cmd="$1"
   local crate="${2:-$1}"
@@ -204,16 +243,7 @@ cargo_install() {
     return 0
   fi
 
-  if ! command -v cargo >/dev/null 2>&1; then
-    echo "  ⚠️  cargo not found — installing rustup..."
-    curl https://sh.rustup.rs -sSf | sh -s -- -y
-    # shellcheck disable=SC1091
-    source "$HOME/.cargo/env" 2>/dev/null || export PATH="$HOME/.cargo/bin:$PATH"
-    if ! command -v cargo >/dev/null 2>&1; then
-      echo "  ❌ Failed to install cargo. Install rustup manually: https://rustup.rs"
-      return 1
-    fi
-  fi
+  ensure_cargo || return 1
 
   echo "  ➡️  Installing $crate via cargo..."
   cargo install "$crate" 2>/dev/null \

@@ -653,6 +653,25 @@ jobs:
             || { echo "tui/deps.sh does not install from a local path"; fail=1; }
           exit $fail
 
+      # lib/pkg.sh holds the only implementation of "install a tool", and the
+      # rustup bootstrap is one of those. A copy in tui/deps.sh would be a
+      # second place deciding what a missing cargo means.
+      - name: The tui section bootstraps cargo through lib/pkg.sh
+        run: |
+          fail=0
+          grep -q '^ensure_cargo()' lib/pkg.sh \
+            || { echo "lib/pkg.sh lost ensure_cargo"; fail=1; }
+          grep -q 'ensure_cargo' tui/deps.sh \
+            || { echo "tui/deps.sh does not require cargo"; fail=1; }
+          if grep -q 'rustup.rs' tui/deps.sh; then
+            echo "tui/deps.sh has its own rustup bootstrap; use ensure_cargo"
+            fail=1
+          fi
+          source lib/manifest.sh
+          manifest_lines tool tui | cut -f3 | grep -qx cargo \
+            || { echo "[tui] does not declare cargo"; fail=1; }
+          exit $fail
+
       # The shell specimen renders this repo's real PS1, and its test pins the
       # exact string. A test pinned to a string nobody re-checks is a test that
       # passes while describing a prompt that no longer exists.
