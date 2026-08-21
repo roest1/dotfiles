@@ -172,6 +172,38 @@ function Install-ConfigLink {
         return $true
     }
     catch {
+        # Second attempt, via cmd's mklink, and it is not redundant.
+        #
+        # Windows PowerShell 5.1's New-Item does not pass
+        # SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE, so it is refused even
+        # with Developer Mode ON unless the shell is elevated - which this
+        # script deliberately is not. mklink does pass that flag, and has since
+        # Windows 10 1703. PowerShell 7's New-Item does too, which is why this
+        # only bites on the edition a fresh box actually runs.
+        #
+        # Found on a real machine: Developer Mode on, and every link still fell
+        # through to the copy. Each path is passed as its own argument so
+        # PowerShell quotes it - "C:\Users\Riley Oest\..." has a space in it,
+        # and building one command string would have needed hand-quoting.
+        $linked = $false
+        try {
+            if (Test-Path -LiteralPath $Source -PathType Container) {
+                & cmd.exe /c mklink /D $Destination $Source 2>&1 | Out-Null
+            }
+            else {
+                & cmd.exe /c mklink $Destination $Source 2>&1 | Out-Null
+            }
+            $linked = ($LASTEXITCODE -eq 0)
+        }
+        catch {
+            $linked = $false
+        }
+
+        if ($linked) {
+            Write-Host "  linked $Destination -> $Source (mklink)"
+            return $true
+        }
+
         # A directory source needs -Recurse. Without it Copy-Item creates an
         # empty folder and reports success, so wezterm\fonts would arrive with
         # no fonts in it and the terminal would quietly fall back.
@@ -181,7 +213,7 @@ function Install-ConfigLink {
         else {
             Copy-Item -LiteralPath $Source -Destination $Destination -Force
         }
-        Write-Host "  copied $Destination (symlink denied)" -ForegroundColor Yellow
+        Write-Host "  copied $Destination (both link routes denied)" -ForegroundColor Yellow
         Write-Host "    Turn on Developer Mode, then re-run to get a link that tracks" -ForegroundColor Yellow
         Write-Host "    the repo. Until then this is a copy: editing the repo will not" -ForegroundColor Yellow
         Write-Host "    change it. To open the right page on any Windows build:" -ForegroundColor Yellow

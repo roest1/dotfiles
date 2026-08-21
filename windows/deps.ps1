@@ -120,15 +120,53 @@ function Install-ProtoFont {
     Reports only. wezterm-windows.lua does its own detection at config-eval
     time, so this exists to say why the admin entry will or won't work rather
     than to change anything.
-#>
-function Show-ElevationStatus {
-    $nativeSudo = Join-Path $env:SystemRoot 'System32\sudo.exe'
 
-    if (Test-Path -LiteralPath $nativeSudo) {
-        Write-Host '  ok sudo (Windows 11 24H2+)'
-        Write-Host '    Elevates in a NEW WINDOW until you run, from an admin console:'
-        Write-Host '      sudo config --enable normal'
-        Write-Host '    Enable it first at Settings > System > For developers > Enable sudo.'
+    sudo.exe SHIPS IN System32 on Windows 11 24H2+ whether or not the feature
+    is switched on, so Test-Path on the binary answers "did Microsoft ship it",
+    not "will it run". Testing the binary reported `ok sudo (Windows 11 24H2+)`
+    on a machine with Enable sudo switched OFF - a green line for something
+    that then fails at the point of use, which is the one outcome this file is
+    supposed to prevent.
+
+    The feature switch lives in the registry. Mode names are reported from the
+    raw value rather than assumed, so an unrecognised value prints itself
+    instead of being silently mapped to the wrong label.
+#>
+function Get-SudoState {
+    $state = @{
+        Present = (Test-Path -LiteralPath (Join-Path $env:SystemRoot 'System32\sudo.exe'))
+        Enabled = $false
+        Mode    = 'disabled'
+        Raw     = $null
+    }
+
+    $key  = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo'
+    $prop = Get-ItemProperty -Path $key -Name 'Enabled' -ErrorAction SilentlyContinue
+    if (-not $prop) { return $state }
+
+    $state.Raw = $prop.Enabled
+    if ($prop.Enabled -eq 0) { return $state }
+
+    $state.Enabled = $true
+    switch ($prop.Enabled) {
+        1 { $state.Mode = 'new window' }
+        2 { $state.Mode = 'inline, input closed' }
+        3 { $state.Mode = 'inline' }
+        default { $state.Mode = "enabled (unrecognised mode $($prop.Enabled))" }
+    }
+    return $state
+}
+
+function Show-ElevationStatus {
+    $sudo = Get-SudoState
+
+    if ($sudo.Enabled) {
+        Write-Host "  ok sudo - $($sudo.Mode)"
+        if ($sudo.Mode -ne 'inline') {
+            Write-Host '    That elevates in a NEW WINDOW. For the current pane instead,'
+            Write-Host '    run this once from an admin console:'
+            Write-Host '      sudo config --enable normal'
+        }
         return
     }
 
@@ -137,8 +175,17 @@ function Show-ElevationStatus {
         return
     }
 
+    if ($sudo.Present) {
+        Write-Host '  sudo.exe is present but the feature is OFF' -ForegroundColor Yellow
+        Write-Host '    The binary ships with the OS; the feature is a separate switch.' -ForegroundColor Yellow
+        Write-Host '    Turn it on:  start ms-settings:developers' -ForegroundColor Yellow
+        Write-Host '    (Settings > System > Advanced > Terminal > Enable sudo)' -ForegroundColor Yellow
+        Write-Host '    Then re-run. Until then the admin entry is omitted.' -ForegroundColor Yellow
+        return
+    }
+
     Write-Host '  no elevation helper - the admin launcher entry will not work' -ForegroundColor Yellow
-    Write-Host '    Windows 11 24H2+: enable sudo in Settings > System > For developers.'
+    Write-Host '    Windows 11 24H2+: enable sudo at  start ms-settings:developers'
     Write-Host '    Otherwise uncomment the gsudo line in windows\install.ps1 and re-run.'
 }
 
