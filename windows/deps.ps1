@@ -11,7 +11,24 @@
     the admin launcher entry is the only thing that stops working.
 #>
 
-$FontUrl     = 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download/0xProto.zip'
+# One row per Nerd Font this host has to carry. Archive is the nerd-fonts
+# release asset name; Prefix is how the installed faces are named in the
+# registry, which is what the already-installed check matches on.
+#
+# JetBrainsMono is here because wezterm/shared.lua names it as the default
+# `nvim.editor` lane. Without it wezterm falls back AND raises a toast on every
+# single launch -- "Unable to load a font matching one of your font_rules" --
+# which is the first thing a new Windows install would show you.
+#
+# wezterm bundles a plain 'JetBrains Mono', which is the same typeface WITHOUT
+# the patched icons, so the fallback is not equivalent and the warning is
+# correct. wezterm/deps.sh installs this same pair on Linux and macOS; the two
+# lists are asserted against each other in CI, because nothing else reads both.
+$FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download'
+$NerdFonts   = @(
+    @{ Archive = '0xProto';       Prefix = '0xProto' },
+    @{ Archive = 'JetBrainsMono'; Prefix = 'JetBrainsMono' }
+)
 $FontRegKey  = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
 $UserFontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
 
@@ -27,7 +44,7 @@ $UserFontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
     the console that spawned it.
 #>
 function Test-FontInstalled {
-    param([string] $Prefix = '0xProto')
+    param([Parameter(Mandatory = $true)][string] $Prefix)
 
     foreach ($key in @($FontRegKey, 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts')) {
         $props = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
@@ -60,20 +77,25 @@ function Get-FontFamilyName {
     return [IO.Path]::GetFileNameWithoutExtension($Path)
 }
 
-function Install-ProtoFont {
-    if (Test-FontInstalled) {
-        Write-Host '  ok 0xProto Nerd Font'
+function Install-NerdFont {
+    param(
+        [Parameter(Mandatory = $true)][string] $Archive,
+        [Parameter(Mandatory = $true)][string] $Prefix
+    )
+
+    if (Test-FontInstalled -Prefix $Prefix) {
+        Write-Host "  ok $Archive Nerd Font"
         return
     }
 
-    $work = Join-Path $env:TEMP ('0xproto-' + [guid]::NewGuid().ToString('N'))
-    $zip  = Join-Path $work '0xProto.zip'
+    $work = Join-Path $env:TEMP ($Archive + '-' + [guid]::NewGuid().ToString('N'))
+    $zip  = Join-Path $work ($Archive + '.zip')
 
     try {
         New-Item -ItemType Directory -Path $work -Force | Out-Null
 
-        Write-Host '  downloading 0xProto Nerd Font...'
-        Invoke-WebRequest -Uri $FontUrl -OutFile $zip -UseBasicParsing
+        Write-Host "  downloading $Archive Nerd Font..."
+        Invoke-WebRequest -Uri "$FontBaseUrl/$Archive.zip" -OutFile $zip -UseBasicParsing
 
         Expand-Archive -LiteralPath $zip -DestinationPath $work -Force
 
@@ -96,7 +118,7 @@ function Install-ProtoFont {
         }
 
         if ($installed -gt 0) {
-            Write-Host "  installed 0xProto Nerd Font ($installed faces)" -ForegroundColor Green
+            Write-Host "  installed $Archive Nerd Font ($installed faces)" -ForegroundColor Green
             Write-Host '    Already-running apps keep the old font list - restart wezterm.'
         }
         else {
@@ -104,8 +126,8 @@ function Install-ProtoFont {
         }
     }
     catch {
-        Write-Host "  0xProto Nerd Font failed: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host '    wezterm falls back to JetBrains Mono. Looks worse, works fine.' -ForegroundColor Yellow
+        Write-Host "  $Archive Nerd Font failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host '    wezterm falls back and warns on launch. Looks worse, works fine.' -ForegroundColor Yellow
     }
     finally {
         if (Test-Path -LiteralPath $work) {
@@ -192,5 +214,7 @@ function Show-ElevationStatus {
     Write-Host '    Otherwise uncomment the gsudo line in windows\install.ps1 and re-run.'
 }
 
-Install-ProtoFont
+foreach ($nf in $NerdFonts) {
+    Install-NerdFont -Archive $nf.Archive -Prefix $nf.Prefix
+}
 Show-ElevationStatus

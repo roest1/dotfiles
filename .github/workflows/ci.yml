@@ -281,6 +281,29 @@ jobs:
           [ "$n" -eq 4 ] \
             || { echo "shared.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
 
+          # Every family named as a lane DEFAULT has to be installed on BOTH
+          # platforms. wezterm/deps.sh and windows/deps.ps1 are separate files
+          # that nothing else reads together, and the failure is nearly silent:
+          # wezterm falls back to something plausible and raises a toast on
+          # every launch -- "Unable to load a font matching one of your
+          # font_rules". That is precisely how JetBrainsMono shipped Linux-only
+          # and greeted the Windows host with a warning on startup.
+          #
+          # Only the DEFAULT_FONTS block is scanned. Symbols Nerd Font Mono
+          # appears in the fallback chains and is bundled with wezterm, so
+          # requiring an installer for it would be wrong.
+          sed -n '/^local DEFAULT_FONTS = {/,/^}/p' wezterm/shared.lua \
+            | grep -oE '"[^"]+Nerd Font"' | tr -d '"' | sort -u \
+          | while IFS= read -r fam; do
+              [ -n "$fam" ] || continue
+              archive=${fam% Nerd Font}
+              grep -q "$archive" wezterm/deps.sh \
+                || { echo "wezterm/deps.sh does not install '$fam'"; exit 1; }
+              grep -q "$archive" windows/deps.ps1 \
+                || { echo "windows/deps.ps1 does not install '$fam'"; exit 1; }
+              echo "  ok both platforms install $fam"
+            done || fail=1
+
           # The writer half. Without this the lane is configured and nothing
           # ever emits into it.
           grep -q "require('external.altfont')" nvim/init.lua \
