@@ -76,9 +76,25 @@ config.unix_domains = {
 
 -- ─── Colors ─────────────────────────────────────────────────────────
 --
--- rose-pine-moon, to match nvim (nvim/lua/external/plugins/theme.lua).
+-- Surfaces from rose-pine MAIN. nvim stays on rose-pine-moon
+-- (nvim/lua/external/plugins/theme.lua), and that split is deliberate.
 --
--- Literal hex, NOT wezterm.color.get_builtin_schemes()['rose-pine-moon'],
+-- theme.lua sets `disable_background = true` and forces Normal/NormalFloat to
+-- bg = 'none', so nvim paints no background of its own: the `background` below
+-- IS the editor's background, and there is nothing to keep in sync. Only what
+-- nvim actively draws — CursorLine, Visual, Pmenu — stays on moon's tones,
+-- which now sit ~7.5 OKLab-L points above this base rather than moon's own
+-- 2.8, so the cursorline reads louder than in a stock moon setup. Accepted
+-- cost of the darker pane; `ColorMyPencils('rose-pine')` is the fix if it
+-- ever grates.
+--
+-- Why main and not moon: moon's base is L 26.0% at chroma 0.039, and the ANSI
+-- blue this config deliberately leaves at wezterm's default (#5555cc) scores
+-- 2.65:1 against it — under the 3:1 floor for legibility. Main's base is
+-- L 21.3%, which is almost exactly where that pair crosses 3.00:1 (L 21.2%),
+-- and it carries 35% less chroma, so the blue cast leaves with the lightness.
+--
+-- Literal hex, NOT wezterm.color.get_builtin_schemes()['rose-pine'],
 -- which is where this started. That call builds the whole 1113-entry
 -- scheme table to read one row: measured at ~24ms per call on this
 -- machine. wezterm evaluates this file several times per process (the
@@ -89,10 +105,10 @@ config.unix_domains = {
 --
 -- Re-derive after a wezterm upgrade with:
 --   wezterm --config-file /dev/null -e true   # then in any lua scratch:
---   require('wezterm').color.get_builtin_schemes()['rose-pine-moon']
+--   require('wezterm').color.get_builtin_schemes()['rose-pine']
 --
 -- The ANSI 16 are DELIBERATELY not set, and that is the whole point of
--- writing it this way instead of `config.color_scheme = 'rose-pine-moon'`.
+-- writing it this way instead of `config.color_scheme = 'rose-pine'`.
 -- Everything that colors its own output — gh, git, grep, and so the whole
 -- bash_github_tui — speaks in those 16 slots, and bash_theme/EZA_COLORS
 -- speak in 256-colour codes layered on the same palette. Remapping the
@@ -104,62 +120,62 @@ config.unix_domains = {
 -- line below it — toggling is commenting, as deps.conf puts it.
 config.colors = {
 	foreground = "#e0def4",
-	background = "#232136",
+	background = "#191724",
 	cursor_bg = "#e0def4",
-	cursor_fg = "#232136",
+	cursor_fg = "#191724",
 	cursor_border = "#e0def4",
 
-	-- NOT the builtin's value. rose-pine-moon ships selection_bg identical to
-	-- its background (#232136), which renders a selection invisible. #44415a is
-	-- "highlight med" from the upstream rose-pine moon palette, which is what
-	-- the scheme means by a selection.
+	-- NOT the builtin's value. The rose-pine schemes ship selection_bg identical
+	-- to their own background (#191724 here), which renders a selection
+	-- invisible. #403d52 is "highlight med" from the upstream rose-pine palette,
+	-- which is what the scheme means by a selection.
 	selection_fg = "#e0def4",
-	selection_bg = "#44415a",
+	selection_bg = "#403d52",
 
 	-- ─── Tab bar ──────────────────────────────────────────────────────
 	--
 	-- A SEPARATE setting from `background` above, which is the trap: theming
 	-- the terminal area alone leaves the tab bar at wezterm's default grey,
-	-- sitting directly above a #232136 window. Both have to be stated.
+	-- sitting directly above a #191724 window. Both have to be stated.
 	--
-	-- The shades are rose-pine moon's own surface ladder, so the bar reads as
+	-- The shades are rose-pine main's own surface ladder, so the bar reads as
 	-- depth rather than as a different program:
-	--   base #232136 (the terminal)  <- active tab, so it merges with the pane
-	--   surface #2a273f              <- the bar itself and idle tabs
-	--   overlay #393552              <- hover
+	--   base #191724 (the terminal)  <- active tab, so it merges with the pane
+	--   surface #1f1d2e              <- the bar itself and idle tabs
+	--   overlay #26233a              <- hover
 	tab_bar = {
-		background = "#2a273f",
+		background = "#1f1d2e",
 
 		active_tab = {
-			bg_color = "#232136",
+			bg_color = "#191724",
 			fg_color = "#e0def4",
 		},
 		inactive_tab = {
-			bg_color = "#2a273f",
+			bg_color = "#1f1d2e",
 			fg_color = "#6e6a86", -- muted: readable, but clearly not the focus
 		},
 		inactive_tab_hover = {
-			bg_color = "#393552",
+			bg_color = "#26233a",
 			fg_color = "#e0def4",
 		},
 		new_tab = {
-			bg_color = "#2a273f",
+			bg_color = "#1f1d2e",
 			fg_color = "#908caa",
 		},
 		new_tab_hover = {
-			bg_color = "#393552",
+			bg_color = "#26233a",
 			fg_color = "#e0def4",
 		},
 	},
 }
--- config.color_scheme = 'rose-pine-moon'   -- full scheme, ANSI 16 included
+-- config.color_scheme = 'rose-pine'   -- full scheme, ANSI 16 included
 
 -- The fancy tab bar draws its own frame, which `colors.tab_bar.background`
 -- does NOT reach — that is why the bar can stay grey even after the block
 -- above. active/inactive here is the WINDOW's focus, not the tab's.
 config.window_frame = {
-	active_titlebar_bg = "#2a273f",
-	inactive_titlebar_bg = "#232136",
+	active_titlebar_bg = "#1f1d2e",
+	inactive_titlebar_bg = "#191724",
 	-- Science Gothic — a Google Fonts variable family (OFL-licensed), installed
 	-- by wezterm/deps.sh. Bold weight for the military-poster heft; 0xProto
 	-- stays as fallback so status glyphs (🔨💬⚡ etc.) still resolve, since
@@ -344,9 +360,9 @@ local STATES = {
 
 	-- A terminal with no Claude session in it.
 	--
-	-- White, at full 21:1 contrast against both the active (#232136) and
-	-- inactive (#2a273f) tab backgrounds — plain shells are meant to stand
-	-- out, not recede.
+	-- White, the highest contrast available against both the active (#191724,
+	-- 17.7:1) and inactive (#1f1d2e, 16.5:1) tab backgrounds — plain shells
+	-- are meant to stand out, not recede.
 	--
 	-- bold stays set: even at full contrast, weight is what makes the shape
 	-- read as a distinct tab rather than just more text in the bar.
@@ -453,7 +469,7 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 	-- a stream of attribute changes, so an unset Intensity carries over from
 	-- whatever the previous tab ended on.
 	local out = {
-		{ Background = { Color = hover and "#393552" or (tab.is_active and "#232136" or "#2a273f") } },
+		{ Background = { Color = hover and "#26233a" or (tab.is_active and "#191724" or "#1f1d2e") } },
 		{ Attribute = { Intensity = "Normal" } },
 		{ Foreground = { Color = "#6e6a86" } },
 		{ Text = " " .. index },

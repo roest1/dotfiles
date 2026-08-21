@@ -72,15 +72,15 @@ config.font_rules = {
 -- this file is evaluated several times per process.
 config.colors = {
   foreground = '#e0def4',
-  background = '#232136',
+  background = '#191724',
   cursor_bg = '#e0def4',
-  cursor_fg = '#232136',
+  cursor_fg = '#191724',
   cursor_border = '#e0def4',
 
   -- The builtin's selection_bg equals its background, which renders a selection
-  -- invisible; this is rose-pine moon's "highlight med" instead.
+  -- invisible; this is rose-pine main's "highlight med" instead.
   selection_fg = '#e0def4',
-  selection_bg = '#44415a',
+  selection_bg = '#403d52',
 }
 
 -- ─── What's actually on this machine ─────────────────────────────────────────
