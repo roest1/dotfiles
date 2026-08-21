@@ -52,6 +52,7 @@ STATUS_DRIFT_STALE=0
 _drift_link()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
 _drift_tool()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
 _drift_stale() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_STALE=$((STATUS_DRIFT_STALE + 1)); }
+_drift_windows() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WINDOWS=$((STATUS_DRIFT_WINDOWS + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
@@ -190,17 +191,87 @@ status_tools() {
 }
 
 # ── Everything ───────────────────────────────────────────────────────────────
+# ─── The Windows host clone, seen from the WSL guest ─────────────────────────
+#
+# The one piece of state `make status` could not previously see, and the one
+# that goes stale most often. wezterm.exe reads a SECOND clone on C:, and you
+# are almost never sitting in it -- so it falls behind main while the WSL clone
+# you do live in is current. Every wezterm symptom chased this week turned out
+# to be that: a host clone on an older commit, missing a link or a font the
+# guest had had for hours.
+#
+# Found by glob rather than by asking Windows. `powershell.exe $env:USERPROFILE`
+# costs a process launch across the VM boundary on every `make status`, and
+# wslvar needs wslu installed. The glob is local, instant, and wrong only on a
+# box with several Windows profiles -- which DOTFILES_WINDOWS_DIR overrides.
+#
+# Reports the COMMIT, not the working tree. A clone on C: legitimately shows
+# modified files to the guest's git when line endings disagree, and that is a
+# different problem with a different fix (.gitattributes) -- flagging it here
+# would cry wolf on every run.
+status_windows() {
+  is_wsl || return 0
+
+  local win="${DOTFILES_WINDOWS_DIR:-}"
+  if [[ -z "$win" ]]; then
+    local d
+    for d in /mnt/c/Users/*/dotfiles; do
+      [[ -d "$d/.git" ]] && { win="$d"; break; }
+    done
+  fi
+
+  echo ""
+  printf "%s[windows] host clone%s\n" "$SG_B" "$SG_OFF"
+
+  if [[ -z "$win" || ! -d "$win/.git" ]]; then
+    printf "%s  · not found under /mnt/c/Users/*/dotfiles%s\n" "$SG" "$SG_OFF"
+    echo "      wezterm.exe reads its config from a clone on C:. If you use the"
+    echo "      Windows host, see windows/README.md; if you do not, ignore this."
+    return 0
+  fi
+
+  local here there
+  here="$(git -C "$DOTFILES_ROOT" rev-parse HEAD 2>/dev/null)"
+  there="$(git -C "$win" rev-parse HEAD 2>/dev/null)"
+
+  if [[ -z "$there" ]]; then
+    printf "%s  ✗ cannot read HEAD in %s%s\n" "$SG" "$win" "$SG_OFF"
+    _drift_windows
+    return 0
+  fi
+
+  if [[ "$here" == "$there" ]]; then
+    printf "%s  ✓ in sync        %s%s\n" "$SG" "${there:0:7}" "$SG_OFF"
+    return 0
+  fi
+
+  # Behind, ahead or on another branch entirely all get one message, because the
+  # fix is identical and the distinction does not change what you type.
+  local behind
+  behind="$(git -C "$win" rev-list --count "$there..$here" 2>/dev/null || true)"
+  if [[ -n "$behind" && "$behind" != "0" ]]; then
+    printf "%s  ✗ %s commit(s) behind this clone (%s vs %s)%s\n" \
+      "$SG" "$behind" "${there:0:7}" "${here:0:7}" "$SG_OFF"
+  else
+    printf "%s  ✗ diverged from this clone (%s vs %s)%s\n" \
+      "$SG" "${there:0:7}" "${here:0:7}" "$SG_OFF"
+  fi
+  _drift_windows
+}
+
 status_all() {
   STATUS_DRIFT=0
   STATUS_DRIFT_LINKS=0
   STATUS_DRIFT_TOOLS=0
   STATUS_DRIFT_STALE=0
+  STATUS_DRIFT_WINDOWS=0
   echo ""
   printf "%ssync status — deps.conf vs. this machine%s\n" "$SG_B" "$SG_OFF"
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
   status_links "$@"
   status_tools "$@"
-  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE ))
+  status_windows
+  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE + STATUS_DRIFT_WINDOWS ))
 
   echo ""
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -216,6 +287,13 @@ status_all() {
       echo "  ✗ pins ($STATUS_DRIFT_STALE) — mise.toml pins a version this machine never installed."
       echo "             Run 'mise install'. 'make install' will NOT fix it: the old"
       echo "             shim is still on PATH, so mise_install short-circuits."
+    fi
+    if [[ $STATUS_DRIFT_WINDOWS -gt 0 ]]; then
+      echo "  ✗ windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is not this commit."
+      echo "             From PowerShell on the host:"
+      echo "               cd \"\$env:USERPROFILE\\dotfiles\"; git checkout main; git pull"
+      echo "               powershell -NoProfile -ExecutionPolicy Bypass -File .\\windows\\install.ps1"
+      echo "             The second line is not optional when a link or font was added."
     fi
     if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
       echo "  ✗ tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."

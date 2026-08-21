@@ -24,6 +24,25 @@
 # the patched icons, so the fallback is not equivalent and the warning is
 # correct. wezterm/deps.sh installs this same pair on Linux and macOS; the two
 # lists are asserted against each other in CI, because nothing else reads both.
+# Science Gothic -- the PROPORTIONAL family, not the monospaced cut this repo
+# generates. wezterm/shared.lua names it as window_frame.font, which is the face
+# the tab bar is drawn in, so without it the Windows tab bar silently falls
+# through the chain to 0xProto and looks nothing like the same terminal on
+# Linux.
+#
+# Not a Nerd Font, so it is not a zip and does not come from the nerd-fonts
+# release pattern: it is one variable .ttf out of google/fonts, the same source
+# wezterm/deps.sh pulls it from. The bracketed axis list in the filename is
+# URL-encoded, which is why this is a literal rather than something built from
+# the family name.
+$SingleFonts = @(
+    @{
+        Prefix = 'Science Gothic'
+        File   = 'ScienceGothic.ttf'
+        Url    = 'https://raw.githubusercontent.com/google/fonts/main/ofl/sciencegothic/ScienceGothic%5BCTRS,slnt,wdth,wght%5D.ttf'
+    }
+)
+
 $FontBaseUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/latest/download'
 $NerdFonts   = @(
     @{ Archive = '0xProto';       Prefix = '0xProto' },
@@ -136,6 +155,43 @@ function Install-NerdFont {
     }
 }
 
+function Install-FontFile {
+    param(
+        [Parameter(Mandatory = $true)][string] $Prefix,
+        [Parameter(Mandatory = $true)][string] $File,
+        [Parameter(Mandatory = $true)][string] $Url
+    )
+
+    if (Test-FontInstalled -Prefix $Prefix) {
+        Write-Host "  ok $Prefix"
+        return
+    }
+
+    try {
+        if (-not (Test-Path -LiteralPath $UserFontDir)) {
+            New-Item -ItemType Directory -Path $UserFontDir -Force | Out-Null
+        }
+        if (-not (Test-Path -LiteralPath $FontRegKey)) {
+            New-Item -Path $FontRegKey -Force | Out-Null
+        }
+
+        Write-Host "  downloading $Prefix..."
+        $dest = Join-Path $UserFontDir $File
+        Invoke-WebRequest -Uri $Url -OutFile $dest -UseBasicParsing
+
+        $family = Get-FontFamilyName $dest
+        New-ItemProperty -Path $FontRegKey -Name "$family (TrueType)" `
+                         -Value $dest -PropertyType String -Force | Out-Null
+
+        Write-Host "  installed $Prefix" -ForegroundColor Green
+        Write-Host '    Already-running apps keep the old font list - restart wezterm.'
+    }
+    catch {
+        Write-Host "  $Prefix failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host '    The tab bar falls back to 0xProto. Looks different, works fine.' -ForegroundColor Yellow
+    }
+}
+
 # --- Elevation helper ------------------------------------------------------
 
 <#
@@ -216,5 +272,8 @@ function Show-ElevationStatus {
 
 foreach ($nf in $NerdFonts) {
     Install-NerdFont -Archive $nf.Archive -Prefix $nf.Prefix
+}
+foreach ($sf in $SingleFonts) {
+    Install-FontFile -Prefix $sf.Prefix -File $sf.File -Url $sf.Url
 }
 Show-ElevationStatus
