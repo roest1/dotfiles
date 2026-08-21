@@ -125,6 +125,22 @@ provider_satisfies() {
   local spec="$1" actual="$2" p
   for p in ${spec//||/ }; do
     [[ "$p" == "$actual" ]] && return 0
+
+    # `manual` is a WILDCARD, deliberately. It does not name a provider -- it
+    # says "this repo cannot install this; an official installer or an extracted
+    # build is an acceptable source." So any provenance satisfies it, which is
+    # exactly what it was added for: declaring `manual` is what stops
+    # `make status` flagging a correct state as drift.
+    #
+    # Without this, [tui]'s `manual cargo` and `manual font` sat in the drift
+    # count permanently. Both are built by tui/deps.sh with
+    # `cargo install --path`, which lands them in ~/.cargo/bin, which
+    # provider_of correctly reports as "cargo" -- a true answer the declaration
+    # was never disagreeing with.
+    #
+    # This only applies to a tool that IS installed: an absent one is caught by
+    # the `absent` branch in status_tools before provider_satisfies is reached.
+    [[ "$p" == "manual" ]] && return 0
   done
   return 1
 }
@@ -230,32 +246,35 @@ status_windows() {
     return 0
   fi
 
-  local here there
-  here="$(git -C "$DOTFILES_ROOT" rev-parse HEAD 2>/dev/null)"
-  there="$(git -C "$win" rev-parse HEAD 2>/dev/null)"
+  # Compared against origin/main, NOT this clone's HEAD. You are frequently on
+  # a feature branch here, and the host clone being "different from my branch"
+  # is not news -- what matters is whether it has what shipped.
+  #
+  # Uses the origin/main ref as of the last fetch rather than asking the
+  # network: `make status` is a local question and should not block on a remote.
+  local want have branch
+  want="$(git -C "$DOTFILES_ROOT" rev-parse origin/main 2>/dev/null)"
+  have="$(git -C "$win" rev-parse HEAD 2>/dev/null)"
+  branch="$(git -C "$win" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 
-  if [[ -z "$there" ]]; then
-    printf "%s  ✗ cannot read HEAD in %s%s\n" "$SG" "$win" "$SG_OFF"
+  if [[ -z "$have" ]]; then
+    printf "%s  ✗ [out of date]  cannot read HEAD in %s%s\n" "$SG" "$win" "$SG_OFF"
     _drift_windows
     return 0
   fi
 
-  if [[ "$here" == "$there" ]]; then
-    printf "%s  ✓ in sync        %s%s\n" "$SG" "${there:0:7}" "$SG_OFF"
+  if [[ -z "$want" ]]; then
+    printf "%s  · [unknown]      no origin/main here to compare against%s\n" "$SG" "$SG_OFF"
     return 0
   fi
 
-  # Behind, ahead or on another branch entirely all get one message, because the
-  # fix is identical and the distinction does not change what you type.
-  local behind
-  behind="$(git -C "$win" rev-list --count "$there..$here" 2>/dev/null || true)"
-  if [[ -n "$behind" && "$behind" != "0" ]]; then
-    printf "%s  ✗ %s commit(s) behind this clone (%s vs %s)%s\n" \
-      "$SG" "$behind" "${there:0:7}" "${here:0:7}" "$SG_OFF"
-  else
-    printf "%s  ✗ diverged from this clone (%s vs %s)%s\n" \
-      "$SG" "${there:0:7}" "${here:0:7}" "$SG_OFF"
+  if [[ "$have" == "$want" ]]; then
+    printf "%s  ✓ [up to date]   %s @ %s%s\n" "$SG" "${branch:-detached}" "${have:0:7}" "$SG_OFF"
+    return 0
   fi
+
+  printf "%s  ✗ [out of date]  %s @ %s — origin/main is %s%s\n" \
+    "$SG" "${branch:-detached}" "${have:0:7}" "${want:0:7}" "$SG_OFF"
   _drift_windows
 }
 
