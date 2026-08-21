@@ -577,14 +577,30 @@ jobs:
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
+      # Named rather than counted. A bare count told you the number was wrong
+      # and nothing else -- it fired when shared.lua was added, which was a
+      # correct change, while a swap that kept the count would have passed
+      # silently. Each of these three has a different failure if it goes
+      # missing, so each is asserted by name.
       - name: '[wezterm] still declares its links'
         run: |
           set -euo pipefail
           source lib/manifest.sh
-          n=$(manifest_lines link wezterm | wc -l)
-          [ "$n" -eq 2 ] || { echo "[wezterm] should declare 2 links, found $n"; exit 1; }
-          manifest_lines link wezterm | grep -q 'wezterm/fonts' || {
-            echo "the fonts link vanished from [wezterm]"; exit 1; }
+          links=$(manifest_lines link wezterm | awk -F'\t' '{print $2}')
+          bad=0
+          # the config itself: without it the guest has no wezterm.lua at all
+          grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
+            echo "[wezterm] no longer links wezterm.lua"; bad=1; }
+          # the shared body: both entry points dofile() it, and its absence
+          # degrades silently through the pcall rather than erroring
+          grep -qx 'wezterm/shared.lua' <<<"$links" || {
+            echo "[wezterm] no longer links shared.lua — the config would load unstyled"; bad=1; }
+          # the fonts: font_dirs reads them out of the linked config dir, and
+          # lib/sgr.sh uses this very link as its proxy for "config is live"
+          grep -qx 'wezterm/fonts' <<<"$links" || {
+            echo "[wezterm] no longer links the fonts directory"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: [wezterm] links config, shared body and fonts"
+          exit $bad
 
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
