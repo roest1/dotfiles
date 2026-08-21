@@ -37,6 +37,12 @@ local config = wezterm.config_builder()
 local ok, shared = pcall(dofile, wezterm.config_dir .. "/shared.lua")
 if ok and shared then
 	shared.apply(config)
+	-- The Claude session glyphs. The guest emits the OSC 1337 user var and this
+	-- host reads it, so the only reason this never worked on Windows is that it
+	-- lived in the Linux entry point.
+	if shared.claude_tab_titles then
+		shared.claude_tab_titles()
+	end
 else
 	wezterm.log_error("wezterm: shared.lua did not load (" .. tostring(shared) .. ") — re-run windows\\install.ps1")
 end
