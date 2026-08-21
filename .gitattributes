@@ -1,3 +1,26 @@
+# ─── Line endings ────────────────────────────────────────────────────────────
+#
+# LF in the repo AND in every working tree, on every platform.
+#
+# `eol=lf` is the load-bearing half. Git for Windows ships
+# core.autocrlf=true, so a clone on C: checks out CRLF -- and the SAME clone
+# read from WSL then shows every file modified. Measured: 130 files, 26,602
+# insertions and 26,602 deletions, which is every line of the repo. Nothing was
+# edited; the two gits simply disagreed about what the file says.
+#
+# This is not only cosmetic. Everything in lib/, install.sh and */deps.sh runs
+# under bash, and a CRLF shebang line or a CRLF `fi` is a syntax error -- the
+# WSL side would break the moment it ran anything out of that clone.
+#
+# `text=auto` lets git decide what is text; `eol=lf` then overrides autocrlf in
+# both directions, so this holds without asking anyone to configure their git.
+* text=auto eol=lf
+
+# Explicitly binary, so no normalization is ever attempted on them.
+*.ttf binary
+*.png binary
+*.zip binary
+
 # claude/settings.json is written by Claude Code at runtime, through the symlink
 # declared in deps.conf's [claude] section. model and effortLevel are per-machine
 # and per-conversation preferences, so they are stripped on the way into git by

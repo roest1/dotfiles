@@ -58,6 +58,34 @@ say so. That works, but the copy stops tracking the repo: editing
 `wezterm-windows.lua` no longer changes your live config until you re-run the
 install. Turn Developer Mode on and re-run to get the link back.
 
+## Staying up to date
+
+This clone does not update itself, and you are rarely sitting in it. After
+anything lands on `main`:
+
+```powershell
+cd "$env:USERPROFILE\dotfiles"; git checkout main; git pull
+powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
+```
+
+**The second line is not optional.** `git pull` moves the files; only
+`install.ps1` creates a link or installs a font that the update added. Skipping
+it is how the host ended up without `shared.lua`, without JetBrainsMono, and
+with a tab bar drawn in the wrong face — each time looking like a wezterm bug.
+
+You do not have to remember to check. **`make status`, run in WSL, reports this
+clone** — it finds it under `/mnt/c/Users/*/dotfiles` and compares its commit
+to the one you are on:
+
+```
+[windows] host clone
+  ✗ 6 commit(s) behind this clone (c3a580c vs 73c1807)
+```
+
+It prints the two commands above when they are out of step. Override the
+location with `DOTFILES_WINDOWS_DIR` if your clone is not under
+`%USERPROFILE%`.
+
 ## What you get
 
 `CTRL+SHIFT+O` opens a fuzzy picker over every shell:
