@@ -92,13 +92,17 @@ tool  uv||pkg      ruff
 post  bun install --cwd nvim/lsp-servers --frozen-lockfile
 ```
 
-Four line types, and that's the whole vocabulary:
+Three line types, and that's the whole vocabulary:
 
 | Line | What |
 | ---- | ---- |
 | `link <repo-path> <dest>` | a symlink; `~` expands to your home |
 | `tool <provider> <command> [package]` | a dependency; package defaults to the command name |
 | `post <shell command>` | runs after that section's tools |
+
+There is no `platform` line type. The Windows host declares its own payload in
+`windows/install.ps1` and reads no manifest, which retired the only section that
+ever needed one — CI rejects `platform` as an unknown line type.
 
 | Command | What |
 | ------- | ---- |
@@ -146,6 +150,9 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 | `uv`     | Python tools (replaces pip; same vendor as ruff) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
 | `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
+
+There is no `winget` provider either, and CI rejects it. Windows packages are
+declared in `$WingetTools` at the top of `windows/install.ps1`.
 
 There is no `npm` provider, and adding one is a CI failure. See the node
 paragraph above.
