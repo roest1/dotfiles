@@ -27,6 +27,10 @@ HERE_STATUS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_ROOT="$(cd "$HERE_STATUS/.." && pwd)"
 # shellcheck source=./manifest.sh
 source "$HERE_STATUS/manifest.sh"
+# For is_wsl / tool_applies_here: a tool that belongs to the Windows host is not
+# drift when you are looking at it from inside the WSL guest.
+# shellcheck source=./pkg.sh
+source "$HERE_STATUS/pkg.sh"
 # Sets SG / SG_B / SG_OFF — all empty unless stdout is a WezTerm terminal, so
 # the printf calls below interpolate them unconditionally and this file needs
 # no branching. See lib/sgr.sh for why the guard has two halves.
@@ -165,7 +169,9 @@ status_tools() {
 
     actual="$(provider_of "$cmd")"
 
-    if [[ "$actual" == "absent" ]]; then
+    if ! tool_applies_here "$cmd"; then
+      printf "%s  · %-14s n/a — installed on the Windows host%s\n" "$SG" "$cmd" "$SG_OFF"
+    elif [[ "$actual" == "absent" ]]; then
       printf "%s  · %-14s not installed (declared %s)%s\n" "$SG" "$cmd" "$provider" "$SG_OFF"
       _drift_tool
     elif [[ "$actual" == "mise-stale" ]]; then

@@ -202,7 +202,7 @@ install_lemminx
 echo ""
 echo "  clipboard image paste:"
 
-if grep -qiE "microsoft|wsl" /proc/version 2>/dev/null; then
+if is_wsl; then
   echo "  ✅ WSL — uses Windows PowerShell, no install needed"
 elif [ "$(uname -s)" = "Darwin" ]; then
   pkg_install "pngpaste" || echo "  ⚠️  :PasteImage will not work without pngpaste"

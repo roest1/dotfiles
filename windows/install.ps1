@@ -77,11 +77,17 @@ $Links = @(
 )
 
 # Elevation helper, off by default. Windows 11 24H2+ ships `sudo` in System32
-# and wezterm-windows.lua prefers it when present. Uncomment on Windows 10, or
-# if you'd rather not run `sudo config --enable normal` for inline elevation.
-#   @{ Command = 'gsudo'; Package = 'gerardog.gsudo' }
+# and wezterm-windows.lua prefers it when present. Uncomment the gsudo entry
+# below on Windows 10, or if you'd rather not run `sudo config --enable normal`
+# for inline elevation.
+#
+# It has to stay INSIDE the array. A hashtable uncommented above the assignment
+# is a statement rather than an element: PowerShell would write it to the output
+# stream, print it to the console, and install nothing - which reads as "I
+# enabled gsudo and it silently didn't work".
 $WingetTools = @(
     @{ Command = 'wezterm'; Package = 'wez.wezterm' }
+    # @{ Command = 'gsudo';   Package = 'gerardog.gsudo' }
 )
 
 # --- Locate the repo -------------------------------------------------------
@@ -176,9 +182,10 @@ function Install-ConfigLink {
             Copy-Item -LiteralPath $Source -Destination $Destination -Force
         }
         Write-Host "  copied $Destination (symlink denied)" -ForegroundColor Yellow
-        Write-Host "    Turn on Settings > System > For developers > Developer Mode" -ForegroundColor Yellow
-        Write-Host "    and re-run to get a link that tracks the repo. Until then this" -ForegroundColor Yellow
-        Write-Host "    is a copy: editing the repo will not change it." -ForegroundColor Yellow
+        Write-Host "    Turn on Developer Mode, then re-run to get a link that tracks" -ForegroundColor Yellow
+        Write-Host "    the repo. Until then this is a copy: editing the repo will not" -ForegroundColor Yellow
+        Write-Host "    change it. To open the right page on any Windows build:" -ForegroundColor Yellow
+        Write-Host "      start ms-settings:developers" -ForegroundColor Yellow
         return $true
     }
 }

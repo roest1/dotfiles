@@ -196,6 +196,38 @@ you write code here. Reasoning, revisit conditions and current status:
   have restricted the derivative's name, so `Science Gothic Mono` is permissible. CI
   asserts both the licence file and the carve-out survive.
 
+- **Inside WSL, `[wezterm]` installs no wezterm and no fonts — deliberately.** WSL passes
+  every test the rest of the repo makes (uname says Linux, `$PM` is apt) and the terminal
+  is still not in there: `wezterm.exe` runs on the host and draws the pixels, the guest
+  only writes escape sequences into it. So a wezterm installed in the guest is a GUI
+  nothing launches, and fonts installed into the guest's fontconfig are glyphs nothing
+  renders — both have to exist on the *Windows* side, which is what `windows/deps.ps1`
+  and the `wezterm\fonts` entry in `windows/install.ps1` are for.
+
+  `tool_applies_here` in `lib/pkg.sh` is the whole mechanism, consulted by `run_tools`,
+  `run_check` and `status_tools`. It names one tool outside `deps.conf`, which is a real
+  cost — but the alternative was a section-applicability line in the manifest, i.e. the
+  `platform` mechanism that was deliberately deleted, reintroduced as a line type, a
+  parser change and a CI rule to describe a single tool. `run_check` already special-cases
+  `bat`/`batcat` and `fd`/`fdfind`, so this is the shape that file was already in.
+
+  **The links are NOT skipped, and that is the part to not "tidy".** `wezterm.lua`
+  declares the `mux` unix domain on a socket path under `$XDG_RUNTIME_DIR` — a *guest*
+  path, belonging to a process inside WSL — so a `wezterm-mux-server` running in there
+  reads it. Only the binary and the font downloads drop out. No CI runner is WSL, so both
+  directions of the predicate are asserted in the `manifest` job by overriding `is_wsl`:
+  under WSL it must suppress wezterm and **nothing else**, and on a plain Linux box it
+  must suppress nothing, or wezterm silently stops installing everywhere.
+
+- **`pkg_install` asks `apt-cache` before it asks `sudo`.** `sudo apt install wezterm` on
+  a distro with no such package still prompts for a password *first* and only then says
+  `Unable to locate package` — so a package apt was never going to provide costs an
+  interactive stop in the middle of an otherwise unattended install. The probe reads the
+  local lists, so it needs no network. It is **apt-only on purpose**: dnf's equivalent
+  either hits the network or trusts a cache that may be empty, and a false "no such
+  package" there would silently skip a package that does exist, which is worse than the
+  prompt this avoids.
+
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
   writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
   Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will

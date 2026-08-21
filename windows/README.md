@@ -4,6 +4,10 @@ Configures wezterm on the **Windows host**. If you use WSL, this is the other
 half of the install — run it from PowerShell, and run `bootstrap.sh` from inside
 your distro. They configure two different environments.
 
+`make install` inside WSL knows this: it links the wezterm config in the guest
+but installs no wezterm and no fonts there, and `make check` reports the binary
+as `n/a (Windows host)` rather than MISSING. The terminal is out here.
+
 ```powershell
 irm https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.ps1 | iex
 ```
@@ -19,7 +23,14 @@ winget. Already cloned? `.\windows\install.ps1`.
 
 ## Turn on Developer Mode first
 
-**Settings → System → For developers → Developer Mode.**
+```powershell
+start ms-settings:developers
+```
+
+Then switch **Developer Mode** on. The URI is the reliable route because the
+page has moved between builds — it is **Settings → System → For developers** on
+current Windows 11 and **Settings → Privacy & security → For developers** on
+Windows 10 — but `ms-settings:developers` opens it on both.
 
 Creating a symlink on Windows is a privileged operation. Without Developer Mode
 you need an elevated shell, and `install.ps1` doesn't want one — it should be
@@ -63,7 +74,7 @@ admin entry therefore elevates *in place*, via one of:
   `sudo config --enable normal` from an admin console; `normal` is the mode that
   runs elevated in the current pane.
 - **`gsudo`** — works on Windows 10 and elevates inline with no mode change.
-  Uncomment its line in `deps.conf` and re-run.
+  Uncomment its line in `windows/install.ps1` and re-run.
 
 With neither installed the entry is omitted rather than shown broken.
 
@@ -89,9 +100,12 @@ isn't duplication to be cleaned up:
 Ordinary file *writes* from WSL to `/mnt/c` are fine. It's specifically symlinks
 that don't cross.
 
-So: two clones, one on each side of the boundary. `deps.conf` stays the single
-source of truth for both — `[windows]` declares `platform windows`, which makes
-it invisible to `install.sh` and the only thing `install.ps1` looks at.
+So: two clones, one on each side of the boundary — and two declarations, not
+one. `deps.conf` describes the Unix side and nothing else; the Windows payload
+lives in the `$Links` and `$WingetTools` tables at the top of `install.ps1`,
+which reads no manifest at all. There is no `[windows]` section and no
+`platform` line type; CI rejects both. The reasoning for that reversal is in
+`install.ps1`'s own header and in the note under `[wezterm]` in `deps.conf`.
 
 ## Troubleshooting
 

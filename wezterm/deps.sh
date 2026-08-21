@@ -20,6 +20,37 @@ source "$HERE/../lib/pkg.sh"
 pkg_detect
 ensure_local_bin_on_path
 
+# ─── WSL: this section belongs to the Windows host ───────────────────────────
+#
+# WSL passes every test the rest of this file makes — uname says Linux, $PM is
+# apt — and the terminal still isn't in here. wezterm.exe runs on the host and
+# draws the pixels; the guest only writes escape sequences into it. So a wezterm
+# installed in the guest is a GUI nothing launches, and fonts installed into the
+# guest's fontconfig are glyphs nothing renders — both have to exist on the
+# WINDOWS side, which is what windows/deps.ps1 and the wezterm\fonts entry in
+# windows/install.ps1 are for.
+#
+# The config links are deliberately NOT skipped, and they are made by install.sh
+# before this ever runs. wezterm.lua declares the `mux` unix domain, whose socket
+# path is a Linux path belonging to a process inside the guest, so a
+# wezterm-mux-server run in here still reads it. Only the downloads and the
+# install advice are dropped.
+if is_wsl; then
+  echo "  ↷ WSL — wezterm belongs to the Windows host, not this guest."
+  echo ""
+  echo "    Install it from PowerShell on Windows, not from in here:"
+  echo "      irm https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.ps1 | iex"
+  echo ""
+  echo "    That links wezterm-windows.lua and the fonts on the host side and"
+  echo "    installs wezterm with winget. See windows/README.md."
+  echo ""
+  echo "    Skipped in the guest: the wezterm binary, 0xProto Nerd Font and"
+  echo "    Science Gothic. The config links are still made — wezterm.lua's"
+  echo "    'mux' unix domain is a guest path, so a wezterm-mux-server running"
+  echo "    in here still uses it."
+  exit 0
+fi
+
 # ─── 0xProto Nerd Font ───────────────────────────────────────────────────────
 #
 # wezterm.lua names '0xProto Nerd Font'; without it wezterm silently falls back

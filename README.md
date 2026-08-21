@@ -24,8 +24,19 @@ irm https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.ps1 | iex
 ```
 
 It installs wezterm and gives you `CTRL+SHIFT+O` — one fuzzy picker for WSL,
-PowerShell, cmd, and an admin shell. Turn on Developer Mode first, or it falls
-back to copying the config instead of linking it.
+PowerShell, cmd, and an admin shell.
+
+**Turn on Developer Mode first**, or creating a symlink is denied and the
+installer falls back to *copying* the config — which then stops tracking the
+repo. In PowerShell:
+
+```powershell
+start ms-settings:developers
+```
+
+That URI is the reliable route: the page has moved between Windows builds
+(**Settings → System → For developers** on current Windows 11, **Privacy &
+security → For developers** on Windows 10), but the URI opens it either way.
 
 **[windows/README.md](windows/README.md)** — the picker, elevation, and why the
 Windows config can't be shared with the one inside WSL.
@@ -83,7 +94,6 @@ Four line types, and that's the whole vocabulary:
 | `link <repo-path> <dest>` | a symlink; `~` expands to your home |
 | `tool <provider> <command> [package]` | a dependency; package defaults to the command name |
 | `post <shell command>` | runs after that section's tools |
-| `platform <linux\|mac\|windows>` | restricts the whole section to one platform |
 
 | Command | What |
 | ------- | ---- |
@@ -130,7 +140,6 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 | `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
 | `uv`     | Python tools (replaces pip; same vendor as ruff) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
-| `winget` | Windows Package Manager — only valid in a `platform windows` section |
 | `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
 
 There is no `npm` provider, and adding one is a CI failure. See the node
@@ -226,7 +235,7 @@ about *operating* this repo, and this is about *editing* it.
 | `bootstrap.sh` | Curl-able entry point for a fresh machine |
 | `install.sh`   | Symlinks only; walks the manifest's `link` lines |
 | `bootstrap.ps1` | The same, for the Windows host — `irm ... \| iex` |
-| `windows/install.ps1` | Reads the same `deps.conf`; links + winget |
+| `windows/install.ps1` | Windows host: links + winget. Declares its own payload — it reads no manifest |
 | `lib/manifest.sh` | Parses `deps.conf` |
 | `lib/providers.sh` | Maps a provider name to an installer; handles `\|\|` chains |
 | `lib/pkg.sh`   | The single implementation of "install a tool" |
