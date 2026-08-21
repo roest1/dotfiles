@@ -27,17 +27,34 @@ winget. Already cloned? `.\windows\install.ps1`.
 start ms-settings:developers
 ```
 
-Then switch **Developer Mode** on. The URI is the reliable route because the
-page has moved between builds — it is **Settings → System → For developers** on
-current Windows 11 and **Settings → Privacy & security → For developers** on
-Windows 10 — but `ms-settings:developers` opens it on both.
+That lands on **Settings → System → Advanced**, which carries both toggles this
+repo cares about. Windows 10 files the same page under *Privacy & security*,
+which is why the URI is given rather than a menu path.
+
+| Toggle | Section on that page | |
+| --- | --- | --- |
+| **Developer Mode** | For developers | **Required** — see below |
+| **Enable sudo** | Terminal | Optional — only the admin entry in the picker uses it |
+
+`sudo.exe` ships in System32 on Windows 11 24H2+ **whether or not the feature is
+enabled**, so the presence of the binary proves nothing. Enable it here first,
+then see [Elevation](#elevation) for the second step that makes it elevate in
+the current pane instead of a new window.
 
 Creating a symlink on Windows is a privileged operation. Without Developer Mode
 you need an elevated shell, and `install.ps1` doesn't want one — it should be
 able to set up your account without touching the machine.
 
-If symlink creation is denied, the script **copies the file instead** and says
-so. That works, but the copy stops tracking the repo: editing
+Developer Mode alone is not quite enough, and this is the part that surprises:
+**Windows PowerShell 5.1's `New-Item -ItemType SymbolicLink` fails anyway**, with
+*"Administrator privilege required for this operation"*, because it never passes
+the flag that Developer Mode exists to honour. PowerShell 7's version does — so
+it works when you test it in pwsh and fails for everyone pasting the bootstrap
+line into the shell a fresh box opens. `install.ps1` therefore falls back to
+`cmd`'s `mklink`, which does pass the flag and does work unprivileged.
+
+Only if *both* routes are denied does the script **copy the file instead** and
+say so. That works, but the copy stops tracking the repo: editing
 `wezterm-windows.lua` no longer changes your live config until you re-run the
 install. Turn Developer Mode on and re-run to get the link back.
 

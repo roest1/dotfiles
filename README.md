@@ -34,9 +34,14 @@ repo. In PowerShell:
 start ms-settings:developers
 ```
 
-That URI is the reliable route: the page has moved between Windows builds
-(**Settings → System → For developers** on current Windows 11, **Privacy &
-security → For developers** on Windows 10), but the URI opens it either way.
+That opens **Settings → System → Advanced** (Windows 10 filed the same page
+under *Privacy & security*, which is why the URI is the route given rather than
+a menu path). Turn on:
+
+| Toggle | Section | Why |
+| --- | --- | --- |
+| **Developer Mode** | For developers | **Required.** Without it symlink creation is denied and the installer copies instead, which silently stops tracking the repo. |
+| **Enable sudo** | Terminal | Optional. Only the `PowerShell (Admin)` entry in the shell picker needs it; it is omitted from the picker rather than shown broken. |
 
 **[windows/README.md](windows/README.md)** — the picker, elevation, and why the
 Windows config can't be shared with the one inside WSL.

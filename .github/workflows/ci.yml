@@ -1204,6 +1204,39 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The mklink fallback cannot be reached on this runner - CI runs elevated,
+      # so New-Item succeeds and the catch block never executes. What IS worth
+      # guarding is the invocation form, because the fragile part is quoting:
+      # the real destination lives under %USERPROFILE%, which routinely contains
+      # a space ("C:\Users\Riley Oest\..."), and building one command string
+      # instead of passing each path as its own argument silently produces a
+      # link with a truncated name.
+      - name: mklink invocation survives a path with a space
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'a b c'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $target = Join-Path $dir 'the target.txt'
+          Set-Content -LiteralPath $target -Value 'payload'
+          $link = Join-Path $dir 'the link.txt'
+
+          & cmd.exe /c mklink $link $target 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "mklink failed (exit $LASTEXITCODE)" }
+          if (-not (Test-Path -LiteralPath $link)) { throw 'mklink reported success but made no link' }
+          if ((Get-Content -LiteralPath $link) -ne 'payload') { throw 'link does not resolve to the target' }
+
+          $srcDir = Join-Path $dir 'src dir'
+          New-Item -ItemType Directory -Path $srcDir -Force | Out-Null
+          Set-Content -LiteralPath (Join-Path $srcDir 'f.txt') -Value 'in dir'
+          $linkDir = Join-Path $dir 'link dir'
+          & cmd.exe /c mklink /D $linkDir $srcDir 2>&1 | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "mklink /D failed (exit $LASTEXITCODE)" }
+          if ((Get-Content -LiteralPath (Join-Path $linkDir 'f.txt')) -ne 'in dir') {
+            throw 'directory link does not resolve'
+          }
+          Write-Host 'ok: mklink handles spaces for both a file and a directory'
+
       # `shell: powershell` is Windows PowerShell 5.1, deliberately, NOT pwsh 7.
       # 5.1 is what a fresh box runs when the bootstrap line is pasted, and it
       # is where the syntax these scripts avoid (ternaries, ??, $IsWindows,

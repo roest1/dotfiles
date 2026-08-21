@@ -250,6 +250,40 @@ you write code here. Reasoning, revisit conditions and current status:
   a top-level `exit` under `irm | iex` terminates the user's shell. Nothing on Linux can
   parse any of this; the `windows` CI job is the only thing that checks it.
 
+- **Developer Mode being ON does not make `New-Item -ItemType SymbolicLink` work under
+  Windows PowerShell 5.1.** It fails with `NewItemSymbolicLinkElevationRequired` —
+  *"Administrator privilege required for this operation"* — because 5.1's implementation
+  never passes `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`. PowerShell 7's does, which
+  is exactly why this is easy to miss: it works when you test it in pwsh and fails for
+  every user who pastes the bootstrap line into the shell a fresh box actually opens.
+
+  `cmd`'s `mklink` **does** pass the flag, and has since Windows 10 1703. Measured on
+  Windows 11 24H2 (build 26100.9168), Developer Mode on, unelevated, same shell:
+  `New-Item` denied, `mklink` succeeded for both a file and a `/D` directory. So
+  `Install-ConfigLink` tries `New-Item`, then `mklink`, and only then copies.
+
+  Don't "tidy" the second attempt away as redundant — without it the installer silently
+  degrades to copies on the default Windows shell, and a copy stops tracking the repo
+  while still looking like a successful install. Pass each path as its own argument
+  rather than building one command string: the destination is under `%USERPROFILE%`,
+  which routinely contains a space.
+
+- **`sudo.exe` ships in `System32` on Windows 11 24H2+ whether or not the feature is
+  enabled**, so `Test-Path` on the binary answers "did Microsoft ship it", not "will it
+  run". `windows/deps.ps1` reported `ok sudo` on a machine with **Enable sudo** switched
+  off, which is a green line for something that then fails at the point of use. The
+  switch is `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo` → `Enabled`, and on a
+  machine that has never enabled it the value is **absent rather than 0** — so treat "no
+  such property" as disabled.
+
+  `wezterm-windows.lua` still uses the binary test, and therefore can still offer a
+  `PowerShell (Admin)` entry that fails. That is a known gap rather than an oversight:
+  the config is evaluated several times per process and deliberately does no
+  `run_child_process`, so it has no cheap way to read the registry. The failure is at
+  least self-describing — `sudo` prints why it is disabled — but if this needs closing,
+  the route is `deps.ps1` writing a marker the Lua can `io.open`, with the staleness that
+  implies.
+
 ## Key Conventions
 
 - **OS portability:** `_OS=mac|linux` detected in `bashrc`. Mac/Linux differences (homebrew paths, `date` flags, `stat` flags) are handled inline with conditionals.
