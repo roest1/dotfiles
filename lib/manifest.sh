@@ -105,7 +105,7 @@ manifest_scope() {
   fi
 }
 
-# Fill an array with the scope, and say whether there is anything in it.
+# Fill MANIFEST_SCOPE with the scope, and say whether there is anything in it.
 #
 # The empty case is the trap this exists for. `manifest_lines tool` with no
 # section arguments means EVERY section — that is what makes a bare
@@ -114,12 +114,27 @@ manifest_scope() {
 # Callers check the return rather than the array length, so the mistake is
 # impossible to make twice.
 #
-#   local -a scope
-#   manifest_scope_into scope "$@" || return 0
+#   manifest_scope_into "$@" || return 0
+#   run_something ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"}
+#
+# A FIXED GLOBAL rather than `local -n dest`, and a read loop rather than
+# `mapfile`. Both of those are bash 4+, and macOS's /bin/bash is 3.2 — this is
+# not a theoretical portability worry, it is the two macos CI jobs, which are
+# the entire strength of this repo's macOS support claim. They failed with
+# `local: -n: invalid option` and `mapfile: command not found`.
+#
+# A global is the honest trade. The alternative that keeps a caller-named
+# array on 3.2 is eval, which turns a caller's variable name into code.
+MANIFEST_SCOPE=()
 manifest_scope_into() {
-  local -n _dest="$1"; shift
-  mapfile -t _dest < <(manifest_scope "$@")
-  (( ${#_dest[@]} )) && return 0
+  MANIFEST_SCOPE=()
+  local _line
+  while IFS= read -r _line; do
+    [[ -n "$_line" ]] || continue
+    MANIFEST_SCOPE+=("$_line")
+  done < <(manifest_scope "$@")
+
+  (( ${#MANIFEST_SCOPE[@]} )) && return 0
   echo "no sections enabled in $DOTFILES_SECTIONS_FILE — comment a line back in," >&2
   echo "or delete the file to get every section" >&2
   return 1

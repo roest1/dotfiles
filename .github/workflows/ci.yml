@@ -27,6 +27,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # macOS ships bash 3.2 as /bin/bash, and that is what runs install.sh and
+      # everything it sources -- the Makefile calls `bash install.sh`, which
+      # resolves through PATH, and on a fresh Mac that is 3.2. So the whole
+      # lib/ + install path is 3.2 territory, however modern the shell you
+      # develop in.
+      #
+      # This is not hypothetical and it is not caught reliably by the macos
+      # jobs. `mapfile` sat in run_hooks on main for months without failing,
+      # because `make install bash` passes an argument and the branch holding
+      # it was never reached; a bare `make install` on a Mac would have hit it.
+      # A construct that only breaks on the untested path is exactly what a
+      # grep is for.
+      #
+      # bash/bashrc is deliberately NOT scanned: it guards its bash 4 features
+      # behind BASH_VERSINFO, which is the correct pattern and would trip this.
+      - name: No bash 4+ constructs where /bin/bash 3.2 must run
+        run: |
+          set -uo pipefail
+          bad=$(grep -rnE '^[^#]*(local -n |[^_[:alnum:]]mapfile |[^_[:alnum:]]readarray |declare -A )' \
+                  lib/*.sh install.sh bootstrap.sh */deps.sh 2>/dev/null || true)
+          if [ -n "$bad" ]; then
+            echo "$bad"
+            echo ""
+            echo "bash 4+ construct on a path macOS's /bin/bash 3.2 must run."
+            echo "Use a fixed global + read loop instead of 'local -n' + mapfile."
+            exit 1
+          fi
+          echo "ok: nothing on the 3.2 path needs bash 4"
+
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       # No file list here. tools/lint.sh holds the one definition of what this
