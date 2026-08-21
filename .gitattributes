@@ -1,0 +1,10 @@
+# claude/settings.json is written by Claude Code at runtime, through the symlink
+# declared in deps.conf's [claude] section. model and effortLevel are per-machine
+# and per-conversation preferences, so they are stripped on the way into git by
+# the clean filter in tools/clean-claude-settings.sh.
+#
+# The filter itself is registered by claude/deps.sh: filter.* config lives in
+# .git/config and cannot be committed, so this line alone does nothing until
+# `make install claude` has run. That is the safe direction -- an unregistered
+# filter is silently skipped rather than erroring.
+claude/settings.json filter=claude-settings
