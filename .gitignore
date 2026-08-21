@@ -18,3 +18,8 @@ nvim/lsp-servers/node_modules
 # `make install` depend on Socket's API being reachable — see the reasoning on
 # the "Scan for malicious packages" step in .github/workflows/ci.yml.
 nvim/lsp-servers/bunfig.toml
+
+# Rust build output. Not a secret and not in the spirit of the lines above —
+# it is here because tui/ is the repo's first compiled tree and `cargo build`
+# drops a multi-hundred-megabyte target/ next to the sources.
+tui/target/

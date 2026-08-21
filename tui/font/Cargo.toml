@@ -1,0 +1,21 @@
+[package]
+name = "font"
+description = "Pick the font for each of wezterm's lanes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "font"
+path = "src/main.rs"
+
+[dependencies]
+reticle = { path = "../reticle" }
+crossterm.workspace = true
+ttf-parser = "0.25"
+fontdue = "0.9"
+png = "0.17"
+libc = "0.2"
+serde_json = "1"
+base64 = "0.22"

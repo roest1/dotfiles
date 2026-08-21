@@ -205,7 +205,43 @@ jobs:
               || { echo "$cfg: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
             grep -q 'Science Gothic Mono' "$cfg" \
               || { echo "$cfg: no font_rule for the carrier"; fail=1; }
+
+            # The SGR 5 lane -- the file you are editing in nvim -- asserted in
+            # the same shape and for the same reason. Both configs, including
+            # the Windows one: nvim runs in the WSL guest but wezterm.exe on the
+            # host is what draws what it emits, so a missing rule out there is a
+            # source file that BLINKS.
+            grep -q 'text_blink_rate = 0' "$cfg" \
+              || { echo "$cfg: SGR 5 would blink without text_blink_rate = 0"; fail=1; }
+
+            # Four, not "at least one": a font_rule REPLACES the face for a
+            # matching cell, so the lane needs {bold, regular} x {italic,
+            # upright} or the missing combination is silently flattened. The one
+            # that bites is italic -- rose-pine italicises comments, so dropping
+            # it takes the slant off every comment in every file, which is
+            # exactly the kind of thing nobody notices for a month.
+            # Comment lines stripped first: the config quotes `{ blink =
+            # "Slow" }` while explaining why the four exist, and counting that
+            # would make the check pass with one rule missing.
+            n=$(grep -vE '^[[:space:]]*--' "$cfg" | grep -cE "blink = ['\"]Slow['\"]")
+            [ "$n" -eq 4 ] \
+              || { echo "$cfg: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
           done
+
+          # The writer half. Without this the lane is configured and nothing
+          # ever emits into it.
+          grep -q "require('external.altfont')" nvim/init.lua \
+            || { echo "nvim/init.lua does not load external.altfont"; fail=1; }
+
+          # The picker's preview. Parsed rather than run: it needs uv, pillow
+          # and a font file, none of which this job has — but a syntax error
+          # here degrades silently, because `font` falls back to the fc-list
+          # preview whenever the script fails for any reason.
+          python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" \
+            wezterm/fontpreview.py \
+            || { echo "wezterm/fontpreview.py does not parse"; fail=1; }
+          grep -q 'fontpreview.py' bash/bash_productivity \
+            || { echo "font picker no longer references fontpreview.py"; fail=1; }
           exit $fail
 
       # ~/.config/dotfiles/sections narrows what a bare `make install` sweeps.
@@ -577,6 +613,78 @@ jobs:
 
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
+  # ── the Rust TUIs ─────────────────────────────────────────────────────────
+  # tui/ is the repo's first compiled tree, so it is also the first thing here
+  # that can be broken by a dependency rather than by an edit. fmt and clippy
+  # are gates rather than suggestions for the same reason tools/lint.sh runs at
+  # --severity=warning: a warning nobody fails on is a warning nobody reads.
+  tui:
+    name: tui (rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: rustup component add rustfmt clippy
+      - name: Format
+        working-directory: tui
+        run: cargo fmt --all --check
+      - name: Clippy
+        working-directory: tui
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        working-directory: tui
+        run: cargo test --locked
+      - name: Release build
+        working-directory: tui
+        run: cargo build --release --locked
+
+      # `font` is a name someone else owns on crates.io. The cargo provider
+      # installs BY NAME, so declaring `tool cargo font` would fetch a
+      # stranger's crate and report success — the manifest has to say `manual`
+      # and let tui/deps.sh install from the local path.
+      - name: The tui section installs from a path, not from crates.io
+        run: |
+          source lib/manifest.sh
+          fail=0
+          while IFS=$'\t' read -r _section provider cmd _; do
+            [ "$provider" = manual ] || { echo "[tui] $cmd is '$provider'; must be manual"; fail=1; }
+          done < <(manifest_lines tool tui)
+          grep -q -- '--path' tui/deps.sh \
+            || { echo "tui/deps.sh does not install from a local path"; fail=1; }
+          exit $fail
+
+      # The shell specimen renders this repo's real PS1, and its test pins the
+      # exact string. A test pinned to a string nobody re-checks is a test that
+      # passes while describing a prompt that no longer exists.
+      - name: The PS1 the specimen test pins is the PS1 bash_theme ships
+        run: |
+          shipped=$(sed -n "s/^PS1='\(.*\)'$/\1/p" bash/bash_theme)
+          [ -n "$shipped" ] || { echo "no PS1= line in bash/bash_theme"; exit 1; }
+          # The Rust literal doubles every backslash; undo that to compare.
+          pinned=$(sed -n 's/^[[:space:]]*const REAL: &str = "\(.*\)";$/\1/p' \
+            tui/font/src/theme.rs | sed 's/\\\\/\\/g')
+          [ -n "$pinned" ] || { echo "no REAL const in tui/font/src/theme.rs"; exit 1; }
+          if [ "$shipped" != "$pinned" ]; then
+            echo "bash_theme PS1 and the specimen test have drifted:"
+            echo "  shipped: $shipped"
+            echo "  pinned : $pinned"
+            exit 1
+          fi
+          echo "ok: $shipped"
+
+      # The binary shadows nothing and nothing shadows it. A bash function named
+      # `font` would win over the binary on PATH, silently reinstating the fzf
+      # picker this replaced.
+      - name: No bash function shadows a tui binary
+        run: |
+          fail=0
+          for b in font; do
+            if grep -qE "^$b\(\) \{" bash/*; then
+              echo "a bash function named '$b' would shadow the tui binary"; fail=1
+            fi
+          done
+          exit $fail
+
   link-only:
     # The name is a stable literal, NOT ${{ matrix.os }}. Required status checks
     # match by exact name: if the name embedded the runner label and that label
@@ -776,6 +884,83 @@ jobs:
           [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
           dpkg -s neovim >/dev/null 2>&1 && { echo "apt's neovim got installed after all"; exit 1; } || true
           echo "one nvim, $v, no apt package — mise-first held"
+
+      # The nvim half of the alternate-font carrier, and the mirror image of
+      # "make output carries escapes only on a wezterm tty" in the manifest job.
+      #
+      # nvim/lua/external/altfont.lua emits SGR 5 over the text of a file buffer
+      # so wezterm's font_rules can draw it in another font. Everywhere else SGR
+      # 5 means what it says -- BLINK -- so getting the guard wrong sets an
+      # entire source file flashing over ssh, in GNOME Terminal, on a Mac. The
+      # author never sees it: they are always in wezterm and always linked.
+      #
+      # Runtime rather than a grep, because what is being asserted is what
+      # reaches the terminal, and the path from a `blink = true` highlight to an
+      # SGR 5 byte runs through nvim's TUI and its terminfo. A grep would keep
+      # passing if that path changed.
+      - name: nvim emits the alternate-font carrier only under wezterm
+        run: |
+          set -uo pipefail
+          fail=0
+          command -v script >/dev/null 2>&1 || { echo "no script(1) here"; exit 0; }
+
+          # Matches SGR 5 exactly: ESC[5m or ESC[<params>;5m. Deliberately not
+          # ESC\[[0-9;]*5m, which also matches ESC[25m -- blink OFF -- and would
+          # make the negative rows below pass for the wrong reason.
+          carrier=$'\033\\[([0-9;]*;)?5m'
+
+          # Same fixture strategy as the sgr.sh truth table: a home built by the
+          # real installer, so a change to deps.conf's destination cannot leave
+          # this asserting against a path nothing installs.
+          linked=$(mktemp -d)
+          unlinked=$(mktemp -d)
+          HOME="$linked" make link wezterm >/dev/null
+
+          work=$(mktemp -d)
+          printf 'local x = 1\n' > "$work/probe.lua"
+          # Only altfont, on the repo's real runtimepath -- loading the full
+          # config here would clone 26 plugins to test one module. printf rather
+          # than a heredoc: a heredoc terminator has to sit at column 0, which
+          # is not a thing a YAML block scalar can contain.
+          printf "vim.opt.runtimepath:prepend('%s/nvim')\nrequire('external.altfont').setup()\n" \
+            "$PWD" > "$work/init.lua"
+
+          # $1 home, $2 TERM_PROGRAM -- true when the carrier reaches the tty
+          emits() {
+            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+              script -qec "nvim --clean -u '$work/init.lua' -c 'redraw!' -c 'sleep 300m' -c 'q!' '$work/probe.lua'" \
+                /dev/null 2>/dev/null | grep -aqE "$carrier"
+          }
+
+          if emits "$linked" xterm; then
+            echo "carrier emitted outside wezterm — this is literally blinking text"; fail=1
+          fi
+          if emits "$unlinked" WezTerm; then
+            echo "carrier emitted in wezterm before the config was linked"; fail=1
+          fi
+          if ! emits "$linked" WezTerm; then
+            echo "carrier missing on a linked wezterm tty"; fail=1
+          fi
+
+          # oil is the whole point of doing this per-cell rather than per-window,
+          # so assert the exclusion rather than trusting the buftype list. oil
+          # sets buftype=acwrite (oil.nvim view.lua); this stands in for it
+          # without pulling the plugin in.
+          {
+            printf "vim.opt.runtimepath:prepend('%s/nvim')\n" "$PWD"
+            printf "require('external.altfont').setup()\n"
+            printf "local b = vim.api.nvim_create_buf(true, false)\n"
+            printf "vim.api.nvim_buf_set_name(b, 'oil:///tmp/')\n"
+            printf "vim.bo[b].buftype = 'acwrite'\n"
+            printf "vim.api.nvim_buf_set_lines(b, 0, -1, false, { 'oilrow' })\n"
+            printf "vim.api.nvim_set_current_buf(b)\n"
+          } > "$work/oil.lua"
+          if HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
+             script -qec "nvim --clean -u '$work/oil.lua' -c 'redraw!' -c 'sleep 300m' -c 'qa!'" \
+               /dev/null 2>/dev/null | grep -aqE "$carrier"; then
+            echo "carrier reached an oil-style buffer — it must be files only"; fail=1
+          fi
+          exit $fail
 
   # ── transitive advisories: the coverage Dependabot cannot give us ──────────
   # This job is not redundant with Dependabot, and deleting it would silently

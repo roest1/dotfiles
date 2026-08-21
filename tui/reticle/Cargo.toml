@@ -1,0 +1,12 @@
+[package]
+name = "reticle"
+description = "Terminal UI core: an animated reticle, nvim navigation, and a redraw loop."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+libc = "0.2"
+base64 = "0.22"

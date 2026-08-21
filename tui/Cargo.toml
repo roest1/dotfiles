@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["reticle", "font"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+
+[workspace.dependencies]
+crossterm = "0.28"

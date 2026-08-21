@@ -241,6 +241,41 @@ you write code here. Reasoning, revisit conditions and current status:
   package" there would silently skip a package that does exist, which is worse than the
   prompt this avoids.
 
+- **The blink attribute is now fully spent — both halves.** SGR 6 is Science Gothic
+  Mono, above; **SGR 5** (slow blink, `text_blink_rate = 0`) is the file you are editing
+  in nvim, written by `nvim/lua/external/altfont.lua` and read by the same `font_rules`.
+  There is no third carrier and there is not going to be one: everything else wezterm can
+  match a font on — intensity, italic, underline, reverse, strikethrough — *means*
+  something on screen, and blink was only available because the rate can be set to zero.
+  So do not reach for a blink attribute for anything else, and do not assume an SGR 5 in
+  a capture is a bug.
+
+  The same three-condition guard applies, for the same reason: outside WezTerm SGR 5 is
+  blinking text, so `altfont.lua` refuses unless `TERM_PROGRAM=WezTerm` **and** the fonts
+  are linked. `wezterm-windows.lua` needs these rules too — nvim runs in the WSL guest,
+  but `wezterm.exe` on the host draws what it emits.
+
+  The four lanes are `shell`, `nvim.ui`, `nvim.editor` and `claude`. `nvim.ui` is NOT
+  "oil" — oil is the most visible thing it draws, but the lane is the window's base font
+  while nvim holds focus, so it is also telescope, the statusline, the gutter and every
+  float.
+
+  Which font each lane gets is picked by `font` (a Rust TUI, `tui/font`) and written to
+  `~/.config/wezterm/fonts.conf` — machine-local, not linked, not in `deps.conf`, same
+  footing as `~/.bash_local`. Details live next to the code: `wezterm/wezterm.lua` for the
+  lanes, [`nvim/CLAUDE.md`](nvim/CLAUDE.md) for the writer, [`tui/CLAUDE.md`](tui/CLAUDE.md)
+  for the picker.
+
+- **`tui/` is a Rust workspace, and it is the repo's first compile-at-install.**
+  `deps.conf`'s `[tui]` declares its binaries `manual`, never `cargo`: the cargo
+  provider installs by crate NAME from crates.io, and `font` is a name someone
+  else owns there — it would fetch a stranger's crate and report success. The
+  real install is `cargo install --path` in `tui/deps.sh`.
+
+  A bash function may never be named after one of these binaries; a function
+  wins over PATH, so a `font()` would silently shadow it. CI asserts both.
+  Details next to the code: [`tui/CLAUDE.md`](tui/CLAUDE.md).
+
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
   writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
   Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will
