@@ -37,10 +37,15 @@ esac
 if (( $# )); then
   manifest_validate_sections "$@"
 fi
-if ! manifest_scope_into SECTIONS "$@"; then
+if ! manifest_scope_into "$@"; then
   echo "Nothing to do."
   exit 0
 fi
+# Copied into this script's own name rather than referenced as MANIFEST_SCOPE
+# throughout: the rest of the file reads better for it, and the copy is safe
+# because the call above returns non-zero on an empty scope, so this is never
+# an empty-array expansion under `set -u` (which bash 3.2 errors on).
+SECTIONS=("${MANIFEST_SCOPE[@]}")
 
 # --- Helpers -------------------------------------------------------
 

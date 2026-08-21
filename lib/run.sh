@@ -15,8 +15,7 @@ source "$HERE_RUN/manifest.sh"
 source "$HERE_RUN/providers.sh"
 
 run_tools() {
-  local -a scope
-  manifest_scope_into scope "$@" || return 0
+  manifest_scope_into "$@" || return 0
 
   pkg_detect
   ensure_local_bin_on_path
@@ -39,7 +38,7 @@ run_tools() {
     fi
     provider_install "$provider" "$cmd" "$pkg" || true
     ran_any=1
-  done < <(manifest_lines tool "${scope[@]}")
+  done < <(manifest_lines tool ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"})
 
   [[ $ran_any -eq 0 ]] && echo "  (no tools enabled)"
 
@@ -54,10 +53,9 @@ run_tools() {
 # detecting a clipboard backend — and forcing that into a table would mean
 # inventing a DSL to express `if`. A script is the honest shape for it.
 run_hooks() {
-  local -a sections
-  manifest_scope_into sections "$@" || return 0
+  manifest_scope_into "$@" || return 0
   local s
-  for s in "${sections[@]}"; do
+  for s in ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"}; do
     local hook="$HERE_RUN/../$s/deps.sh"
     if [[ -f "$hook" ]]; then
       echo ""
@@ -70,8 +68,7 @@ run_hooks() {
 }
 
 run_post() {
-  local -a scope
-  manifest_scope_into scope "$@" || return 0
+  manifest_scope_into "$@" || return 0
 
   local section cmdline
   while IFS=$'\t' read -r section cmdline; do
@@ -80,15 +77,14 @@ run_post() {
     echo "[$section] post: $cmdline"
     echo "-------------------------------------------"
     ( cd "$HERE_RUN/.." && eval "$cmdline" ) || echo "  ⚠️  post step failed: $cmdline"
-  done < <(manifest_lines post "${scope[@]}")
+  done < <(manifest_lines post ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"})
 }
 
 # Verify every enabled tool resolves. Commented-out lines are absent from the
 # manifest output, so a disabled tool is never reported MISSING — that's what
 # makes the node toggle produce a clean check rather than a wall of failures.
 run_check() {
-  local -a scope
-  manifest_scope_into scope "$@" || return 0
+  manifest_scope_into "$@" || return 0
 
   local current="" section provider cmd pkg missing=0 section_missing=0
 
@@ -118,7 +114,7 @@ run_check() {
       missing=$((missing + 1))
       section_missing=1
     fi
-  done < <(manifest_lines tool "${scope[@]}")
+  done < <(manifest_lines tool ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"})
 
   if [[ -n "$current" ]]; then
     [[ $section_missing -eq 0 ]] && echo "  all present" || echo "  run 'make install $current'"
