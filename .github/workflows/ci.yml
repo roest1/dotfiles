@@ -200,12 +200,34 @@ jobs:
           # and the carve-out in LICENSE are both compliance, not tidiness.
           [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
           grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
+          # The carrier moved into wezterm/shared.lua, which both entry points
+          # dofile(). Asserting it per-entry-point would now fail for a config
+          # that is entirely correct -- but dropping the assertion would let the
+          # 0 disappear silently, and wezterm's renderer only skips the blink
+          # animation when text_blink_rate_rapid is exactly 0
+          # (screen_line.rs: `if blink_rate != 0`). Without it every line of
+          # `make` output flashes on every platform.
+          #
+          # So: assert it once where it lives, and separately that each entry
+          # point still picks the body up. An entry point that stopped loading
+          # shared.lua would have no carrier and no font rules at all.
+          grep -q 'text_blink_rate_rapid = 0' wezterm/shared.lua \
+            || { echo "shared.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
+          grep -q 'Science Gothic Mono' wezterm/shared.lua \
+            || { echo "shared.lua: no font_rule for the carrier"; fail=1; }
           for cfg in wezterm/wezterm.lua wezterm/wezterm-windows.lua; do
-            grep -q 'text_blink_rate_rapid = 0' "$cfg" \
-              || { echo "$cfg: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
-            grep -q 'Science Gothic Mono' "$cfg" \
-              || { echo "$cfg: no font_rule for the carrier"; fail=1; }
+            grep -q 'shared.lua' "$cfg" \
+              || { echo "$cfg: does not load shared.lua, so it has no font carrier"; fail=1; }
           done
+
+          # text_blink_rate (SGR 5, slow) must stay unset. It is the other half
+          # of the pair: silencing the rapid rate frees SGR 6 as a font carrier
+          # precisely BECAUSE the slow one still blinks and stays available as a
+          # real attention marker. Setting it to 0 "for symmetry" spends that.
+          if grep -rq 'text_blink_rate = 0' wezterm/; then
+            echo "wezterm: text_blink_rate = 0 disables the slow-blink channel this repo reserves"
+            fail=1
+          fi
           exit $fail
 
       - name: Sections are discoverable
@@ -495,6 +517,32 @@ jobs:
             echo "links drifted immediately after make link"; exit 1
           fi
 
+      # shared.lua only works if BOTH entry points can find it next to
+      # themselves, and the two link declarations live in different files that
+      # nothing else cross-checks. Declaring it on one side only is silent: the
+      # pcall in the other entry point degrades to an unstyled terminal rather
+      # than erroring, so the platform you did not test just quietly looks wrong.
+      - name: shared.lua is linked on both platforms
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          bad=0
+
+          manifest_lines link wezterm | awk -F'\t' '{print $2}' | grep -qx 'wezterm/shared.lua' || {
+            echo "deps.conf [wezterm] does not link wezterm/shared.lua"; bad=1; }
+
+          grep -oP "Source\s*=\s*'\K[^']+" windows/install.ps1 | tr '\\' '/' \
+            | grep -qx 'wezterm/shared.lua' || {
+            echo "windows/install.ps1 \$Links does not carry wezterm/shared.lua"; bad=1; }
+
+          # And both entry points must actually load it, or the link is dead weight.
+          for f in wezterm/wezterm.lua wezterm/wezterm-windows.lua; do
+            grep -q 'shared.lua' "$f" || { echo "$f does not load shared.lua"; bad=1; }
+          done
+
+          [ $bad -eq 0 ] && echo "ok: shared.lua linked and loaded on both platforms"
+          exit $bad
+
       # No runner here is WSL, so every direction of this is invisible to
       # whoever writes the code — the same problem the SGR 6 guard has. Assert
       # both, by overriding the predicate rather than by faking /proc/version.
@@ -529,14 +577,30 @@ jobs:
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
+      # Named rather than counted. A bare count told you the number was wrong
+      # and nothing else -- it fired when shared.lua was added, which was a
+      # correct change, while a swap that kept the count would have passed
+      # silently. Each of these three has a different failure if it goes
+      # missing, so each is asserted by name.
       - name: '[wezterm] still declares its links'
         run: |
           set -euo pipefail
           source lib/manifest.sh
-          n=$(manifest_lines link wezterm | wc -l)
-          [ "$n" -eq 2 ] || { echo "[wezterm] should declare 2 links, found $n"; exit 1; }
-          manifest_lines link wezterm | grep -q 'wezterm/fonts' || {
-            echo "the fonts link vanished from [wezterm]"; exit 1; }
+          links=$(manifest_lines link wezterm | awk -F'\t' '{print $2}')
+          bad=0
+          # the config itself: without it the guest has no wezterm.lua at all
+          grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
+            echo "[wezterm] no longer links wezterm.lua"; bad=1; }
+          # the shared body: both entry points dofile() it, and its absence
+          # degrades silently through the pcall rather than erroring
+          grep -qx 'wezterm/shared.lua' <<<"$links" || {
+            echo "[wezterm] no longer links shared.lua — the config would load unstyled"; bad=1; }
+          # the fonts: font_dirs reads them out of the linked config dir, and
+          # lib/sgr.sh uses this very link as its proxy for "config is live"
+          grep -qx 'wezterm/fonts' <<<"$links" || {
+            echo "[wezterm] no longer links the fonts directory"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: [wezterm] links config, shared body and fonts"
+          exit $bad
 
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
