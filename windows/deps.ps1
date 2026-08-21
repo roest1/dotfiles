@@ -180,7 +180,10 @@ function Show-ElevationStatus {
         Write-Host '    The binary ships with the OS; the feature is a separate switch.' -ForegroundColor Yellow
         Write-Host '    Turn it on:  start ms-settings:developers' -ForegroundColor Yellow
         Write-Host '    (Settings > System > Advanced > Terminal > Enable sudo)' -ForegroundColor Yellow
-        Write-Host '    Then re-run. Until then the admin entry is omitted.' -ForegroundColor Yellow
+        Write-Host '    Until then the PowerShell (Admin) entry still APPEARS in the' -ForegroundColor Yellow
+        Write-Host '    picker and fails when used: wezterm-windows.lua tests for the' -ForegroundColor Yellow
+        Write-Host '    binary, and cannot read this switch without spawning a process' -ForegroundColor Yellow
+        Write-Host '    on every config evaluation. sudo says why when you hit it.' -ForegroundColor Yellow
         return
     }
 

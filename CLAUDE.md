@@ -268,6 +268,20 @@ you write code here. Reasoning, revisit conditions and current status:
   rather than building one command string: the destination is under `%USERPROFILE%`,
   which routinely contains a space.
 
+- **`winget install` reports "already installed, nothing to upgrade" as a failure.** Exit
+  `0x8A15002B` / `-1978335189` (`APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE`) is the
+  state `Install-WingetTool` is *trying to reach*, not an error. It surfaces on any re-run
+  where the shell's `PATH` predates the install: `Get-Command wezterm` misses it, winget is
+  asked to install again, and answers that it is already current — so a correctly
+  configured machine printed `FAILED wezterm` and `1 item(s) failed`.
+
+  The fix is the rule `lib/providers.sh` already states — *trust the tool, not the
+  installer's exit code*. `Install-WingetTool` rebuilds `$env:Path` from the registry
+  (same idiom `bootstrap.ps1` uses after installing git) and checks `Get-Command` before
+  it looks at `$LASTEXITCODE` at all, with the specific exit code as a second chance for
+  packages whose binary this shell still cannot see. Don't reduce it back to a bare
+  `if ($LASTEXITCODE -ne 0)`.
+
 - **`sudo.exe` ships in `System32` on Windows 11 24H2+ whether or not the feature is
   enabled**, so `Test-Path` on the binary answers "did Microsoft ship it", not "will it
   run". `windows/deps.ps1` reported `ok sudo` on a machine with **Enable sudo** switched
