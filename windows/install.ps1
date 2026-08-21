@@ -71,8 +71,14 @@ $ErrorActionPreference = 'Stop'
 # does the drawing, so the font has to exist on THIS side. It is read via
 # font_dirs in wezterm-windows.lua rather than installed into the Windows font
 # store, which keeps it to one copy that tracks the repo.
+# shared.lua carries the half of the config that is identical on both platforms.
+# wezterm-windows.lua dofile()s it out of its own config_dir, so it has to land
+# NEXT TO the config rather than be reached for in the repo. The Linux half is
+# the matching link line in deps.conf's [wezterm] section; drop either and that
+# platform silently falls back to an unstyled terminal.
 $Links = @(
     @{ Source = 'wezterm\wezterm-windows.lua'; Destination = '.config\wezterm\wezterm.lua' },
+    @{ Source = 'wezterm\shared.lua';          Destination = '.config\wezterm\shared.lua' },
     @{ Source = 'wezterm\fonts';               Destination = '.config\wezterm\fonts' }
 )
 

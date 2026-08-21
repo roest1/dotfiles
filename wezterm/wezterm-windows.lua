@@ -14,74 +14,32 @@
 --
 -- Windows loads it from %USERPROFILE%\.config\wezterm\wezterm.lua.
 
-local wezterm = require 'wezterm'
+local wezterm = require("wezterm")
 local act = wezterm.action
 local config = wezterm.config_builder()
 
--- Same font as the Linux config, but nothing here installs it — wezterm/deps.sh
--- runs under bash. windows/deps.ps1 is what puts it on this machine; until then
--- the fallback chain quietly uses JetBrains Mono.
-config.font = wezterm.font_with_fallback { '0xProto Nerd Font', 'JetBrains Mono' }
-
--- ─── Science Gothic Mono, for `make` output ──────────────────────────────────
+-- ─── Shared body ─────────────────────────────────────────────────────────────
 --
--- Kept in sync with wezterm.lua BY HAND, like the colours below, and for the
--- same reason: this file is never symlinked out of the repo.
+-- Fonts, the SGR 6 carrier and the rose-pine surfaces live in shared.lua, which
+-- the Linux entry point loads too. They used to be copied into this file by
+-- hand, with a comment admitting it -- and the copy had already fallen behind:
+-- there was no tab_bar block here at all, so the host's tab bar sat at wezterm's
+-- default grey above a themed pane.
 --
--- This one is easy to think is unnecessary. `make` runs in the WSL guest, but
--- the guest only writes an escape sequence — wezterm.exe out here is what
--- draws it. Without these rules the output arrives as SGR 6 with no font
--- attached to it, and 'rapid blink' is exactly what it would then mean.
+-- windows\install.ps1 links shared.lua next to this file, exactly as it links
+-- the fonts directory, so config_dir finds it. Nothing here is Linux-specific:
+-- the fonts come from the linked font_dirs, not the system font store.
 --
--- windows\install.ps1 links wezterm\fonts alongside this config, and
--- config_dir follows the config file's own path, so the same expression works
--- on both sides.
-config.font_dirs = { wezterm.config_dir .. '/fonts' }
-config.text_blink_rate_rapid = 0
-config.font_rules = {
-	{
-		blink = 'Rapid',
-		intensity = 'Bold',
-		font = wezterm.font_with_fallback {
-			{ family = 'Science Gothic Mono', weight = 'Bold' },
-			'0xProto Nerd Font',
-		},
-	},
-	{
-		blink = 'Rapid',
-		font = wezterm.font_with_fallback {
-			{ family = 'Science Gothic Mono', weight = 'Regular' },
-			'0xProto Nerd Font',
-		},
-	},
-}
-
--- ─── Colors ──────────────────────────────────────────────────────────────────
---
--- Kept in sync with wezterm.lua BY HAND, and it has to be: this file is never
--- symlinked out of the repo (see the header), so there is no shared source for
--- the two to read. If you retune the colours there, retune them here.
---
--- The ANSI 16 are left alone for the same reason as the Linux config — the
--- shell inside WSL is the same bash, with the same 256-colour prompt and the
--- same gh/git output, and remapping the slots would re-tint all of it. This
--- sets the window chrome only, which is what makes the two hosts look like one
--- terminal.
--- Literal hex for the same reason as the Linux config: reading the value from
--- wezterm.color.get_builtin_schemes() costs ~24ms per config evaluation, and
--- this file is evaluated several times per process.
-config.colors = {
-  foreground = '#e0def4',
-  background = '#191724',
-  cursor_bg = '#e0def4',
-  cursor_fg = '#191724',
-  cursor_border = '#e0def4',
-
-  -- The builtin's selection_bg equals its background, which renders a selection
-  -- invisible; this is rose-pine main's "highlight med" instead.
-  selection_fg = '#e0def4',
-  selection_bg = '#403d52',
-}
+-- pcall, because a hard failure would take the WHOLE config down -- no launcher,
+-- no CTRL+SHIFT+O, no WSL default domain -- and leave you guessing. Degrading to
+-- an unstyled but working terminal, with the reason in the debug overlay
+-- (CTRL+SHIFT+L), is the better failure.
+local ok, shared = pcall(dofile, wezterm.config_dir .. "/shared.lua")
+if ok and shared then
+	shared.apply(config)
+else
+	wezterm.log_error("wezterm: shared.lua did not load (" .. tostring(shared) .. ") — re-run windows\\install.ps1")
+end
 
 -- ─── What's actually on this machine ─────────────────────────────────────────
 --
@@ -93,22 +51,22 @@ config.colors = {
 -- process and warns against side effects in it. Opening a file for read is not
 -- one; spawning three shells to ask where they live would be.
 local function exists(path)
-  local handle = io.open(path, 'r')
-  if handle then
-    handle:close()
-    return true
-  end
-  return false
+	local handle = io.open(path, "r")
+	if handle then
+		handle:close()
+		return true
+	end
+	return false
 end
 
-local system_root = os.getenv 'SystemRoot' or 'C:\\Windows'
-local program_files = os.getenv 'ProgramFiles' or 'C:\\Program Files'
+local system_root = os.getenv("SystemRoot") or "C:\\Windows"
+local program_files = os.getenv("ProgramFiles") or "C:\\Program Files"
 
-local pwsh = program_files .. '\\PowerShell\\7\\pwsh.exe'
+local pwsh = program_files .. "\\PowerShell\\7\\pwsh.exe"
 if not exists(pwsh) then
-  -- Windows PowerShell 5.1 ships with the OS and cannot be missing, so this
-  -- fallback is total: the launcher never contains an entry that can't run.
-  pwsh = 'powershell.exe'
+	-- Windows PowerShell 5.1 ships with the OS and cannot be missing, so this
+	-- fallback is total: the launcher never contains an entry that can't run.
+	pwsh = "powershell.exe"
 end
 
 -- wezterm cannot elevate a pane on its own. UAC returns a process at a higher
@@ -117,12 +75,12 @@ end
 -- tab comes back not-admin without saying so, which is the worst outcome
 -- available. Both helpers below elevate in place instead.
 local elevator
-if exists(system_root .. '\\System32\\sudo.exe') then
-  -- Windows 11 24H2+. Opens a NEW WINDOW until `sudo config --enable normal`
-  -- is run from an admin console; `normal` is what makes it inline.
-  elevator = system_root .. '\\System32\\sudo.exe'
-elseif exists(program_files .. '\\gsudo\\current\\gsudo.exe') then
-  elevator = 'gsudo.exe'
+if exists(system_root .. "\\System32\\sudo.exe") then
+	-- Windows 11 24H2+. Opens a NEW WINDOW until `sudo config --enable normal`
+	-- is run from an admin console; `normal` is what makes it inline.
+	elevator = system_root .. "\\System32\\sudo.exe"
+elseif exists(program_files .. "\\gsudo\\current\\gsudo.exe") then
+	elevator = "gsudo.exe"
 end
 
 -- ─── Domains ─────────────────────────────────────────────────────────────────
@@ -139,17 +97,17 @@ config.wsl_domains = wezterm.default_wsl_domains()
 -- error on a machine where it's the versioned name.
 local ubuntu
 for _, domain in ipairs(config.wsl_domains) do
-  if domain.name:find('WSL:Ubuntu', 1, true) == 1 then
-    ubuntu = domain.name
-    break
-  end
+	if domain.name:find("WSL:Ubuntu", 1, true) == 1 then
+		ubuntu = domain.name
+		break
+	end
 end
 
 -- Without this, wezterm opens %COMSPEC% (cmd.exe). Ubuntu is the shell this
 -- machine actually lives in, so it's the one a bare new tab should get. Falls
 -- back to the local domain on a box where WSL isn't installed at all, rather
 -- than naming a domain that doesn't exist and failing to start.
-config.default_domain = ubuntu or 'local'
+config.default_domain = ubuntu or "local"
 
 -- ─── Launcher ────────────────────────────────────────────────────────────────
 --
@@ -158,32 +116,32 @@ config.default_domain = ubuntu or 'local'
 -- a WSL tab would try to run cmd.exe inside Ubuntu. Pinning each one is the
 -- difference between switching environments and just launching programs.
 local menu = {
-  { label = 'WSL · Ubuntu', domain = { DomainName = ubuntu or 'local' } },
-  {
-    label = 'PowerShell',
-    args = { pwsh, '-NoLogo' },
-    domain = { DomainName = 'local' },
-  },
-  {
-    label = 'Windows PowerShell 5.1',
-    args = { 'powershell.exe', '-NoLogo' },
-    domain = { DomainName = 'local' },
-  },
-  {
-    label = 'Command Prompt',
-    args = { 'cmd.exe' },
-    domain = { DomainName = 'local' },
-  },
+	{ label = "WSL · Ubuntu", domain = { DomainName = ubuntu or "local" } },
+	{
+		label = "PowerShell",
+		args = { pwsh, "-NoLogo" },
+		domain = { DomainName = "local" },
+	},
+	{
+		label = "Windows PowerShell 5.1",
+		args = { "powershell.exe", "-NoLogo" },
+		domain = { DomainName = "local" },
+	},
+	{
+		label = "Command Prompt",
+		args = { "cmd.exe" },
+		domain = { DomainName = "local" },
+	},
 }
 
 -- Omitted rather than shown-and-broken when there's no elevator installed.
 -- A menu entry that reliably fails teaches you to distrust the menu.
 if elevator then
-  table.insert(menu, {
-    label = 'PowerShell (Admin)',
-    args = { elevator, pwsh, '-NoLogo' },
-    domain = { DomainName = 'local' },
-  })
+	table.insert(menu, {
+		label = "PowerShell (Admin)",
+		args = { elevator, pwsh, "-NoLogo" },
+		domain = { DomainName = "local" },
+	})
 end
 
 config.launch_menu = menu
@@ -193,14 +151,14 @@ config.launch_menu = menu
 -- to a shell already open and spawns one that isn't, which is how you actually
 -- think about it. Without them this would only ever spawn duplicates.
 config.keys = {
-  {
-    key = 'O',
-    mods = 'CTRL|SHIFT',
-    action = act.ShowLauncherArgs {
-      title = 'shells',
-      flags = 'FUZZY|LAUNCH_MENU_ITEMS|TABS|WORKSPACES',
-    },
-  },
+	{
+		key = "O",
+		mods = "CTRL|SHIFT",
+		action = act.ShowLauncherArgs({
+			title = "shells",
+			flags = "FUZZY|LAUNCH_MENU_ITEMS|TABS|WORKSPACES",
+		}),
+	},
 }
 
 return config

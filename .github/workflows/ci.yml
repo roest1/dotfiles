@@ -495,6 +495,32 @@ jobs:
             echo "links drifted immediately after make link"; exit 1
           fi
 
+      # shared.lua only works if BOTH entry points can find it next to
+      # themselves, and the two link declarations live in different files that
+      # nothing else cross-checks. Declaring it on one side only is silent: the
+      # pcall in the other entry point degrades to an unstyled terminal rather
+      # than erroring, so the platform you did not test just quietly looks wrong.
+      - name: shared.lua is linked on both platforms
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          bad=0
+
+          manifest_lines link wezterm | awk -F'\t' '{print $2}' | grep -qx 'wezterm/shared.lua' || {
+            echo "deps.conf [wezterm] does not link wezterm/shared.lua"; bad=1; }
+
+          grep -oP "Source\s*=\s*'\K[^']+" windows/install.ps1 | tr '\\' '/' \
+            | grep -qx 'wezterm/shared.lua' || {
+            echo "windows/install.ps1 \$Links does not carry wezterm/shared.lua"; bad=1; }
+
+          # And both entry points must actually load it, or the link is dead weight.
+          for f in wezterm/wezterm.lua wezterm/wezterm-windows.lua; do
+            grep -q 'shared.lua' "$f" || { echo "$f does not load shared.lua"; bad=1; }
+          done
+
+          [ $bad -eq 0 ] && echo "ok: shared.lua linked and loaded on both platforms"
+          exit $bad
+
       # No runner here is WSL, so every direction of this is invisible to
       # whoever writes the code — the same problem the SGR 6 guard has. Assert
       # both, by overriding the predicate rather than by faking /proc/version.
