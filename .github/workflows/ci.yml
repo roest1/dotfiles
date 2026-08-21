@@ -283,18 +283,40 @@ jobs:
 
           # A typo that installs nothing is the failure this file prevents.
           printf 'bash\nnvimm\n' > "$tmp/typo"
-          if ! DOTFILES_SECTIONS_FILE=$tmp/typo manifest_scope 2>&1 >/dev/null | grep -q nvimm; then
-            echo "a name that is not a section must warn"; fail=1
-          fi
+          # Captured, not piped into `grep -q`. grep -q exits at first match and
+          # SIGPIPEs manifest_scope mid-write -- three "printf: write error:
+          # Broken pipe" lines in the log, and under pipefail it would be a
+          # false failure. Same trap manifest_has_section documents.
+          warn=$(DOTFILES_SECTIONS_FILE=$tmp/typo manifest_scope 2>&1 >/dev/null)
+          case "$warn" in
+            *nvimm*) ;;
+            *) echo "a name that is not a section must warn, got: '$warn'"; fail=1 ;;
+          esac
 
           # THE trap: manifest_lines with no arguments means EVERY section, so a
           # fully commented file must refuse rather than expand to nothing and
           # sweep the lot.
           printf '# bash\n# nvim\n' > "$tmp/empty"
           if DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
-               'source lib/manifest.sh; declare -a s; manifest_scope_into s' 2>/dev/null; then
+               'source lib/manifest.sh; manifest_scope_into' 2>/dev/null; then
             echo "an all-commented file must refuse, not fall through to all"; fail=1
           fi
+
+          # ...and it must leave the scope EMPTY, not merely return non-zero.
+          # A caller that checked the array instead of the return would still be
+          # wrong, but this asserts the array agrees with the status.
+          n=$(DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
+                'source lib/manifest.sh; manifest_scope_into >/dev/null 2>&1; echo ${#MANIFEST_SCOPE[@]}')
+          [ "$n" = "0" ] || { echo "refused but left $n section(s) in MANIFEST_SCOPE"; fail=1; }
+
+          # The array takes a section name, NOT an array name. The nameref
+          # signature was retired for bash 3.2, and passing a variable name
+          # would now be read as a section -- silently non-empty, which is the
+          # exact failure this whole step exists to prevent.
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
+                  'source lib/manifest.sh; manifest_scope_into bash >/dev/null 2>&1; echo "${MANIFEST_SCOPE[*]}"')
+          [ "$got" = "bash" ] || { echo "expected scope 'bash', got '$got'"; fail=1; }
+
           exit $fail
 
       - name: Sections are discoverable
