@@ -251,11 +251,41 @@ function Install-WingetTool {
     # non-empty either way, so every failure would read as success. Out-Host
     # writes to the console without entering the pipeline.
     winget install --exact --id $Package --accept-package-agreements --accept-source-agreements | Out-Host
+    $rc = $LASTEXITCODE
+
+    # A freshly installed tool is on the machine's PATH but not on this
+    # process's - that is inherited at launch and never refreshed. Rebuild it
+    # the same way bootstrap.ps1 does after installing git, so the check below
+    # sees what a new shell would see.
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                [Environment]::GetEnvironmentVariable('Path', 'User')
+
+    # Trust the tool, not the installer's exit code - the same rule
+    # lib/providers.sh follows, and for a sharper reason here.
+    #
+    # winget reports "already installed, no upgrade available" as a FAILURE:
+    # exit 0x8A15002B / -1978335189, APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE.
+    # That is not a failure, it is the state this function exists to reach. It
+    # shows up on any re-run where the shell's PATH predates the install, so
+    # `Get-Command` misses wezterm, winget is asked to install it again, and
+    # says it is already current. The whole run then reports "1 item(s) failed"
+    # for a machine that is correctly set up.
+    if (Get-Command $Command -ErrorAction SilentlyContinue) {
+        Write-Host "  installed $Command" -ForegroundColor Green
+        return $true
+    }
+
+    # Same conclusion without needing $Command on PATH - some packages install
+    # a binary this shell still cannot see until it restarts.
+    if ($rc -eq -1978335189) {
+        Write-Host "  ok $Command (already installed and current)"
+        return $true
+    }
 
     # $ErrorActionPreference does not apply to native executables, so a failed
     # winget would otherwise be reported as success.
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  FAILED $Command - winget exit $LASTEXITCODE" -ForegroundColor Red
+    if ($rc -ne 0) {
+        Write-Host "  FAILED $Command - winget exit $rc" -ForegroundColor Red
         return $false
     }
 
