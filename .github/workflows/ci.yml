@@ -27,6 +27,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # macOS ships bash 3.2 as /bin/bash, and that is what runs install.sh and
+      # everything it sources -- the Makefile calls `bash install.sh`, which
+      # resolves through PATH, and on a fresh Mac that is 3.2. So the whole
+      # lib/ + install path is 3.2 territory, however modern the shell you
+      # develop in.
+      #
+      # This is not hypothetical and it is not caught reliably by the macos
+      # jobs. `mapfile` sat in run_hooks on main for months without failing,
+      # because `make install bash` passes an argument and the branch holding
+      # it was never reached; a bare `make install` on a Mac would have hit it.
+      # A construct that only breaks on the untested path is exactly what a
+      # grep is for.
+      #
+      # bash/bashrc is deliberately NOT scanned: it guards its bash 4 features
+      # behind BASH_VERSINFO, which is the correct pattern and would trip this.
+      - name: No bash 4+ constructs where /bin/bash 3.2 must run
+        run: |
+          set -uo pipefail
+          bad=$(grep -rnE '^[^#]*(local -n |[^_[:alnum:]]mapfile |[^_[:alnum:]]readarray |declare -A )' \
+                  lib/*.sh install.sh bootstrap.sh */deps.sh 2>/dev/null || true)
+          if [ -n "$bad" ]; then
+            echo "$bad"
+            echo ""
+            echo "bash 4+ construct on a path macOS's /bin/bash 3.2 must run."
+            echo "Use a fixed global + read loop instead of 'local -n' + mapfile."
+            exit 1
+          fi
+          echo "ok: nothing on the 3.2 path needs bash 4"
+
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       # No file list here. tools/lint.sh holds the one definition of what this
@@ -228,6 +258,65 @@ jobs:
             echo "wezterm: text_blink_rate = 0 disables the slow-blink channel this repo reserves"
             fail=1
           fi
+          exit $fail
+
+      # ~/.config/dotfiles/sections narrows what a bare `make install` sweeps.
+      # Every row here is a way it could go wrong quietly rather than loudly.
+      - name: A machine's section file narrows, and never widens
+        run: |
+          source lib/manifest.sh
+          fail=0
+          tmp=$(mktemp -d)
+
+          # Absent is the normal case and must stay "everything".
+          all=$(manifest_sections | tr '\n' ' ')
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/none manifest_scope | tr '\n' ' ')
+          [ "$got" = "$all" ] || { echo "no file should mean every section: '$got'"; fail=1; }
+
+          printf 'bash\n# nvim\n' > "$tmp/some"
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/some manifest_scope | tr '\n' ' ')
+          [ "$got" = "bash " ] || { echo "expected 'bash ', got '$got'"; fail=1; }
+
+          # Naming one always wins: opting out is a default, not a lock.
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/some manifest_scope nvim | tr '\n' ' ')
+          [ "$got" = "nvim " ] || { echo "explicit args must win, got '$got'"; fail=1; }
+
+          # A typo that installs nothing is the failure this file prevents.
+          printf 'bash\nnvimm\n' > "$tmp/typo"
+          # Captured, not piped into `grep -q`. grep -q exits at first match and
+          # SIGPIPEs manifest_scope mid-write -- three "printf: write error:
+          # Broken pipe" lines in the log, and under pipefail it would be a
+          # false failure. Same trap manifest_has_section documents.
+          warn=$(DOTFILES_SECTIONS_FILE=$tmp/typo manifest_scope 2>&1 >/dev/null)
+          case "$warn" in
+            *nvimm*) ;;
+            *) echo "a name that is not a section must warn, got: '$warn'"; fail=1 ;;
+          esac
+
+          # THE trap: manifest_lines with no arguments means EVERY section, so a
+          # fully commented file must refuse rather than expand to nothing and
+          # sweep the lot.
+          printf '# bash\n# nvim\n' > "$tmp/empty"
+          if DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
+               'source lib/manifest.sh; manifest_scope_into' 2>/dev/null; then
+            echo "an all-commented file must refuse, not fall through to all"; fail=1
+          fi
+
+          # ...and it must leave the scope EMPTY, not merely return non-zero.
+          # A caller that checked the array instead of the return would still be
+          # wrong, but this asserts the array agrees with the status.
+          n=$(DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
+                'source lib/manifest.sh; manifest_scope_into >/dev/null 2>&1; echo ${#MANIFEST_SCOPE[@]}')
+          [ "$n" = "0" ] || { echo "refused but left $n section(s) in MANIFEST_SCOPE"; fail=1; }
+
+          # The array takes a section name, NOT an array name. The nameref
+          # signature was retired for bash 3.2, and passing a variable name
+          # would now be read as a section -- silently non-empty, which is the
+          # exact failure this whole step exists to prevent.
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
+                  'source lib/manifest.sh; manifest_scope_into bash >/dev/null 2>&1; echo "${MANIFEST_SCOPE[*]}"')
+          [ "$got" = "bash" ] || { echo "expected scope 'bash', got '$got'"; fail=1; }
+
           exit $fail
 
       - name: Sections are discoverable

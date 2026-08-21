@@ -40,6 +40,106 @@ manifest_sections() {
   done < "$MANIFEST_FILE"
 }
 
+# ─── This machine's sections ─────────────────────────────────────────────────
+#
+# deps.conf is the CATALOGUE: everything this repo knows how to install, the
+# same on every machine, in git. This file is the per-machine SUBSET — the
+# laptop with no wezterm, the server with no nvim, the box that does not want
+# a Rust toolchain — and it is deliberately not in the work tree.
+#
+# That placement is the whole point, and it is the argument ~/.bash_local
+# already settles. "Toggling is commenting" is true of deps.conf and it is why
+# this file has to exist: commenting a line there is a TRACKED EDIT, so a
+# machine-local preference becomes a diff you carry forever or commit by
+# accident. Outside the tree git cannot see it — it cannot be committed, cannot
+# leak one machine's choices into another's checkout, and cannot be deleted by
+# someone rewriting .gitignore. Inside the tree it would be protected only by a
+# rule that `git add -f` overrides.
+#
+# Absent — the normal case, and every fresh machine — means EVERY section. The
+# catalogue stays the default; this file only ever narrows it.
+#
+# Seed it with the command that prints exactly this list:
+#   mkdir -p ~/.config/dotfiles && make sections > ~/.config/dotfiles/sections
+# then comment out what this machine does not want. Commenting, the same idiom
+# as deps.conf, because there is no second one worth learning.
+DOTFILES_SECTIONS_FILE="${DOTFILES_SECTIONS_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/sections}"
+
+manifest_enabled() {
+  local raw line
+
+  if [[ ! -f "$DOTFILES_SECTIONS_FILE" ]]; then
+    manifest_sections
+    return 0
+  fi
+
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    line="${raw%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -z "$line" ]] && continue
+
+    # A name that is not in the manifest is a typo, and a typo that silently
+    # installs nothing is the failure this file exists to prevent. Said on
+    # stderr so it cannot land in `make sections`'s output or in a pipe CI
+    # greps; the names that ARE real still run.
+    if manifest_has_section "$line"; then
+      printf '%s\n' "$line"
+    else
+      echo "warning: $DOTFILES_SECTIONS_FILE names '$line', which is not a section in deps.conf" >&2
+    fi
+  done < "$DOTFILES_SECTIONS_FILE"
+}
+
+# The sections a command should act on: the ones asked for, or this machine's
+# set when none were.
+#
+# Naming a section explicitly always wins. Opting out of [claude] is a
+# statement about the default sweep, not a lock — `make install claude` still
+# installs it, which is what makes the file a preference rather than a wall.
+manifest_scope() {
+  if (( $# )); then
+    printf '%s\n' "$@"
+  else
+    manifest_enabled
+  fi
+}
+
+# Fill MANIFEST_SCOPE with the scope, and say whether there is anything in it.
+#
+# The empty case is the trap this exists for. `manifest_lines tool` with no
+# section arguments means EVERY section — that is what makes a bare
+# `make install` work — so a sections file with everything commented out would
+# expand to no arguments and quietly install the lot. Exactly backwards.
+# Callers check the return rather than the array length, so the mistake is
+# impossible to make twice.
+#
+#   manifest_scope_into "$@" || return 0
+#   run_something ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"}
+#
+# A FIXED GLOBAL rather than `local -n dest`, and a read loop rather than
+# `mapfile`. Both of those are bash 4+, and macOS's /bin/bash is 3.2 — this is
+# not a theoretical portability worry, it is the two macos CI jobs, which are
+# the entire strength of this repo's macOS support claim. They failed with
+# `local: -n: invalid option` and `mapfile: command not found`.
+#
+# A global is the honest trade. The alternative that keeps a caller-named
+# array on 3.2 is eval, which turns a caller's variable name into code.
+MANIFEST_SCOPE=()
+manifest_scope_into() {
+  MANIFEST_SCOPE=()
+  local _line
+  while IFS= read -r _line; do
+    [[ -n "$_line" ]] || continue
+    MANIFEST_SCOPE+=("$_line")
+  done < <(manifest_scope "$@")
+
+  (( ${#MANIFEST_SCOPE[@]} )) && return 0
+  echo "no sections enabled in $DOTFILES_SECTIONS_FILE — comment a line back in," >&2
+  echo "or delete the file to get every section" >&2
+  return 1
+}
+
 # NOT `manifest_sections | grep -qxF "$1"`. Callers run under `set -o pipefail`
 # (install.sh, and the Makefile recipes), where that spelling is a race: `grep
 # -q` exits the moment it matches, manifest_sections takes SIGPIPE still
