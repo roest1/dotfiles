@@ -37,6 +37,7 @@ config.font = wezterm.font_with_fallback { '0xProto Nerd Font', 'JetBrains Mono'
 -- config_dir follows the config file's own path, so the same expression works
 -- on both sides.
 config.font_dirs = { wezterm.config_dir .. '/fonts' }
+config.text_blink_rate = 0
 config.text_blink_rate_rapid = 0
 config.font_rules = {
 	{
@@ -52,6 +53,62 @@ config.font_rules = {
 		font = wezterm.font_with_fallback {
 			{ family = 'Science Gothic Mono', weight = 'Regular' },
 			'0xProto Nerd Font',
+		},
+	},
+
+	-- ─── SGR 5: the file you are editing in nvim ─────────────────────────
+	--
+	-- The same argument as the block above, one attribute over, and it is even
+	-- easier to talk yourself out of because nvim feels further away than
+	-- `make` does. It is not: nvim runs in the WSL guest and emits SGR 5 over
+	-- file buffers (nvim/lua/external/altfont.lua), and wezterm.exe out here is
+	-- what draws it. Leave these rules out and every source file you open
+	-- through this config BLINKS.
+	--
+	-- nvim's own guard does not save you either. It checks TERM_PROGRAM and a
+	-- linked ~/.config/wezterm/fonts, and inside WSL under wezterm.exe both are
+	-- true — it is asking "is this wezterm with the repo's fonts linked", and
+	-- on this path the honest answer is yes.
+	--
+	-- Four rules for the reason the Linux config gives at more length: a
+	-- font_rule REPLACES the face for a matching cell, so bold and italic have
+	-- to be rebuilt here or they are silently dropped.
+	--
+	-- Static family names rather than a picked one, which is the one place this
+	-- file deliberately does less than its Linux twin: `font` writes its state
+	-- into the WSL guest's home, and that is not a path this side can read. The
+	-- host gets the defaults, which is fine at the point where you are looking
+	-- at the shell that gets you into WSL rather than editing in it.
+	{
+		blink = 'Slow',
+		intensity = 'Bold',
+		italic = true,
+		font = wezterm.font_with_fallback {
+			{ family = 'JetBrainsMono Nerd Font', weight = 'Bold', style = 'Italic' },
+			'JetBrains Mono',
+		},
+	},
+	{
+		blink = 'Slow',
+		intensity = 'Bold',
+		font = wezterm.font_with_fallback {
+			{ family = 'JetBrainsMono Nerd Font', weight = 'Bold' },
+			'JetBrains Mono',
+		},
+	},
+	{
+		blink = 'Slow',
+		italic = true,
+		font = wezterm.font_with_fallback {
+			{ family = 'JetBrainsMono Nerd Font', style = 'Italic' },
+			'JetBrains Mono',
+		},
+	},
+	{
+		blink = 'Slow',
+		font = wezterm.font_with_fallback {
+			{ family = 'JetBrainsMono Nerd Font' },
+			'JetBrains Mono',
 		},
 	},
 }

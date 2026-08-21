@@ -14,14 +14,54 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 
 ## Architecture
 
-**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `reset`).
+**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `reset`, `altfont`).
 
 **Plugin loading:** `lua/lazy-plugins.lua` calls `lua/external/plugins/init.lua`, which holds a hardcoded `plugin_modules` list (currently 17 entries). Each plugin is a separate file in `lua/external/plugins/` returning a lazy.nvim spec table.
 
 **Custom modules** (not lazy.nvim plugins — loaded directly in `init.lua`):
 - `lua/external/copy.lua` — `:Copy` command, copies file contents to clipboard for LLM sharing
 - `lua/external/findreplace.lua` — `:Find` and `:FindReplace` using rg/fd
+- `lua/external/pasteimg.lua` — paste an image from the clipboard into a buffer
 - `lua/external/reset.lua` — `:ResetNvim` nuclear plugin reset
+- `lua/external/altfont.lua` — renders file buffers in a different terminal font from oil and the rest of the UI. See below.
+
+## The alternate-font carrier (`altfont.lua`)
+
+The file you are editing is drawn in a different font from oil, telescope, the
+statusline, the gutter, and whatever is in the next pane. That is a terminal
+trick, not an editor feature, and it is worth knowing how it works before
+touching either half.
+
+wezterm can select a font from an SGR attribute (`font_rules`) and can pin the
+blink rate to zero so a blink attribute never animates. That turns blink into a
+spare per-cell bit meaning "draw this in the other font". `wezterm/wezterm.lua`
+spends SGR 6 (rapid blink) on Science Gothic Mono for `make` output;
+`altfont.lua` is the writer for **SGR 5** (slow blink), which the same config
+maps to the `editor` font.
+
+Neovim can emit it because `blink` is a real highlight attribute in 0.12 and the
+TUI writes SGR 5 for it. Delivery is a decoration provider adding one ephemeral
+extmark per visible line with `hl_mode = 'combine'`, so the attribute is *added*
+to whatever treesitter, LSP semantic tokens and the colorscheme already decided.
+Combining is what keeps colours, bold and italic intact, and it is also why this
+needs no list of highlight groups — LSP semantic-token groups are created long
+after startup and would never be on such a list.
+
+Three things not to "tidy":
+
+- **Per-cell is the point.** The obvious alternative is asking wezterm to swap
+  the window's font when nvim is focused. wezterm has no per-pane font, so that
+  would take oil with it, and would drop out the moment nvim's split lost focus.
+- **The guard is `lib/sgr.sh`'s guard.** Outside wezterm, SGR 5 means blinking
+  text, so `altfont.lua` checks `TERM_PROGRAM=WezTerm` *and* a linked
+  `~/.config/wezterm/fonts` before emitting anything. Both directions are
+  asserted in CI, because neither is visible to whoever writes the code.
+- **`buftype` is what excludes oil**, which is `acwrite`. Terminals, telescope,
+  trouble, help and quickfix are excluded the same way; only a file-backed
+  buffer is `''`. The URL-scheme test next to it is the belt to that braces.
+
+`:AltFont` reports what it decided and why; `:AltFont toggle` turns it off for
+the session. `font` (in bash) picks which family the lane maps to.
 
 ## Key Conventions
 
