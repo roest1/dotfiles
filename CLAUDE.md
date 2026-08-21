@@ -36,8 +36,21 @@ bootstrap.sh edits. If you find yourself editing those to add a tool, you're doi
 
 **Toggling is commenting.** There is no `WITHOUT=` flag, no profiles, no "areas" — that
 abstraction was removed deliberately because it earned nothing over a section header named
-after the program. To skip a tool, comment its line; to skip a program, don't pass its
-section.
+after the program. To skip a tool, comment its line.
+
+**To skip a whole section on ONE machine, that comment goes in
+`~/.config/dotfiles/sections`, not in `deps.conf`.** Commenting a line here is a tracked
+edit, so a machine-local preference would become a diff you carry forever or commit by
+accident — the same argument that keeps `~/.bash_local` out of the work tree. Seed it with
+`make sections > ~/.config/dotfiles/sections` and comment what this machine does not want.
+
+Absent — every fresh machine — means every section, so the catalogue stays the default and
+the file only ever narrows it. Naming a section explicitly always wins: `make install
+claude` installs it whether or not this machine opted in, which is what makes the file a
+preference rather than a wall. A name that is not a real section warns on stderr rather
+than silently installing nothing. A file with *everything* commented out refuses rather
+than falling through to "no arguments means all", which is the one way this could have
+quietly done the opposite of what it was told.
 
 see `make help`
 

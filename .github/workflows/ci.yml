@@ -208,6 +208,43 @@ jobs:
           done
           exit $fail
 
+      # ~/.config/dotfiles/sections narrows what a bare `make install` sweeps.
+      # Every row here is a way it could go wrong quietly rather than loudly.
+      - name: A machine's section file narrows, and never widens
+        run: |
+          source lib/manifest.sh
+          fail=0
+          tmp=$(mktemp -d)
+
+          # Absent is the normal case and must stay "everything".
+          all=$(manifest_sections | tr '\n' ' ')
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/none manifest_scope | tr '\n' ' ')
+          [ "$got" = "$all" ] || { echo "no file should mean every section: '$got'"; fail=1; }
+
+          printf 'bash\n# nvim\n' > "$tmp/some"
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/some manifest_scope | tr '\n' ' ')
+          [ "$got" = "bash " ] || { echo "expected 'bash ', got '$got'"; fail=1; }
+
+          # Naming one always wins: opting out is a default, not a lock.
+          got=$(DOTFILES_SECTIONS_FILE=$tmp/some manifest_scope nvim | tr '\n' ' ')
+          [ "$got" = "nvim " ] || { echo "explicit args must win, got '$got'"; fail=1; }
+
+          # A typo that installs nothing is the failure this file prevents.
+          printf 'bash\nnvimm\n' > "$tmp/typo"
+          if ! DOTFILES_SECTIONS_FILE=$tmp/typo manifest_scope 2>&1 >/dev/null | grep -q nvimm; then
+            echo "a name that is not a section must warn"; fail=1
+          fi
+
+          # THE trap: manifest_lines with no arguments means EVERY section, so a
+          # fully commented file must refuse rather than expand to nothing and
+          # sweep the lot.
+          printf '# bash\n# nvim\n' > "$tmp/empty"
+          if DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
+               'source lib/manifest.sh; declare -a s; manifest_scope_into s' 2>/dev/null; then
+            echo "an all-commented file must refuse, not fall through to all"; fail=1
+          fi
+          exit $fail
+
       - name: Sections are discoverable
         run: |
           source lib/manifest.sh

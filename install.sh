@@ -31,9 +31,15 @@ case "$(uname -s)" in
   *)      _OS=linux ;;
 esac
 
-SECTIONS=("$@")
-if [[ ${#SECTIONS[@]} -gt 0 ]]; then
-  manifest_validate_sections "${SECTIONS[@]}"
+# Named sections are validated and used as given; with none named this falls
+# back to the machine's own set (see manifest_scope). Naming one always wins,
+# so `./install.sh claude` still links Claude on a machine that opted out of it.
+if (( $# )); then
+  manifest_validate_sections "$@"
+fi
+if ! manifest_scope_into SECTIONS "$@"; then
+  echo "Nothing to do."
+  exit 0
 fi
 
 # --- Helpers -------------------------------------------------------
@@ -81,7 +87,7 @@ prune_orphans() {
   while IFS=$'\t' read -r section src dest; do
     dir="$(dirname "$dest")"
     [[ "$dirs" == *$'\n'"$dir"$'\n'* ]] || dirs+="$dir"$'\n'
-  done < <(manifest_lines link ${SECTIONS[@]+"${SECTIONS[@]}"})
+  done < <(manifest_lines link "${SECTIONS[@]}")
 
   while IFS= read -r dir; do
     [[ -z "$dir" || ! -d "$dir" ]] && continue
@@ -110,7 +116,7 @@ echo "Linking dotfiles from $DOTFILES_DIR ($_OS)"
 if [[ ${#SECTIONS[@]} -gt 0 ]]; then
   echo "Sections: ${SECTIONS[*]}"
 else
-  echo "Sections: $(manifest_sections | tr '\n' ' ')"
+  echo "Sections: ${SECTIONS[*]}"
 fi
 echo "-------------------------------------------"
 
@@ -127,7 +133,7 @@ while IFS=$'\t' read -r section src dest; do
   fi
   link_file "$DOTFILES_DIR/$src" "$dest"
   linked_any=1
-done < <(manifest_lines link ${SECTIONS[@]+"${SECTIONS[@]}"})
+done < <(manifest_lines link "${SECTIONS[@]}")
 
 [[ $linked_any -eq 0 ]] && echo "  (nothing to link)"
 
