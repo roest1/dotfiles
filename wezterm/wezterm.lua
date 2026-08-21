@@ -24,7 +24,27 @@ if ok and shared then
 	shared.apply(config)
 else
 	wezterm.log_error("wezterm: shared.lua did not load (" .. tostring(shared) .. ") — run `make link wezterm`")
-	shared = { palette = {} }
+
+	-- A REAL palette, not `{}`. format-tab-title paints its own cells with
+	-- shared.palette.base/surface/overlay/muted, so an empty table hands wezterm
+	-- `{ Background = { Color = nil } }` on every repaint -- which is not a
+	-- degraded tab bar, it is a broken one, and the only trace is a log line in
+	-- an overlay nobody opens.
+	--
+	-- These are rose-pine main's surfaces, the same values shared.lua carries.
+	-- Duplicated deliberately and ONLY here: the whole point is to be correct
+	-- when the file holding them could not be read.
+	shared = {
+		palette = {
+			base = "#191724",
+			surface = "#1f1d2e",
+			overlay = "#26233a",
+			highlight_med = "#403d52",
+			text = "#e0def4",
+			muted = "#6e6a86",
+			subtle = "#908caa",
+		},
+	}
 end
 
 -- Bound once here rather than reached for as shared.X at each use: the
