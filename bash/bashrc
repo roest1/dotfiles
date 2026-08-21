@@ -177,6 +177,15 @@ export SUDO_EDITOR=nvim
 # mise — shims for tools declared with the `mise` provider in deps.conf
 [ -d "$HOME/.local/share/mise/shims" ] && export PATH="$HOME/.local/share/mise/shims:$PATH"
 
+# cargo's bin dir, where deps.conf's [tui] section installs `font` and the
+# binaries that follow it. rustup normally writes a line into ~/.profile for
+# this, which is a file this repo does not own and a machine may not have run —
+# so a shell could have the binaries installed and still not find them. The
+# Makefile already sets this explicitly for `make check`, which is why the
+# manifest reported `font ok` on a machine whose interactive shell could not
+# have run it.
+[ -d "$HOME/.cargo/bin" ] && export PATH="$HOME/.cargo/bin:$PATH"
+
 #####################################################################
 # Custom config
 #####################################################################

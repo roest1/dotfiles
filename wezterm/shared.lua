@@ -60,6 +60,139 @@ M.palette = {
 	subtle = "#908caa",
 }
 
+
+-- ─── Which font, where ───────────────────────────────────────────────────────
+--
+-- Three fonts can be on screen at once, and they arrive by two different
+-- mechanisms, because two is all wezterm has: a font is a property of the
+-- WINDOW or a property of the CELL, with nothing in between. The Pane object
+-- exposes get_foreground_process_name, get_user_vars and get_title, so wezterm
+-- can always tell WHICH pane it is looking at -- it just has no
+-- set_config_overrides of its own. Whatever the window decides, every pane in
+-- it wears. That asymmetry is the whole shape of what follows.
+--
+--   BASE    config.font, swapped per window by the update-status handler at the
+--           bottom of this file. It follows the FOCUSED pane: a Claude pane
+--           pins `claude`, an nvim pane gets `ui`, anything else gets `shell`.
+--           This is the lane carrying the compromise -- see the note there.
+--
+--   SGR 5   "slow blink", pinned to rate 0 below so it never animates, which
+--           frees the attribute to mean `editor`. nvim emits it on real file
+--           buffers and nowhere else (nvim/lua/external/altfont.lua), so oil,
+--           telescope, the statusline and the gutter keep the base font while
+--           the file you are editing does not. Per CELL, so it holds in an
+--           UNFOCUSED split too -- the half the base lane cannot do.
+--
+--   SGR 6   "rapid blink", already spoken for: Science Gothic Mono for `make`
+--           output, written only by lib/sgr.sh. Untouched by any of this.
+--
+-- That is the entire attribute budget, and it is why there is no fourth lane.
+-- Everything else wezterm can match a font_rule on -- intensity, italic,
+-- underline, reverse, strikethrough -- MEANS something on screen, so none of it
+-- can be borrowed as a carrier. Blink is available only because the rate can be
+-- set to zero. nvim cannot reach SGR 6 from the other side either: its `blink`
+-- highlight attribute emits terminfo's blink, which is SGR 5 and nothing else.
+--
+-- The four names live in a machine-local file written by `font`
+-- (bash/bash_productivity). It is NOT linked and NOT in deps.conf -- same
+-- footing as ~/.bash_local, because it describes this machine's taste rather
+-- than what every machine gets. Missing file means the defaults below, which
+-- are what this repo shipped before any of this existed.
+local FONT_STATE = (os.getenv("XDG_CONFIG_HOME") or ((os.getenv("HOME") or "") .. "/.config")) .. "/wezterm/fonts.conf"
+
+-- Bracket syntax because the nvim lanes carry a dot. The prefix is doing real
+-- work: it says the two of them are the same editor seen from two sides, and
+-- that neither has anything to do with `shell` or `claude`.
+--
+-- `nvim.ui` is NOT "oil". Oil is the most visible thing it draws, but the lane
+-- is the window's base font while nvim holds focus, so it is also telescope,
+-- the statusline, the gutter and every float. Naming it after oil would have
+-- read as a promise that changing it leaves the statusline alone.
+local DEFAULT_FONTS = {
+	shell = "0xProto Nerd Font",
+	["nvim.ui"] = "0xProto Nerd Font",
+	["nvim.editor"] = "JetBrainsMono Nerd Font",
+	claude = "0xProto Nerd Font",
+}
+
+-- Deliberately a hand-rolled `key = value` reader rather than json_parse: the
+-- file is written by a shell function, and this way a half-written or
+-- hand-mangled line is skipped instead of taking the whole config down with a
+-- parse error. An unknown key is ignored for the same reason -- the config
+-- keeps working while the two sides are out of step.
+local function read_fontset()
+	local set = {}
+	for k, v in pairs(DEFAULT_FONTS) do
+		set[k] = v
+	end
+	local fh = io.open(FONT_STATE, "r")
+	if not fh then
+		return set
+	end
+	for line in fh:lines() do
+		-- A dot is part of a key now, so the class has to admit it.
+		local k, v = line:match("^%s*([%a_][%w_.]*)%s*=%s*(.-)%s*$")
+		if k and v and v ~= "" and DEFAULT_FONTS[k] then
+			set[k] = v
+		end
+	end
+	fh:close()
+	return set
+end
+
+local FONTS = read_fontset()
+
+-- Picking a font rewrites that file; this is what turns the rewrite into a
+-- repaint of every open window with no keystroke and no `wezterm cli`. pcall
+-- because the file legitimately does not exist until the first pick.
+pcall(wezterm.add_to_config_reload_watch_list, FONT_STATE)
+
+-- Changes whenever any of the four picks change, which is how the override
+-- cache at the bottom knows a reload actually meant something. See apply_font.
+local FONTS_SIG = table.concat({ FONTS.shell, FONTS["nvim.ui"], FONTS["nvim.editor"], FONTS.claude }, "|")
+
+-- The tail of every chain, and the reason "keeping nerd icons" survives a pick
+-- of a font that has none: Symbols Nerd Font Mono is bundled with wezterm, so
+-- the glyphs resolve even when the chosen family is a bare monospace face.
+-- Noto Color Emoji is named explicitly rather than left to the implicit
+-- fallback, for the reason spelled out over config.font below.
+local function with_fallback(head)
+	local chain = {}
+	for _, entry in ipairs(head) do
+		chain[#chain + 1] = entry
+	end
+	chain[#chain + 1] = "Noto Color Emoji"
+	chain[#chain + 1] = "Symbols Nerd Font Mono"
+	return wezterm.font_with_fallback(chain)
+end
+
+local function base_face(family)
+	return with_fallback({ family, "JetBrains Mono" })
+end
+
+-- weight and style are spelled out rather than left to wezterm's own bold and
+-- italic synthesis, because a font_rule REPLACES the face for a matching cell:
+-- match a bold-italic cell with a Regular/Normal face and the bold-italic is
+-- silently gone. That is not theoretical for the editor lane -- rose-pine
+-- italicises comments, so a missing italic rule would flatten every comment in
+-- every file. `wezterm ls-fonts` shows the same expansion in wezterm's own
+-- built-in rules (When Intensity=Bold Italic=true, ...).
+local function styled_face(family, weight, style)
+	return with_fallback({ { family = family, weight = weight, style = style }, "JetBrains Mono" })
+end
+
+-- Exported so the entry points' own handlers can reach them. wezterm.lua's
+-- update-status handler swaps the BASE lane per focused pane, which needs both
+-- the chosen families and the same face builders this file uses -- rebuilding
+-- them there would be the hand-sync this module exists to end.
+M.FONTS = FONTS
+M.FONTS_SIG = FONTS_SIG
+M.with_fallback = with_fallback
+M.base_face = base_face
+M.styled_face = styled_face
+M.DEFAULT_FONTS = DEFAULT_FONTS
+M.FONT_STATE = FONT_STATE
+
 -- ─── apply ───────────────────────────────────────────────────────────────────
 --
 -- Mutates the caller's config table rather than returning one to merge: a merge
@@ -68,22 +201,40 @@ M.palette = {
 function M.apply(config)
 	local p = M.palette
 
-	-- Noto Color Emoji is named explicitly so this doesn't depend on wezterm's
-	-- bundled fallback shipping a copy. window_frame.font below draws from the
-	-- SAME two fonts for the SAME glyph and needs the opposite ORDER -- see the
-	-- note there.
-	config.font = wezterm.font_with_fallback({ "0xProto Nerd Font", "JetBrains Mono", "Noto Color Emoji" })
+	-- The BASE lane's starting value. `shell` is what a pane that is neither Claude
+	-- nor nvim gets, and it is also what every window opens with before the first
+	-- update-status tick resolves the focused pane. Defaults to 0xProto Nerd Font,
+	-- installed by wezterm/deps.sh. On a machine without it, the fallback chain
+	-- (plus wezterm's always-appended bundled fonts, including Symbols Nerd Font
+	-- for glyphs) keeps the terminal working — just in JetBrains Mono instead.
+	--
+	-- Noto Color Emoji is listed explicitly, not relied on as an implicit
+	-- fallback, because 0xProto Nerd Font also has a glyph for codepoints like
+	-- U+26A1 (⚡) — checked its cmap directly, it's named `oct-zap`, an Octicons
+	-- icon patched in like the rest of a Nerd Font's set: flat and single-color,
+	-- meant to be tinted like any other icon rather than rendered as emoji
+	-- artwork. Order among the three doesn't matter here, though: `wezterm
+	-- ls-fonts --text "⚡️"` shows the main terminal's shaping is
+	-- presentation-aware — it skips a font whose only match is that flat glyph
+	-- when the text carries the VS16 (\u{FE0F}) presentation selector, and
+	-- keeps looking until it finds one with real color tables, regardless of
+	-- where in the list that font sits. Noto Color Emoji is still named
+	-- explicitly so that doesn't depend on wezterm's bundled fallback shipping
+	-- a copy. window_frame.font below draws from the SAME two fonts for the
+	-- SAME glyph and needs the opposite treatment — its shaping isn't
+	-- presentation-aware, so order there is load-bearing. See the note there.
+	config.font = base_face(FONTS.shell)
 
-	-- ─── Science Gothic Mono, for `make` output ────────────────────────────────
+	-- ─── Science Gothic Mono, for `make` output ──────────────────────────────────
 	--
 	-- Read straight out of the linked config directory rather than installed into
-	-- the system font path. deps.conf links wezterm/fonts -> ~/.config/wezterm/fonts
+	-- the system font path. deps.conf links wezterm/fonts → ~/.config/wezterm/fonts
 	-- and config_dir follows the config file's own path, so this resolves on Linux,
 	-- macOS and the Windows host identically -- with no fc-cache (which macOS does
 	-- not have), no ~/Library/Fonts vs ~/.local/share/fonts split, and no chance of
-	-- a stale copy elsewhere shadowing these. That last one is not hypothetical:
-	-- two files claiming family "Science Gothic Mono" style "Regular" resolve by
-	-- first match, and the loser is silently the wrong glyphs.
+	-- a stale copy elsewhere on the system shadowing these. That last one is not
+	-- hypothetical: two files claiming family "Science Gothic Mono" style
+	-- "Regular" resolve by first match, and the loser is silently the wrong glyphs.
 	config.font_dirs = { wezterm.config_dir .. "/fonts" }
 
 	-- SGR 6 is "rapid blink". Setting the rate to 0 stops it animating, which
@@ -91,22 +242,22 @@ function M.apply(config)
 	-- which is the only thing that emits it. Italic would have been the obvious
 	-- carrier and is wrong: rose-pine italicises nvim's comments.
 	--
-	-- The 0 is load-bearing and verified against wezterm's renderer: screen_line.rs
-	-- guards the whole blink animation behind `if blink_rate != 0`, so 0 is not
-	-- "blink infinitely fast", it is "do not animate". Without it every line of
-	-- `make` output flashes.
-	--
-	-- text_blink_rate (SGR 5, slow) is deliberately LEFT ALONE at its default.
-	-- The two speeds are separate attributes with separate rate knobs, so
-	-- silencing the rapid one keeps the slow one available as a real
-	-- attention marker. Do not set it to 0 "for symmetry" -- that spends a
-	-- channel this repo wants.
-	--
 	-- Science Gothic Mono is generated by wezterm/mkmono.py to 0xProto's exact
 	-- 0.62em advance, so the two interleave on one grid with no drift; that is the
 	-- entire reason a proportional display face can appear in a cell grid at all.
-	-- 0xProto stays in the fallback for check/cross/box-drawing, which Science
-	-- Gothic does not cover.
+	-- 0xProto stays in the fallback for ✓/✗/box-drawing, which Science Gothic
+	-- does not cover.
+	--
+	-- SGR 5 is "slow blink", the same trick one attribute over, and it means
+	-- `editor`: the file you are editing in nvim, and nothing else on the screen.
+	-- Its rate is pinned to 0 for exactly the same reason -- an attribute that
+	-- animates cannot be borrowed.
+	--
+	-- Both halves of the guard from lib/sgr.sh apply on the nvim side too, and
+	-- nvim/lua/external/altfont.lua enforces them: over ssh, in GNOME Terminal, on
+	-- a machine that has not run `make link`, SGR 5 is a real blink attribute and
+	-- would set an entire source file flashing. nvim checks before it emits.
+	config.text_blink_rate = 0
 	config.text_blink_rate_rapid = 0
 	config.font_rules = {
 		{
@@ -123,6 +274,33 @@ function M.apply(config)
 				{ family = "Science Gothic Mono", weight = "Regular" },
 				"0xProto Nerd Font",
 			}),
+		},
+
+		-- Four rules for one lane, and all four are load-bearing: a font_rule
+		-- replaces the face outright, so the weight/style the cell asked for has to
+		-- be reconstructed here or it is lost. Bold before regular and italic
+		-- before upright, because wezterm takes the FIRST match and an omitted
+		-- field is a wildcard -- `{ blink = "Slow" }` alone would swallow every
+		-- bold and italic cell in the buffer on its way past.
+		{
+			blink = "Slow",
+			intensity = "Bold",
+			italic = true,
+			font = styled_face(FONTS["nvim.editor"], "Bold", "Italic"),
+		},
+		{
+			blink = "Slow",
+			intensity = "Bold",
+			font = styled_face(FONTS["nvim.editor"], "Bold", "Normal"),
+		},
+		{
+			blink = "Slow",
+			italic = true,
+			font = styled_face(FONTS["nvim.editor"], "Regular", "Italic"),
+		},
+		{
+			blink = "Slow",
+			font = styled_face(FONTS["nvim.editor"], "Regular", "Normal"),
 		},
 	}
 

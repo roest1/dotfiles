@@ -753,6 +753,23 @@ reload() {
     echo "Reloaded ~/.bashrc"
 }
 
+# ─── fonts ───────────────────────────────────────────────────────────────────
+#
+# Nothing here any more, and that is the point. Both halves are `font`, the Rust
+# binary built from tui/font and declared in deps.conf's [tui]:
+#
+#   font            the lane picker, replacing an fzf picker that re-spawned a
+#                   previewer on every cursor move — ~300ms a keystroke, most of
+#                   it uv startup and re-parsing fonts that had not changed.
+#   font browse     Google's monospace families, replacing the bash+fzf browser.
+#                   It prefetches the rows AROUND the cursor, so the one you are
+#                   about to reach has already arrived; a shell function
+#                   re-execing curl per preview could not do that.
+#
+# A bash function would SHADOW that binary — functions win over PATH — which is
+# why nothing here is called `font`, and why CI checks for it.
+
+
 # ─── .NET clean/build/test aliases ─────────────────────────────────────────────
 
 # dclean: dotnet clean alias
@@ -868,6 +885,11 @@ h() {
     Ctrl+R             Fuzzy search command history
     Ctrl+T             Fuzzy file picker (inserts path)
     Alt+C              Fuzzy cd into subdirectory
+
+  Terminal                                                    [wezterm]
+    font               Pick the font for each of wezterm's lanes   [tui]
+                       shell · nvim.ui · nvim.editor · claude
+                       (font show / font reset)
 
   Dotfiles
     dotfiles           Open dotfiles dir in nvim
@@ -1313,6 +1335,76 @@ loop — repeat a command (like watch)
 
   Clears the screen each iteration and shows a timestamp.
   Ctrl+C to stop.
+HELP
+      ;;
+    font)
+      cat <<'HELP'
+font — pick the font for each of wezterm's lanes
+
+  font              Open the picker
+  font show         What is set now
+  font reset        Back to the defaults wezterm.lua ships
+
+  That is the whole command surface. Everything else is inside the TUI,
+  which states its own keys in the footer — including browsing Google's
+  fonts, which is the last row under an opened lane.
+
+  The lanes:
+
+    shell        The shell, and any pane that is neither nvim nor Claude.
+    nvim.ui      nvim's chrome. NOT just oil — oil is the most visible
+                 thing it draws, but the lane is the window's base font
+                 while nvim holds focus, so it is also telescope, the
+                 statusline, the gutter and every float.
+    nvim.editor  The file you are editing, and nothing else on screen.
+    claude       Claude Code panes, pinned so a shell pick can't drag
+                 them along.
+
+  Why "lanes" and not just "the font":
+
+    A font in wezterm is a property of the WINDOW or a property of the
+    CELL, and there is nothing in between — no per-pane font exists.
+
+    shell, nvim.ui and claude are the window lane, resolved from whichever
+    pane has FOCUS. So tabs are exact and splits are not: two panes side
+    by side share one font, the focused pane's.
+
+    nvim.editor is the cell lane, and that is what makes "the file but not
+    oil" possible at all. wezterm pins the blink rate to zero, which frees
+    the blink attribute to mean "draw this in the other font"; nvim emits
+    it on real file buffers and nowhere else. Being per-cell, it holds in
+    an unfocused split too.
+
+  What the numbers in the pane mean, since the screen shows them but
+  cannot explain them:
+
+    space     Width AND line height. Line height is the one nobody
+              guesses: it is set by the font, not the terminal, and it
+              ranges from 1.13em to 1.56em across the families here, so
+              it decides how many rows you get.
+    glyphs    How far apart 0/O, 1/l and l/I actually render, measured by
+              rasterising the pair and diffing it. Higher is more
+              distinct. The pairs you pick a coding font to keep apart.
+    cuts      A font_rule replaces the face, so a family with no Italic
+              takes the slant off every comment rose-pine italicises.
+    claude    Claude Code's TUI glyphs in tiers, not counted flat:
+              `critical` is U+23FA and U+23BF, drawn on EVERY tool call.
+              A font missing one is POOR however many others it carries —
+              Fira Code has five of nine and neither that matters.
+    extras    Ligatures via `calt` — the feature Fira Code, JetBrains Mono
+              and Iosevka actually drive => and != through; checking
+              `liga` alone reports "none" on all three.
+
+  Browsing installs nothing by looking. Each family is fetched to
+  ~/.cache/dotfiles-fonts and previewed there, along with the rows around
+  the cursor so the next one has already arrived. You cannot rasterise a
+  font you do not have — "preview without downloading" is not a thing —
+  but preview without INSTALLING is, and that is this. None of Google's
+  monospace families are Nerd-patched, so icons fall back oversized.
+
+  Outside wezterm the specimen and the contact sheet are skipped and you
+  get the numbers only: an inline image a terminal cannot draw is not
+  ignored, it is printed.
 HELP
       ;;
     deps|dependencies)

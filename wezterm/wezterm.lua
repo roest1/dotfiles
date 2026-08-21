@@ -27,6 +27,18 @@ else
 	shared = { palette = {} }
 end
 
+-- Bound once here rather than reached for as shared.X at each use: the
+-- update-status handler runs on every repaint, and this is also the only place
+-- that has to cope with shared.lua having failed to load. `or` defaults rather
+-- than bare reads, because a nil base_face inside an event handler is a runtime
+-- error on every keystroke -- far worse than the unstyled-but-working terminal
+-- the pcall above is buying.
+local FONTS = shared.FONTS or {}
+local FONTS_SIG = shared.FONTS_SIG or ""
+local base_face = shared.base_face or function(family)
+	return wezterm.font_with_fallback({ family or "JetBrains Mono" })
+end
+
 -- Attach a GUI window to the Jarvis sidecar's mux server so you can watch the
 -- worker + brain Claude Code panes live:  wezterm connect mux
 -- socket_path points at the SAME default socket the sidecar's `wezterm cli`
@@ -129,6 +141,21 @@ end
 -- budget space would truncate titles by two characters too many.
 --
 -- Swap any glyph freely; nothing below depends on which character it is.
+-- All three Claude signals in one place, because two callers now need the same
+-- answer: format-tab-title, for the status glyph, and apply_font at the bottom,
+-- for the base-font pin. They must agree — a pane that reads as Claude in the
+-- tab bar and not in the font resolver would wear the glyph in the wrong font.
+--
+-- Takes strings rather than a pane, because the two callers hold different
+-- things: format-tab-title gets a PaneInformation (plain `.title` and
+-- `.foreground_process_name` fields) while update-status gets a real Pane
+-- object (`:get_title()`, `:get_foreground_process_name()` methods).
+local function is_claude_pane(title, proc)
+	return title_has_any(title, CLAUDE_WORKING)
+		or title:find(CLAUDE_IDLE, 1, true) ~= nil
+		or proc:find(CLAUDE_PROC, 1, true) ~= nil
+end
+
 local STATES = {
 	-- Claude is actively running — its spinner is on screen right now.
 	working = { glyph = "🔨", cols = 2, color = "#f6c177" },
@@ -236,7 +263,7 @@ wezterm.on("format-tab-title", function(tab, _, _, _, hover, max_width)
 	-- Cheap reads, no I/O, evaluated fresh on every repaint.
 	local proc = (pane and pane.foreground_process_name) or ""
 	local busy = title_has_any(pane_title, CLAUDE_WORKING)
-	local is_claude = busy or pane_title:find(CLAUDE_IDLE, 1, true) ~= nil or proc:find(CLAUDE_PROC, 1, true) ~= nil
+	local is_claude = is_claude_pane(pane_title, proc)
 
 	-- has_unseen_output is GONE from this decision, deliberately.
 	--
@@ -373,5 +400,88 @@ wezterm.on("format-window-title", function(tab)
 	end
 	return status ~= "" and status or "wezterm"
 end)
+
+-- ─── The BASE lane: follow the focused pane ──────────────────────────────────
+--
+-- This is where the compromise lives, and it is worth stating plainly rather
+-- than discovering it later. wezterm has no per-pane font. The Pane object can
+-- IDENTIFY a pane perfectly well — get_foreground_process_name, get_user_vars,
+-- get_title are all there and all cheap — but the only thing that can carry a
+-- font is the window, via set_config_overrides. So this resolves the base font
+-- from whichever pane currently has focus and applies it window-wide.
+--
+-- What that buys, and what it costs:
+--
+--   Tabs are exact.       Only one pane in a tab is focused, so switching tabs
+--                         between Claude and a shell lands on the right font.
+--
+--   Splits are not.       Two panes side by side share one base font, and it is
+--                         the focused pane's. Focus the shell in a Claude/shell
+--                         split and the Claude pane picks up the shell font
+--                         until you focus back.
+--
+--   nvim doesn't care.    Which is the point of the SGR 5 lane: file text is
+--                         per-cell, so it stays in `editor` whether nvim's pane
+--                         is focused, unfocused, or sharing a split. Only nvim's
+--                         CHROME rides this lane.
+--
+-- Order matters. Claude is tested first because a Claude pane that has shelled
+-- out to nvim reports nvim as its foreground process — the ✳ in its title is
+-- what still gives it away, and the pin has to win.
+local NVIM_PROC = "nvim"
+
+local function apply_font(window, pane)
+	if window == nil then
+		return
+	end
+
+	local title, proc = "", ""
+	if pane ~= nil then
+		title = pane:get_title() or ""
+		proc = pane:get_foreground_process_name() or ""
+	end
+
+	local want
+	if is_claude_pane(title, proc) then
+		want = FONTS.claude
+	elseif proc:find(NVIM_PROC, 1, true) ~= nil then
+		want = FONTS["nvim.ui"]
+	else
+		want = FONTS.shell
+	end
+
+	-- update-status fires about once a second per window, so the cache is what
+	-- keeps this from rebuilding a font and reflowing the window on every tick.
+	--
+	-- GLOBAL rather than a file-local table, because wezterm evaluates this
+	-- file per window and dispatches events from a pool of lua contexts: a
+	-- local would be a different table depending on which context ran the
+	-- callback, so the cache would miss at random and re-apply for no reason.
+	--
+	-- GLOBAL also SURVIVES a config reload, which is the thing that makes a
+	-- stale entry possible — hence FONTS_SIG in the value. Pick a new font, the
+	-- reload re-runs this file, the signature changes, and every window
+	-- re-applies on its next tick instead of matching its own old cache entry.
+	--
+	-- Flat string keys, not a nested table: GLOBAL proxies mutation of the
+	-- top-level value only.
+	local key = "font_base_" .. tostring(window:window_id())
+	local val = want .. "@" .. FONTS_SIG
+	if wezterm.GLOBAL[key] == val then
+		return
+	end
+	wezterm.GLOBAL[key] = val
+
+	-- Replaces the whole override table, which is correct only because nothing
+	-- else in this config sets one. Add another override and this has to merge.
+	window:set_config_overrides({ font = base_face(want) })
+end
+
+wezterm.on("update-status", apply_font)
+
+-- update-status alone would already cover this, but only on its next tick.
+-- Focusing a window and watching the font change a beat later reads as a bug,
+-- so take the event that fires immediately as well.
+wezterm.on("window-focus-changed", apply_font)
 
 return config
