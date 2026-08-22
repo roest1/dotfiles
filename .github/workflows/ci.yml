@@ -50,6 +50,28 @@ jobs:
       # check rather than a code review note is that the bug is invisible until
       # a path happens to collide, which can be years later and in a commit that
       # touched neither the target nor the Makefile.
+      # ONE floor, read by both platforms. The value lives in a file rather than
+      # in each installer because a number duplicated across a .sh and a .ps1 is
+      # the same drift that has bitten this repo four times now -- tab_bar,
+      # shared.lua, JetBrainsMono, Science Gothic. A file cannot disagree with
+      # itself; this only has to check that nobody has inlined it since.
+      - name: The wezterm version floor has one source
+        run: |
+          set -uo pipefail
+          bad=0
+          [ -s wezterm/MIN_VERSION ] || { echo "wezterm/MIN_VERSION is missing or empty"; bad=1; }
+          floor=$(tr -d '[:space:]' < wezterm/MIN_VERSION 2>/dev/null || true)
+          case "$floor" in
+            20[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+            *) echo "wezterm/MIN_VERSION should be a YYYYMMDD build stamp, got '$floor'"; bad=1 ;;
+          esac
+          grep -q 'MIN_VERSION' wezterm/deps.sh \
+            || { echo "wezterm/deps.sh no longer reads MIN_VERSION"; bad=1; }
+          grep -q 'MIN_VERSION' windows/deps.ps1 \
+            || { echo "windows/deps.ps1 no longer reads MIN_VERSION"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: one floor ($floor), read by both platforms"
+          exit $bad
+
       - name: Every Makefile target is .PHONY
         run: |
           set -uo pipefail
