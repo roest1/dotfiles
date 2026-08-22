@@ -75,9 +75,20 @@ function Test-FontInstalled {
     return $false
 }
 
-# The registry value name should be the font's real family name. Read it out of
-# the file rather than guessing from "0xProtoNerdFont-Regular.ttf", which would
-# need camel-case splitting to get back to "0xProto Nerd Font".
+# The registry value name must be unique PER FACE, not per family, and that is
+# the whole reason this function is not enough on its own.
+#
+# Windows keys HKCU font registrations by that name. Registering every face of a
+# family under "JetBrainsMono Nerd Font (TrueType)" means each -Force write
+# overwrites the last, so 16 files on disk left ONE face registered and wezterm
+# reported:
+#
+#   Unable to load a font matching one of your font_rules:
+#   wezterm.font('JetBrainsMono Nerd Font', {weight="Regular", style=Italic})
+#
+# Get-FontFaceName below appends the style, so Regular keeps the bare family
+# name (which is what Windows expects for the base face) and every other face
+# gets its own row.
 function Get-FontFamilyName {
     param([string] $Path)
 
@@ -96,14 +107,63 @@ function Get-FontFamilyName {
     return [IO.Path]::GetFileNameWithoutExtension($Path)
 }
 
+# Registers a set of .ttf files, one registry row per face. Returns the count.
+#
+# Split out because it has TWO callers with different reasons to run: a fresh
+# download, and a repair pass over faces already on disk. The repair matters --
+# a run before the per-face naming fix left a whole family collapsed into one
+# row, and re-registering is what fixes that without anyone editing the registry
+# by hand.
+function Register-FontFiles {
+    param([Parameter(Mandatory = $true)] $Files)
+
+    $n = 0
+    foreach ($ttf in $Files) {
+        $family = Get-FontFamilyName $ttf.FullName
+        $face   = Get-FontFaceName -Family $family -BaseName $ttf.BaseName
+        New-ItemProperty -Path $FontRegKey -Name "$face (TrueType)" `
+                         -Value $ttf.FullName -PropertyType String -Force | Out-Null
+        $n++
+    }
+    return $n
+}
+
+# family + style, so each face gets its own registry row.
+#
+# The style comes from the filename suffix rather than the font tables:
+# System.Drawing exposes FontFamily.Name (the family) but no reliable per-FILE
+# subfamily, and every nerd-fonts and google/fonts asset this repo installs is
+# named Family-Style.ttf. When there is no suffix -- ScienceGothic.ttf -- the
+# bare family name is correct, because that file IS the base face.
+function Get-FontFaceName {
+    param(
+        [Parameter(Mandatory = $true)][string] $Family,
+        [Parameter(Mandatory = $true)][string] $BaseName
+    )
+
+    $style = ''
+    if ($BaseName -match '-([A-Za-z]+)$') { $style = $Matches[1] }
+
+    if (-not $style -or $style -eq 'Regular') { return $Family }
+    return "$Family $style"
+}
+
 function Install-NerdFont {
     param(
         [Parameter(Mandatory = $true)][string] $Archive,
         [Parameter(Mandatory = $true)][string] $Prefix
     )
 
-    if (Test-FontInstalled -Prefix $Prefix) {
-        Write-Host "  ok $Archive Nerd Font"
+    # Already on disk from an earlier run? Re-register rather than re-download.
+    # Registration is cheap and idempotent, and running it again is what repairs
+    # a family that an older version of this script collapsed into a single row.
+    $onDisk = @(Get-ChildItem -LiteralPath $UserFontDir -Filter "$Prefix*.ttf" -ErrorAction SilentlyContinue)
+    if ($onDisk.Count -gt 0) {
+        if (-not (Test-Path -LiteralPath $FontRegKey)) {
+            New-Item -Path $FontRegKey -Force | Out-Null
+        }
+        $n = Register-FontFiles -Files $onDisk
+        Write-Host "  ok $Archive Nerd Font ($n faces registered)"
         return
     }
 
@@ -125,16 +185,14 @@ function Install-NerdFont {
             New-Item -Path $FontRegKey -Force | Out-Null
         }
 
-        $installed = 0
+        $copied = @()
         foreach ($ttf in (Get-ChildItem -LiteralPath $work -Filter '*.ttf' -Recurse)) {
             $dest = Join-Path $UserFontDir $ttf.Name
             Copy-Item -LiteralPath $ttf.FullName -Destination $dest -Force
-
-            $family = Get-FontFamilyName $dest
-            New-ItemProperty -Path $FontRegKey -Name "$family (TrueType)" `
-                             -Value $dest -PropertyType String -Force | Out-Null
-            $installed++
+            $copied += (Get-Item -LiteralPath $dest)
         }
+        $installed = 0
+        if ($copied.Count -gt 0) { $installed = Register-FontFiles -Files $copied }
 
         if ($installed -gt 0) {
             Write-Host "  installed $Archive Nerd Font ($installed faces)" -ForegroundColor Green
@@ -162,7 +220,13 @@ function Install-FontFile {
         [Parameter(Mandatory = $true)][string] $Url
     )
 
-    if (Test-FontInstalled -Prefix $Prefix) {
+    # Same repair-not-skip rule as Install-NerdFont above.
+    $dest = Join-Path $UserFontDir $File
+    if (Test-Path -LiteralPath $dest) {
+        if (-not (Test-Path -LiteralPath $FontRegKey)) {
+            New-Item -Path $FontRegKey -Force | Out-Null
+        }
+        Register-FontFiles -Files @(Get-Item -LiteralPath $dest) | Out-Null
         Write-Host "  ok $Prefix"
         return
     }
@@ -176,11 +240,11 @@ function Install-FontFile {
         }
 
         Write-Host "  downloading $Prefix..."
-        $dest = Join-Path $UserFontDir $File
         Invoke-WebRequest -Uri $Url -OutFile $dest -UseBasicParsing
 
         $family = Get-FontFamilyName $dest
-        New-ItemProperty -Path $FontRegKey -Name "$family (TrueType)" `
+        $face   = Get-FontFaceName -Family $family -BaseName ([IO.Path]::GetFileNameWithoutExtension($File))
+        New-ItemProperty -Path $FontRegKey -Name "$face (TrueType)" `
                          -Value $dest -PropertyType String -Force | Out-Null
 
         Write-Host "  installed $Prefix" -ForegroundColor Green
