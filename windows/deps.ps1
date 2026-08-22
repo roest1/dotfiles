@@ -256,6 +256,51 @@ function Install-FontFile {
     }
 }
 
+# --- wezterm version floor -------------------------------------------------
+
+<#
+    The font carrier needs a wezterm that MATCHES font_rules on the blink
+    attribute, and the host is the machine most likely not to have one: winget's
+    newest DATED build is 20240203, the last stable, which parses SGR 6 and
+    animates it but never applies the rule. So `make` output in a WSL tab
+    renders in the base font while the same command on Linux renders in Science
+    Gothic Mono, with nothing anywhere saying why.
+
+    Reads wezterm\MIN_VERSION -- the same file wezterm/deps.sh reads, so the two
+    platforms cannot drift apart on what "new enough" means.
+#>
+function Show-WeztermFloor {
+    param([Parameter(Mandatory = $true)][string] $RepoRoot)
+
+    $floorFile = Join-Path $RepoRoot 'wezterm\MIN_VERSION'
+    if (-not (Test-Path -LiteralPath $floorFile)) { return }
+    $floor = (Get-Content -LiteralPath $floorFile -Raw).Trim()
+    if (-not $floor) { return }
+
+    $wt = Get-Command wezterm -ErrorAction SilentlyContinue
+    if (-not $wt) { return }
+
+    $raw = & wezterm --version 2>$null | Out-String
+    if ($raw -notmatch '(20\d{6})') {
+        Write-Host '  could not read wezterm version - skipping the floor check' -ForegroundColor Yellow
+        return
+    }
+    $have = $Matches[1]
+
+    if ([int64]$have -lt [int64]$floor) {
+        Write-Host "  wezterm $have is below $floor - the font lanes will NOT work" -ForegroundColor Yellow
+        Write-Host '    SGR 6 (Science Gothic Mono for `make` output) and SGR 5 (the nvim' -ForegroundColor Yellow
+        Write-Host '    editor lane) both need font_rules to match the blink attribute,' -ForegroundColor Yellow
+        Write-Host '    which the last stable release does not do. It fails SILENTLY.' -ForegroundColor Yellow
+        Write-Host '' -ForegroundColor Yellow
+        Write-Host '    winget carries no dated build newer than the 2024 stable, so:' -ForegroundColor Yellow
+        Write-Host '      winget install --exact --id wez.wezterm --version nightly' -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "  ok wezterm $have meets the $floor floor for the font lanes"
+    }
+}
+
 # --- Elevation helper ------------------------------------------------------
 
 <#
@@ -340,4 +385,5 @@ foreach ($nf in $NerdFonts) {
 foreach ($sf in $SingleFonts) {
     Install-FontFile -Prefix $sf.Prefix -File $sf.File -Url $sf.Url
 }
+Show-WeztermFloor -RepoRoot $RepoRoot
 Show-ElevationStatus

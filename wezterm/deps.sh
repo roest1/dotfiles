@@ -195,8 +195,52 @@ if command -v fc-list >/dev/null 2>&1; then
   fi
 fi
 
+# ─── Version floor ───────────────────────────────────────────────────────────
+#
+# The font carrier needs a wezterm that MATCHES font_rules on the blink
+# attribute. Measured, because upstream does not document it: 20240203 parses
+# SGR 6 and animates it but never applies the rule, so `make` output renders in
+# the base font with no warning of any kind. 20260707 applies it correctly.
+#
+# The floor is 20240204 -- one day past the last stable -- because that is the
+# honest statement of what is known. 20240203 provably cannot do this; the fix
+# landed somewhere in the 135 undocumented nightly entries after it, and the
+# changelog does not say where. The earliest build this repo has VERIFIED is
+# 20260707.
+#
+# There is no way to pin an exact build, which is why this is a floor. Upstream
+# has published no stable since 2024-02-03 and everything after lives on a
+# rolling `nightly` tag whose assets are replaced in place, so an older nightly
+# cannot be downloaded even deliberately.
+#
+# wezterm/MIN_VERSION is the single source: windows/deps.ps1 reads the same
+# file, so the two platforms cannot drift.
+wezterm_version_floor() {
+  local floor have
+  floor="$(tr -d '[:space:]' < "$HERE/MIN_VERSION" 2>/dev/null)"
+  [ -n "$floor" ] || return 0
+
+  have="$(wezterm --version 2>/dev/null | grep -oE '20[0-9]{6}' | head -1)"
+  if [ -z "$have" ]; then
+    echo "  ⚠️  could not read wezterm's version — skipping the floor check"
+    return 0
+  fi
+
+  if [ "$have" -lt "$floor" ]; then
+    echo "  ⚠️  wezterm $have is below $floor — the font lanes will NOT work."
+    echo "     SGR 6 (Science Gothic Mono for \`make\` output) and SGR 5 (the nvim"
+    echo "     editor lane) both rely on font_rules matching the blink attribute,"
+    echo "     which the last stable release does not do. It fails SILENTLY: the"
+    echo "     text renders in the base font and nothing warns."
+    echo "     Install a nightly: https://wezfurlong.org/wezterm/installation.html"
+  else
+    echo "  ✅ wezterm $have meets the $floor floor for the font lanes"
+  fi
+}
+
 if command -v wezterm >/dev/null 2>&1; then
   echo "  ✅ wezterm ($(wezterm --version 2>/dev/null | head -1))"
+  wezterm_version_floor
   exit 0
 fi
 
