@@ -24,14 +24,29 @@ SHELL := /bin/bash
 export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(PATH)
 
 UNAME := $(shell uname -s)
-DOTFILES_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && pwd)
+# make's own functions split their argument on whitespace, so $(abspath) and
+# $(dir) cannot survive a path with a space in it. On a clone at
+# /mnt/c/Users/Riley Oest/dotfiles they saw TWO words and rejoined the pieces as
+# "/mnt/c/Users/ Oest/dotfiles/" -- the cd then failed, $(shell) returned empty,
+# and every later $(DOTFILES_DIR)/lib/... resolved to /lib/..., so `make help`
+# died three times before printing anything.
+#
+# CURDIR is set by make itself and never passes through a make function, so it
+# survives the space. The trade is that this Makefile must be run from its own
+# directory or via `make -C <dir>` (which sets CURDIR), not `make -f <path>`
+# from somewhere else -- which is how it is invoked everywhere in this repo and
+# in its docs.
+#
+# Every USE has to be quoted too, for the same reason cd did: an unquoted
+# $(DOTFILES_DIR) in a recipe is two arguments.
+DOTFILES_DIR := $(CURDIR)
 
 # Sections come from the manifest, not from this file.
 #
 # Through lib/manifest.sh rather than a local sed, so one parser decides what a
 # section is. Every section here is installable from bash; the Windows host is
 # not a section at all, because windows/install.ps1 declares its own payload.
-SECTIONS := $(shell bash -c 'source $(DOTFILES_DIR)/lib/manifest.sh && manifest_sections')
+SECTIONS := $(shell bash -c 'source "$(DOTFILES_DIR)/lib/manifest.sh" && manifest_sections')
 
 # Section names passed on the command line (`make install nvim`) are arguments,
 # not targets, so they get a no-op rule to stop make complaining.
@@ -75,13 +90,39 @@ help: ## Show this help
 sections: ## List sections declared in deps.conf
 	@echo "$(SECTIONS)" | tr ' ' '\n'
 
-install: ## Link config + install tools (optionally: make install <section>...)
+# ─── The wrong clone ─────────────────────────────────────────────────────────
+#
+# A checkout under /mnt/ is the WINDOWS host's clone seen from the guest. It
+# exists so wezterm.exe can read a config on C:, and `make install` in it would
+# point ~/.bashrc, ~/.config/nvim and the rest at a 9p mount -- slow on every
+# shell start, and gone the moment the drive is not mounted. install.sh also
+# prunes orphans, so the guest's real links would be removed on the way past.
+#
+# Read-only targets stay allowed: `make help` and `make status` there are
+# harmless, and status is actively useful -- it is what tells you this clone is
+# behind origin/main.
+.PHONY: _guard_wrong_clone
+_guard_wrong_clone:
+	@case "$(CURDIR)" in \
+	  /mnt/*) \
+	    echo "This is the Windows host's clone ($(CURDIR))."; \
+	    echo ""; \
+	    echo "  Installing from here would link your WSL config onto /mnt/c."; \
+	    echo "  Use the Linux clone for that:"; \
+	    echo "      cd ~/dotfiles && make $(firstword $(MAKECMDGOALS))"; \
+	    echo ""; \
+	    echo "  This clone is installed from PowerShell on the host instead:"; \
+	    echo "      powershell -NoProfile -ExecutionPolicy Bypass -File .\\windows\\install.ps1"; \
+	    exit 1 ;; \
+	esac
+
+install: _guard_wrong_clone ## Link config + install tools (optionally: make install <section>...)
 	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_tools $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_post $(ARGS)
 	@$(MAKE) --no-print-directory check $(ARGS)
 
-link: ## Symlink config only — no sudo, no network, nothing installed
+link: _guard_wrong_clone ## Symlink config only — no sudo, no network, nothing installed
 	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 
 check: ## Verify enabled tools are present (optionally: make check <section>...)
