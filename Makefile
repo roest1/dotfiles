@@ -62,7 +62,15 @@ $(eval $(ARGS):;@:)
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-.PHONY: help install link check status sync prune test shell update sections mise-lock mono-font $(SECTIONS)
+# EVERY target belongs here, not just the ones that have bitten. `windows`
+# collides with the windows/ DIRECTORY, so without it make answers
+# "'windows' is up to date" and runs nothing -- a target that silently does
+# nothing is worse than one that errors. `lint` had the same latent bug and
+# had simply never met a file called lint.
+#
+# CI asserts this list stays complete, because the failure is invisible until
+# a path happens to share a target's name.
+.PHONY: help install link check windows status lint sync prune test shell update sections mise-lock mono-font $(SECTIONS)
 
 # One recipe line, not twelve, because lib/sgr.sh has to be sourced in the same
 # shell that uses it — make runs each recipe line in its own.
