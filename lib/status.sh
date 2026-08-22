@@ -308,11 +308,11 @@ status_all() {
       echo "             shim is still on PATH, so mise_install short-circuits."
     fi
     if [[ $STATUS_DRIFT_WINDOWS -gt 0 ]]; then
-      echo "  ✗ windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is not this commit."
-      echo "             From PowerShell on the host:"
-      echo "               cd \"\$env:USERPROFILE\\dotfiles\"; git checkout main; git pull"
-      echo "               powershell -NoProfile -ExecutionPolicy Bypass -File .\\windows\\install.ps1"
-      echo "             The second line is not optional when a link or font was added."
+      echo "  ✗ windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is behind origin/main."
+      echo "             Fix it from here:"
+      echo "               make windows"
+      echo "             That pulls the host clone and re-runs its installer, which is"
+      echo "             not optional when an update added a link or a font."
     fi
     if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
       echo "  ✗ tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."

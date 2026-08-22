@@ -60,31 +60,55 @@ install. Turn Developer Mode on and re-run to get the link back.
 
 ## Staying up to date
 
-This clone does not update itself, and you are rarely sitting in it. After
-anything lands on `main`:
+**From WSL, which is where you already are:**
 
-```powershell
-cd "$env:USERPROFILE\dotfiles"; git checkout main; git pull
-powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
+```bash
+make windows
 ```
 
-**The second line is not optional.** `git pull` moves the files; only
-`install.ps1` creates a link or installs a font that the update added. Skipping
-it is how the host ended up without `shared.lua`, without JetBrainsMono, and
-with a tab bar drawn in the wrong face — each time looking like a wezterm bug.
-
-You do not have to remember to check. **`make status`, run in WSL, reports this
-clone** — it finds it under `/mnt/c/Users/*/dotfiles` and compares its commit
-to the one you are on:
+That finds the host clone under `/mnt/c/Users/*/dotfiles`, switches it to `main`,
+pulls, and runs `install.ps1` — through WSL's Windows interop, so there is
+nothing to install and no path to type. It is the counterpart to the `[windows]`
+line in `make status`, which is what tells you it is needed:
 
 ```
 [windows] host clone
-  ✗ 6 commit(s) behind this clone (c3a580c vs 73c1807)
+  ✗ [out of date]  main @ c3a580c — origin/main is d66eeb2
 ```
 
-It prints the two commands above when they are out of step. Override the
-location with `DOTFILES_WINDOWS_DIR` if your clone is not under
-`%USERPROFILE%`.
+It refuses rather than guessing if that clone has real local changes. Line-ending
+churn is not "real": a clone made before `.gitattributes` pinned `eol=lf` holds
+CRLF, and the script renormalizes that on its own.
+
+**From Windows, if you would rather:**
+
+```powershell
+irm https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.ps1 | iex
+```
+
+The same line that installs a fresh machine also updates one. `bootstrap.ps1`
+pulls when the clone already exists and then hands off to `install.ps1`, so
+there is no separate update command to remember.
+
+**Why the long `powershell -NoProfile -ExecutionPolicy Bypass -File ...` form
+exists at all:** Windows client machines default to a `Restricted` execution
+policy, which refuses to run a `.ps1` file. The `irm | iex` pipe sidesteps it
+because piped text is not a script file. If you would rather run the script
+directly, lift the restriction once for your account:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+After that `.\windows\install.ps1` works on its own. `RemoteSigned` still
+blocks unsigned scripts *downloaded* from the internet; a git clone carries no
+mark-of-the-web, so this repo's scripts run.
+
+**Whichever route, `install.ps1` has to run — a `git pull` alone is not enough.**
+The pull moves files; only the installer creates a link or installs a font that
+the update added. Skipping it is how the host ended up without `shared.lua`,
+without JetBrainsMono, and with a tab bar in the wrong face — each time looking
+like a wezterm bug.
 
 A running wezterm does **not** pick up a pulled config on its own. After
 updating, close every wezterm window and relaunch — see Troubleshooting for how
