@@ -293,8 +293,11 @@ function Show-WeztermFloor {
         Write-Host '    editor lane) both need font_rules to match the blink attribute,' -ForegroundColor Yellow
         Write-Host '    which the last stable release does not do. It fails SILENTLY.' -ForegroundColor Yellow
         Write-Host '' -ForegroundColor Yellow
-        Write-Host '    winget carries no dated build newer than the 2024 stable, so:' -ForegroundColor Yellow
-        Write-Host '      winget install --exact --id wez.wezterm --version nightly' -ForegroundColor Yellow
+        Write-Host '    wez.wezterm tops out at the 2024 stable. The nightlies are a' -ForegroundColor Yellow
+        Write-Host '    SEPARATE package, so this is an id change, not a --version:' -ForegroundColor Yellow
+        Write-Host '      winget install --exact --id wez.wezterm.nightly' -ForegroundColor Yellow
+        Write-Host '    If winget objects to the existing install, remove it first:' -ForegroundColor Yellow
+        Write-Host '      winget uninstall --exact --id wez.wezterm' -ForegroundColor Yellow
     }
     else {
         Write-Host "  ok wezterm $have meets the $floor floor for the font lanes"

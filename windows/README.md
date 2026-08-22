@@ -180,6 +180,35 @@ which reads no manifest at all. There is no `[windows]` section and no
 `platform` line type; CI rejects both. The reasoning for that reversal is in
 `install.ps1`'s own header and in the note under `[wezterm]` in `deps.conf`.
 
+## The font lanes need a nightly wezterm
+
+`make` output in Science Gothic Mono (SGR 6) and the nvim editor lane (SGR 5)
+both depend on wezterm matching `font_rules` on the **blink** attribute. The last
+stable release — `20240203`, February 2024, and still the newest thing
+`wez.wezterm` offers — does not do it. It parses the attribute and will happily
+*animate* it, but never applies the rule, so the text renders in the base font
+and **nothing warns you**.
+
+`wezterm/MIN_VERSION` records the floor, and `deps.ps1` checks it on every run.
+
+```powershell
+winget install --exact --id wez.wezterm.nightly
+```
+
+Note the **id**, not a `--version`: the nightlies are a separate winget package.
+If winget objects to the existing install, `winget uninstall --exact --id
+wez.wezterm` first.
+
+**You cannot pin a specific historical nightly**, on either platform, and it is
+worth knowing why rather than trying. Upstream publishes nightlies to a single
+rolling tag whose assets are replaced in place. winget archives dated nightly
+manifests, which *looks* like it solves this — but each one pins a SHA256
+against that same rolling URL, so an older manifest stops installing the moment
+a newer nightly lands.
+
+What you can do is put both machines on the current nightly at the same time,
+and let the floor catch drift after that.
+
 ## Troubleshooting
 
 **"running scripts is disabled on this system"** — Windows client machines
