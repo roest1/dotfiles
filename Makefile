@@ -128,6 +128,15 @@ link: _guard_wrong_clone ## Symlink config only — no sudo, no network, nothing
 check: ## Verify enabled tools are present (optionally: make check <section>...)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_check $(ARGS) || true
 
+# The counterpart to `make status`'s [windows] line: it tells you the host clone
+# is behind, this fixes it -- from the side you are actually sitting on.
+#
+# Deliberately NOT part of `make install`. That would make the common case spawn
+# a Windows process and touch a 9p mount, and a Linux-only machine would pay for
+# a host it does not have.
+windows: ## Update the Windows host's clone and run its installer (from WSL)
+	@bash "$(DOTFILES_DIR)/tools/windows-update.sh"
+
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
 
