@@ -43,6 +43,31 @@ jobs:
       #
       # bash/bashrc is deliberately NOT scanned: it guards its bash 4 features
       # behind BASH_VERSINFO, which is the correct pattern and would trip this.
+      # A Makefile target that shares a name with a real path is not an error --
+      # make decides the target is already up to date and runs NOTHING. `make
+      # windows` did exactly that against the windows/ directory: no output, no
+      # failure, no install. .PHONY is the fix, and the reason this is a CI
+      # check rather than a code review note is that the bug is invisible until
+      # a path happens to collide, which can be years later and in a commit that
+      # touched neither the target nor the Makefile.
+      - name: Every Makefile target is .PHONY
+        run: |
+          set -uo pipefail
+          phony=$(grep -E '^\.PHONY:' Makefile | sed 's/^\.PHONY://' | tr '\n' ' ')
+          bad=0
+          for t in $(grep -oE '^[a-z][a-z-]*:' Makefile | tr -d ':'); do
+            case " $phony " in
+              *" $t "*) ;;
+              *) echo "target '$t' is not in .PHONY"; bad=1 ;;
+            esac
+          done
+          if [ $bad -ne 0 ]; then
+            echo ""
+            echo "A target sharing a name with a file or directory silently does nothing."
+            exit 1
+          fi
+          echo "ok: every Makefile target is declared .PHONY"
+
       - name: No bash 4+ constructs where /bin/bash 3.2 must run
         run: |
           set -uo pipefail
