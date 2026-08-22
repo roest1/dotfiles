@@ -86,6 +86,10 @@ It prints the two commands above when they are out of step. Override the
 location with `DOTFILES_WINDOWS_DIR` if your clone is not under
 `%USERPROFILE%`.
 
+A running wezterm does **not** pick up a pulled config on its own. After
+updating, close every wezterm window and relaunch — see Troubleshooting for how
+to tell a stale process from a bad config.
+
 ## What you get
 
 `CTRL+SHIFT+O` opens a fuzzy picker over every shell:
@@ -162,9 +166,58 @@ default to a `Restricted` execution policy. The bootstrap one-liner sidesteps it
 powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1
 ```
 
-**The font looks wrong** — `deps.ps1` installs 0xProto Nerd Font per-user, but
-already-running apps keep the font list they started with. Restart wezterm. If
-it still doesn't take, the fallback to JetBrains Mono is cosmetic only.
+**Git says every file is modified, and the diff is all `^M`** — a one-time
+consequence of Git for Windows' `core.autocrlf=true`, which checked this clone
+out with CRLF before `.gitattributes` pinned `eol=lf`. Nothing was edited; the
+guest's git and the host's git just disagree about what the file says. Settle
+the working tree once:
+
+```powershell
+git add --renormalize .; git checkout -- .
+```
+
+This matters beyond tidiness: everything in `lib/`, `install.sh` and
+`*/deps.sh` runs under bash, where a CRLF shebang is a syntax error.
+
+**Something in wezterm ignores the config — wrong font, blinking text, stale
+colors.** Before theorizing, prove whether the running process has your config
+at all. wezterm takes overrides on the command line, independent of any file,
+symlink, or reload:
+
+```powershell
+wezterm --config text_blink_rate_rapid=0 start
+```
+
+If the new window behaves and your existing one doesn't, the config is fine and
+the *process* is stale — wezterm was launched before the change, and a tab
+switch won't reload it. Kill it properly:
+
+```powershell
+Get-Process wezterm* | Stop-Process -Force
+```
+
+Then relaunch from the Start menu. This single test replaced several hours of
+guessing at wezterm's renderer; reach for it first.
+
+**A font resolves to the wrong file** — `ls-fonts` prints what each rule
+actually resolved to, including the path, which is the only way to tell a
+correct config from a shadowed font file:
+
+```powershell
+wezterm ls-fonts
+wezterm ls-fonts --list-system | Select-String "Science"
+```
+
+Two files claiming the same family win by first match, and the loser is
+silently the wrong glyphs. If a face resolves anywhere other than
+`.config\wezterm\fonts`, a system-installed copy is shadowing the repo's.
+
+**The font looks wrong after an update** — `deps.ps1` installs 0xProto Nerd
+Font, JetBrainsMono Nerd Font and Science Gothic per-user, but already-running
+apps keep the font list they started with. Restart wezterm. A missing font is
+cosmetic, but note it is not always announced: wezterm warns when a `font_rule`
+cannot be matched, and says nothing at all when a *fallback* resolves — which
+is how the tab bar rendered in the wrong face for a week.
 
 **`winget` not found** — install "App Installer" from the Microsoft Store.
 

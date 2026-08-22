@@ -286,6 +286,26 @@ you write code here. Reasoning, revisit conditions and current status:
   wins over PATH, so a `font()` would silently shadow it. CI asserts both.
   Details next to the code: [`tui/CLAUDE.md`](tui/CLAUDE.md).
 
+- **A wezterm symptom is a stale-process or wrong-clone question before it is a
+  wezterm question.** `wezterm --config <name>=<value> start` opens a window with
+  that value forced, independent of any file, symlink or reload — so it separates
+  "the setting does not work" from "this process never read the setting" in one
+  command. It settled a multi-hour hunt in which `text_blink_rate_rapid = 0`
+  appeared to be ignored: the value was correct, the running GUI predated it, and
+  the Windows clone was on an older commit besides.
+
+  Two corollaries worth reaching for before reading any renderer source.
+  `wezterm ls-fonts` prints the file each rule resolved to, which is the only way
+  to tell a correct config from a font shadowed by a system-installed copy of the
+  same family. And a running wezterm does not pick up a pulled config: a tab
+  switch is not a reload, and the file watcher does not reliably follow a symlink
+  across a volume boundary, so `Get-Process wezterm* | Stop-Process -Force` is
+  part of the test rather than an afterthought.
+
+  The asymmetry that makes this bite: wezterm **warns** when a `font_rule` cannot
+  be matched, and says **nothing** when a fallback resolves. A wrong-but-valid
+  font is silent by design.
+
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
   writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
   Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will
