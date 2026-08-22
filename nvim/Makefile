@@ -17,7 +17,10 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 UNAME := $(shell uname -s)
-NVIM_DIR := $(shell cd "$(dir $(abspath $(lastword $(MAKEFILE_LIST))))" && pwd)
+# Same reason as the root Makefile: $(abspath)/$(dir) split on whitespace and
+# mangle a path containing a space. This one is always entered with
+# `make -C "<repo>/nvim"`, which sets CURDIR to exactly this directory.
+NVIM_DIR := $(CURDIR)
 
 # Paths wiped by `make clean` — matches lua/external/reset.lua
 CLEAN_PATHS := $(HOME)/.local/share/nvim $(HOME)/.cache/nvim
