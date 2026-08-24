@@ -113,6 +113,20 @@ pub enum Flow {
     /// Close this screen and go back. `q` does it for you at any depth below
     /// the root, so a screen rarely needs to return this itself.
     Pop,
+    /// Hand the terminal back, run this command line to completion on the
+    /// user's REAL tty, then take the terminal again and redraw.
+    ///
+    /// The alternative was streaming a child's output into the pane, and it is
+    /// worse for the case this exists to serve. A child on the real tty can
+    /// prompt for a sudo password, which a pane cannot -- raw mode has already
+    /// taken the keyboard -- and that single fact is what made the bash console
+    /// carry sudo priming and a credential keepalive. It also means the output
+    /// is exactly what you would have seen typing the command, colour and all,
+    /// rather than a reimplementation of it.
+    ///
+    /// First element is the program; the rest are arguments, unsplit and
+    /// unquoted, so nothing here goes through a shell.
+    Detach(Vec<String>),
     Quit,
 }
 

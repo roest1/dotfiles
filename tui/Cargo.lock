@@ -82,6 +82,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dots"
+version = "0.1.0"
+dependencies = [
+ "font",
+ "libc",
+ "reticle",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

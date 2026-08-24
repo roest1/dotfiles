@@ -3,7 +3,7 @@
 ## Overview
 
 The Rust terminal UIs. One crate per screen, **one binary per command** —
-`font` today, `github` and the `make it` console next. They share
+`font` and `dots` today, `github` next. They share
 `reticle/` and nothing else, because a font picker and a CI dashboard have
 nothing else in common.
 
@@ -42,6 +42,8 @@ pins that.
 - `reticle/` — the framework. `term` (raw mode, alt screen, restore-on-panic),
   `nav` (the keymap), `reticle` (the animated brackets), `screen` (what a
   screen provides), `app` (the loop), `image` (inline images).
+- `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
+  file that parses either), `console` (the tree), plus the lib/bin pair.
 - `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
   and the crate-root re-exports), `picker` (the lane tree — the root screen),
   `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
@@ -144,6 +146,42 @@ pins that.
   fires for public items — so the split surfaced two real omissions rather than
   inventing them. They got `Default` impls, not `#[allow]`: a type whose `new()`
   takes no arguments and cannot fail *is* `Default`, and saying so is the fix.
+
+- **`dots` reads the repo; it does not restate it.** Target names and summaries
+  are the `##` markers `make help` already renders, a target's long form is the
+  comment block above its rule, and sections come from `deps.conf`. Nothing is
+  authored twice, which has one consequence to actually absorb: **a comment
+  above a rule in the Makefile is user-facing documentation now.** Write it for
+  someone deciding whether to run the thing.
+
+  A blank line ends a block. That is what stops a file-header banner being read
+  as the first target's page, and how a target opts out of having a long form.
+  The tests parse the REAL Makefile rather than a fixture, because the thing
+  that breaks is not the parser — it is someone reformatting a rule and the
+  console quietly losing a page.
+
+- **`dots` is not a make target, deliberately.** `make font` does not exist
+  either. The console was called `make it` on `feat/make-console`, and keeping
+  both a target and a binary would have been a second name for one thing —
+  exactly the drift this repo keeps deleting. `make help` ends with a pointer
+  at `dots` instead, so the discoverability a bare binary would lose is bought
+  back for one line.
+
+  A happy consequence: `dots` is no longer started BY make, so the
+  `MAKEFLAGS`/`MAKELEVEL` inheritance the bash console had to unset cannot
+  arise. That was on the salvage list and simply evaporated.
+
+- **Enter on a target hands the terminal back rather than streaming into the
+  pane** (`Flow::Detach`). A child on the real tty can prompt for a sudo
+  password; a pane cannot, because raw mode has already taken the keyboard.
+  That one fact is what made the bash console carry sudo priming AND a
+  credential keepalive — both deleted rather than ported. It also means the
+  output is exactly what you would have seen typing the command.
+
+  `Terminal::suspend`/`resume` exist for this and are not `restore()` then
+  `take()`: `take()` installs a panic hook wrapping the previous one, so
+  re-taking per run would stack a hook per invocation for the life of the
+  process.
 
 ## The command surface is three commands
 

@@ -18,6 +18,7 @@
 //! nothing. A TUI that spins at 60fps to show a static list is a laptop fan.
 
 use std::io::{self, Write};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyEventKind};
@@ -49,15 +50,15 @@ pub fn run(root: Box<dyn Screen>) -> io::Result<()> {
     // once the terminal has stopped line-buffering, and they would otherwise
     // land in the middle of the first frame.
     crate::set_term_info(crate::probe::probe(PALETTE_WANTED));
-    let res = event_loop(root);
+    let res = event_loop(root, &mut term);
     term.restore()?;
     res
 }
 
 /// One entry per screen on the stack. The cursor, the scroll offset and the
 /// reticle travel WITH the screen, so coming back lands you on the row you
-/// left rather than at the top — the same property the fzf implementation's nesting gets
-/// from running one inside the other.
+/// left rather than at the top — the same property the fzf implementation got
+/// from running one fzf inside another.
 struct Frame {
     screen: Box<dyn Screen>,
     sel: usize,
@@ -65,7 +66,39 @@ struct Frame {
     reticle: Reticle,
 }
 
-fn event_loop(root: Box<dyn Screen>) -> io::Result<()> {
+/// Run `argv` with the terminal handed back, then take it again.
+///
+/// The child's status is deliberately ignored: a failed `make check` is
+/// information, not an error for this process, and the user has just watched
+/// the output scroll past. What matters is that the terminal comes back even
+/// if the child dies badly -- hence resume() on every path.
+fn detach(term: &mut Terminal, out: &mut impl Write, argv: &[String]) -> io::Result<()> {
+    let Some((program, args)) = argv.split_first() else {
+        return Ok(());
+    };
+    term.suspend()?;
+    let status = Command::new(program).args(args).status();
+    // A beat to read the last line before the alternate screen swallows it.
+    let _ = writeln!(out);
+    let _ = match &status {
+        Ok(s) if s.success() => writeln!(out, "  done — any key to go back"),
+        Ok(s) => writeln!(
+            out,
+            "  exited {} — any key to go back",
+            s.code().unwrap_or(-1)
+        ),
+        Err(e) => writeln!(out, "  could not run {program}: {e} — any key to go back"),
+    };
+    let _ = out.flush();
+    // Read on the RESTORED terminal, so this is a line-buffered wait rather
+    // than a raw keypress. Resuming first would swap the screen out from under
+    // the output the user is being asked to read.
+    let mut sink = String::new();
+    let _ = io::stdin().read_line(&mut sink);
+    term.resume()
+}
+
+fn event_loop(root: Box<dyn Screen>, term: &mut Terminal) -> io::Result<()> {
     let mut out = io::stdout();
     let mut keys = Keymap::default();
     let mut stack = vec![Frame {
@@ -175,6 +208,12 @@ fn event_loop(root: Box<dyn Screen>) -> io::Result<()> {
                         Flow::Quit => return Ok(()),
                         Flow::Pop => popped = depth > 1,
                         Flow::Push(next) => pushed = Some(next),
+                        Flow::Detach(argv) => {
+                            detach(term, &mut out, &argv)?;
+                            rows = frame.screen.rows();
+                            frame.sel = frame.sel.min(rows.len().saturating_sub(1));
+                            pane_dirty = true;
+                        }
                         Flow::Dirty => {
                             rows = frame.screen.rows();
                             frame.sel = frame.sel.min(rows.len().saturating_sub(1));
