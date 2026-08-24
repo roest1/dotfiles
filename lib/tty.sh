@@ -45,28 +45,26 @@ else
   TTY_ANIM=0
 fi
 
-# ─── The decrypt banner ──────────────────────────────────────────────────────
+# ─── The `make help` animation ───────────────────────────────────────────────
 #
-# Characters flip through gibberish and resolve left to right. Scramble rather
-# than typewriter, deliberately: a typewriter's line does not EXIST until it is
-# finished, so every millisecond is spent waiting on something unreadable. A
-# scramble is at full width from the first frame, so the layout is stable and
-# only legibility arrives late.
+# Two effects on ONE frame clock: the banner decrypts while every menu row types
+# out at once. Sharing the clock is the whole reason they compose -- run
+# sequentially they would be two delays stacked, and `make help` would cost the
+# sum. Run together the whole thing is one budget.
 #
-# THE ANIMATION RUNS AFTER THE WHOLE MENU IS ON SCREEN, and that is the point of
-# this function rather than a bare scramble. The first version animated the
-# banner and THEN printed the menu, which made `make help` -- the command whose
-# entire job is fast orientation -- cost 400ms before its first useful line. So
-# the body is printed first and the cursor comes back UP to the banner, which
-# means everything is readable at t=0 and the effect happens next to it.
+# THE ROWS TYPE IN PARALLEL, not one after another. Sequentially, 22 rows at any
+# readable speed is several seconds; in parallel the menu costs the same as its
+# longest row. And because typing runs left to right and `make <target>` lives
+# in the left column, the useful half of the menu is legible at ~25% of the
+# budget -- the descriptions, which you mostly already know, arrive last.
 #
-# It is the banner and nothing else for the same reason: `dotfiles — Linux`
-# tells you nothing you did not already know, so nothing is lost while it is
-# illegible. The menu underneath is the payload and is never animated.
+# This is the one command with an animation, and it stays that way. `make help`
+# is short, self-contained and run deliberately; `make install` and `make
+# status` produce output as work completes and have nothing to animate against.
 #
 # The budget is a TOTAL, not a per-character delay. The obvious spelling --
-# 50ms a character, as the React component this came from does -- gets slower
-# every time the string grows, which is a tax that arrives silently.
+# 50ms a character, as the React components this came from do -- gets slower
+# every time a target is added, which is a tax that arrives silently.
 #
 #   $1 escapes before the banner text   $3 the banner text
 #   $2 escapes after it                 $4 the rest of the help output
@@ -74,127 +72,176 @@ tty_banner() {
   local pre="$1" post="$2" text="$3" body="$4"
   local budget_ms=400 frames=16
 
-  # Body first, then one blank line, so the caller does not have to think about
-  # trailing newlines -- $( ) strips them, so a trailing echo "" cannot survive
-  # the capture and has to be added back on this side.
-  _tty_banner_plain() {
+  _tty_plain() {
     printf '%s%s%s\n' "$pre" "$text" "$post"
     printf '%s\n\n' "$body"
   }
 
-  [ "$TTY_ANIM" = 1 ] || { _tty_banner_plain; return; }
+  [ "$TTY_ANIM" = 1 ] || { _tty_plain; return; }
 
-  # Slicing with ${text:i:1} is character-aware only in a UTF-8 locale; under
+  # Slicing with ${s:i:1} is character-aware only in a UTF-8 locale; under
   # LC_ALL=C it slices BYTES and would cut the em dash into three pieces of
   # mojibake. Decline rather than guess.
   case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
     *UTF-8* | *utf-8* | *UTF8* | *utf8*) ;;
-    *) _tty_banner_plain; return ;;
+    *) _tty_plain; return ;;
   esac
 
   local n
   n=${#text}
-  [ "$n" -gt 0 ] || { _tty_banner_plain; return; }
+  [ "$n" -gt 0 ] || { _tty_plain; return; }
 
-  # How far back up the banner is. Body lines, plus the blank after it, plus
-  # the banner's own line.
-  local bl up
-  bl=$(printf '%s\n' "$body" | wc -l | tr -d ' ')
-  up=$((bl + 2))
+  local -a rows=()
+  while IFS= read -r line; do rows[${#rows[@]}]="$line"; done <<<"$body"
+  local nb=${#rows[@]} region
+  region=$((nb + 1))   # the banner plus every body row
 
-  # ── The two preconditions that only this shape needs ──────────────────────
+  # ── The two preconditions this shape needs, both settled BEFORE printing ───
   #
-  # Relative cursor movement SURVIVES scrolling -- if the terminal scrolls, the
-  # banner and the cursor move up together and \033[<n>A still lands on it. So
-  # running `make help` at the bottom of a full screen is fine, which is the
-  # case that looks fatal and is not.
+  # Once a half-drawn menu is on screen there is no safe way back: undoing it
+  # needs the same cursor movement that is in question. So both are decided
+  # while the only thing that has happened is arithmetic.
   #
-  # What is fatal is the banner leaving the SCREEN (not the scrollback), and a
-  # line that WRAPS: a wrapped line occupies two screen rows, so the count above
-  # undercounts and the cursor lands somewhere in the middle of the menu and
-  # scribbles on it. Both are decided here, before anything is printed, because
-  # once a scrambled banner is on screen there is no safe way to go back and fix
-  # it -- the same movement would be needed to undo it.
-  # stty rather than tput, and that is not a style preference: `tput lines`
-  # needs a valid $TERM and dies with "No value for $TERM" without one. CI does
-  # not set TERM, so tput made the animation decline on every runner -- and the
-  # row asserting the animation HAPPENS then failed for a reason that had
-  # nothing to do with what it was testing. stty reads the ioctl and never
-  # consults terminfo, so it answers the same question in more places.
+  # Scrolling is NOT one of them, which is the case that looks fatal and is not.
+  # Relative cursor movement survives a scroll -- the region and the cursor move
+  # up together -- so running this at the bottom of a full screen is fine. What
+  # is fatal is the region leaving the SCREEN, and a line that WRAPS: a wrapped
+  # line occupies two screen rows, so the up-count undercounts and each frame
+  # walks further into the menu, shredding it.
   #
-  # From /dev/tty, not fd 1. Inside $( ) fd 1 is the capture PIPE, so `stty size
-  # <&1` reads the pipe and reports "Inappropriate ioctl for device".
+  # stty rather than tput, and not as a style preference: `tput lines` needs a
+  # valid $TERM and dies with "No value for $TERM" without one. CI sets no TERM,
+  # so tput made this decline on every runner. stty reads the ioctl and never
+  # consults terminfo, so it answers in strictly more places -- which matters
+  # beyond CI, in a minimal container or an ssh session with a stripped
+  # environment. From /dev/tty, not fd 1: inside $( ) fd 1 is the capture PIPE,
+  # so `stty size <&1` reports "Inappropriate ioctl for device".
   local size height width
-  size=$(stty size < /dev/tty 2>/dev/null) || { _tty_banner_plain; return; }
+  size=$(stty size < /dev/tty 2>/dev/null) || { _tty_plain; return; }
   height=${size%% *}
   width=${size##* }
   case "$height$width" in
-    *[!0-9]* | '') _tty_banner_plain; return ;;
+    *[!0-9]* | '') _tty_plain; return ;;
   esac
-  # A pty that was never sized reports 0 0. Declining there is right: with no
-  # idea how tall the screen is there is no way to know the banner survives it.
-  [ "$height" -gt 0 ] && [ "$width" -gt 0 ] || { _tty_banner_plain; return; }
-  [ "$((up + 1))" -lt "$height" ] || { _tty_banner_plain; return; }
+  # A pty nothing has sized reports 0 0. Declining is right: with no idea how
+  # tall the screen is there is no way to know the region survives on it.
+  [ "$height" -gt 0 ] && [ "$width" -gt 0 ] || { _tty_plain; return; }
+  [ "$((region + 2))" -lt "$height" ] || { _tty_plain; return; }
 
   # Escapes are zero-width on screen but are characters in the string, so the
-  # SG carrier codes have to come out before anything is measured. ${#l} is
-  # character-aware in a UTF-8 locale, which is already guaranteed above.
+  # SG carrier codes have to come out before anything is measured.
   local maxw=0 l
   while IFS= read -r l; do
     [ ${#l} -gt $maxw ] && maxw=${#l}
   done < <(printf '%s\n%s\n' "$text" "$body" | sed $'s/\033\[[0-9;?]*[a-zA-Z]//g')
-  [ "$maxw" -le "$width" ] || { _tty_banner_plain; return; }
+  [ "$maxw" -le "$width" ] || { _tty_plain; return; }
 
-  local -a chars=()
-  local i
-  for ((i = 0; i < n; i++)); do chars[i]="${text:i:1}"; done
+  # ── Per-row prefixes, escape-aware ────────────────────────────────────────
+  #
+  # A row cannot be truncated with ${row:0:k}. It carries SG carrier codes,
+  # which are zero-width on screen but real characters in the string, so
+  # slicing by character both MISCOUNTS and can cut an escape in half -- and
+  # half an escape leaves the terminal in whatever state the fragment implied.
+  #
+  # Each row is therefore walked ONCE and snapshotted at the frame points, not
+  # re-truncated per frame: 22 rows x ~70 chars of bash looping instead of
+  # 22 x 70 x 17, which is the difference between imperceptible and a visible
+  # stall before the first frame.
+  local -a prefix=()
+  local li i c vis seen f target acc esc
+  for ((li = 0; li < nb; li++)); do
+    l="${rows[li]}"
+    local ln=${#l}
 
-  # ASCII only, and every one of them single-width: the line must not change
-  # width between frames or the banner jitters against the menu below it.
-  # A space is deliberately NOT in here, so the word gaps hold still and the
-  # shape of the line is readable long before its letters are.
+    vis=0
+    for ((i = 0; i < ln; i++)); do
+      if [ "${l:i:1}" = $'\033' ]; then
+        while ((i < ln)); do
+          i=$((i + 1))
+          case "${l:i:1}" in [a-zA-Z]) break ;; esac
+        done
+      else
+        vis=$((vis + 1))
+      fi
+    done
+
+    acc=''; seen=0; f=0
+    while [ "$f" -le "$frames" ] && [ $((vis * f / frames)) -le 0 ]; do
+      prefix[li * (frames + 1) + f]=''
+      f=$((f + 1))
+    done
+    i=0
+    while ((i < ln)); do
+      c="${l:i:1}"
+      if [ "$c" = $'\033' ]; then
+        esc="$c"
+        while ((i < ln)); do
+          i=$((i + 1))
+          esc="$esc${l:i:1}"
+          case "${l:i:1}" in [a-zA-Z]) break ;; esac
+        done
+        acc="$acc$esc"; i=$((i + 1)); continue
+      fi
+      acc="$acc$c"; seen=$((seen + 1)); i=$((i + 1))
+      while [ "$f" -le "$frames" ]; do
+        target=$((vis * f / frames))
+        [ "$seen" -ge "$target" ] || break
+        prefix[li * (frames + 1) + f]="$acc"
+        f=$((f + 1))
+      done
+    done
+    # The last frame is the WHOLE row, always. Everything the animation is
+    # allowed to do is hide characters that are about to arrive; it may never
+    # drop one. A CI row compares the final frame against the piped output.
+    while [ "$f" -le "$frames" ]; do prefix[li * (frames + 1) + f]="$acc"; f=$((f + 1)); done
+  done
+
+  # ── The banner's gibberish pool ───────────────────────────────────────────
+  #
+  # ASCII only and every one single-width, so the line cannot change width
+  # between frames and jitter against the menu. A space is deliberately absent,
+  # so word gaps hold still and the shape of the line is readable long before
+  # its letters are.
   local pool='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{};:,.<>/?'
   local pool_n=${#pool}
+  local -a chars=()
+  for ((i = 0; i < n; i++)); do chars[i]="${text:i:1}"; done
 
-  local step
-  step=$(awk -v b="$budget_ms" -v f="$frames" 'BEGIN { printf "%.3f", b / f / 1000 }')
-
-  _tty_frame() { # $1 how many leading characters are already resolved
-    local out='' j c
+  _tty_draw() { # $1 frame
+    local out='' j ch reveal=$(( n * $1 / frames ))
     for ((j = 0; j < n; j++)); do
-      c="${chars[j]}"
-      # Substitutable only if the pool can actually spell it. Stricter than "is
-      # it punctuation", and locale-proof: [[:punct:]] matches the em dash in a
-      # UTF-8 locale, and there is no like-for-like ASCII stand-in for it.
-      if [ "$j" -lt "$1" ] || [ "${pool#*"$c"}" = "$pool" ]; then
-        out="$out$c"
+      ch="${chars[j]}"
+      # Substitutable only if the pool can actually spell it -- stricter than
+      # "is it punctuation", and locale-proof: [[:punct:]] matches the em dash
+      # in a UTF-8 locale and there is no like-for-like ASCII stand-in for it.
+      if [ "$j" -lt "$reveal" ] || [ "${pool#*"$ch"}" = "$pool" ]; then
+        out="$out$ch"
       else
         out="$out${pool:$((RANDOM % pool_n)):1}"
       fi
     done
-    printf '\r%s%s%s' "$pre" "$out" "$post"
+    printf '\r%s%s%s\033[K\n' "$pre" "$out" "$post"
+    local k
+    for ((k = 0; k < nb; k++)); do
+      printf '%s\033[K\n' "${prefix[k * (frames + 1) + $1]}"
+    done
   }
 
-  # Everything on screen at t=0: a scrambled banner, then the whole menu.
+  # An interrupt lands mid-region, so the trap has to finish the whole thing --
+  # a complete final frame and the trailing blank -- not just show the cursor.
+  # Without it the next prompt is drawn into the middle of a half-typed menu.
+  trap '_tty_draw '"$frames"'; printf "\n%s" "$TTY_SHOW"; trap - INT; kill -INT $$' INT
+
+  local step
+  step=$(awk -v b="$budget_ms" -v f="$frames" 'BEGIN { printf "%.3f", b / f / 1000 }')
+
   printf '%s' "$TTY_HIDE"
-  _tty_frame 0
-  printf '\n'
-  printf '%s\n\n' "$body"
-
-  # An interrupt leaves the cursor UP at the banner, so the trap has to finish
-  # the line AND walk back down before re-raising -- otherwise the next prompt
-  # is drawn over the middle of the menu. Single-quoted so it expands when it
-  # fires; the locals are still in scope because it is cleared before returning.
-  trap 'printf "\r%s%s%s" "$pre" "$text" "$post"; printf "\033[%dB\r%s" "$up" "$TTY_SHOW"; trap - INT; kill -INT $$' INT
-
-  printf '\033[%dA' "$up"
-  local f
-  for ((f = 1; f <= frames; f++)); do
-    sleep "$step"
-    _tty_frame $((n * f / frames))
+  for ((f = 0; f <= frames; f++)); do
+    [ "$f" -gt 0 ] && printf '\033[%dA' "$region"
+    _tty_draw "$f"
+    [ "$f" -lt "$frames" ] && sleep "$step"
   done
 
   trap - INT
-  printf '\r%s%s%s' "$pre" "$text" "$post"
-  printf '\033[%dB\r%s' "$up" "$TTY_SHOW"
+  printf '\n%s' "$TTY_SHOW"
 }

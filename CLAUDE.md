@@ -208,24 +208,29 @@ you write code here. Reasoning, revisit conditions and current status:
   Probing that with `\r` would have passed vacuously: `script(1)` writes CRLF,
   so a carriage return is in the capture whether anything animated or not.
 
-  The animation is on the banner and nothing else, deliberately. `dotfiles —
-  Linux` tells you nothing you did not already know, so nothing is lost while
-  it is illegible; the command list under it is the payload and is never
-  animated. It is a scramble rather than a typewriter for the same reason — a
-  typewriter's line does not *exist* yet, so the delay is spent on nothing,
-  where a scramble is at full width from the first frame and you can look past
-  it. The budget is a TOTAL (~400ms), not a per-character delay, because the
-  obvious 50ms-a-character spelling gets slower every time the string grows.
+  **`tty_banner` runs two effects on ONE frame clock**: the banner decrypts
+  while every menu row types out. Sharing the clock is why they compose — run
+  in sequence they would be two delays stacked and `make help` would cost the
+  sum; together the whole thing is one ~400ms budget. The budget is a TOTAL,
+  not a per-character delay, because the obvious 50ms-a-character spelling gets
+  slower every time a target is added, silently.
 
-  **`tty_banner` prints the whole menu FIRST and then walks the cursor back up
-  to the banner**, and that is the shape rather than a bare scramble because
-  the first version got this wrong. It animated and *then* printed, which made
-  `make help` — the command whose entire job is fast orientation — cost 400ms
-  before its first useful line. Every run felt like a load. A CI row asserts
-  the byte order now, so it cannot regress silently.
+  **The rows type in PARALLEL, not one after another.** Sequentially, 22 rows
+  at any readable speed is several seconds. In parallel the menu costs the same
+  as its longest row — and because typing runs left to right and `make <target>`
+  is the left column, the useful half is legible at ~25% of the budget, with the
+  descriptions you already know arriving last.
+
+  There was an intermediate design where only the banner animated and the menu
+  printed instantly, and the reason it lost is worth keeping: it was chosen
+  because a *sequential* typewriter leaves the menu unreadable for its whole
+  duration, which is a real cost on the command you run when you are lost. The
+  parallel version does not have that property, which is what made the trade
+  affordable. If this ever feels like a tax again, that intermediate shape is
+  the fallback, not "make it faster".
 
   That buys two more preconditions, both decided *before* anything is printed,
-  because once a scrambled banner is on screen there is no safe way back — the
+  because once a half-drawn menu is on screen there is no safe way back — the
   same cursor movement would be needed to undo it. The output must fit the
   screen, and no line may wrap: a wrapped line occupies two screen rows, so the
   up-count undercounts and the cursor scribbles into the middle of the menu.
@@ -236,6 +241,17 @@ you write code here. Reasoning, revisit conditions and current status:
   fatal and isn't: relative cursor movement survives a scroll, because the
   banner and the cursor move up together. Running `make help` at the bottom of
   a full screen is fine.
+
+  **CI compares the animation's FINAL FRAME against the plain render**, and
+  that is the assertion worth keeping rather than the byte-order one it
+  replaced. The animation may hide characters that are about to arrive; it may
+  never drop one. A bug in the escape-aware prefix walk would truncate a row and
+  the final frame would still look entirely plausible — only the comparison
+  catches it. (A row cannot be cut with `${row:0:k}`: the SG codes are
+  zero-width on screen but real characters in the string, so slicing by
+  character both miscounts and can sever an escape, leaving the terminal in
+  whatever state the fragment implied. Each row is walked once and snapshotted
+  at the frame points instead.)
 
   Both CI rows drive `script(1)` with an explicit `stty rows 50 cols 200`. A
   runner's pty is unsized until something sets it — `stty size` reports `0 0` —
