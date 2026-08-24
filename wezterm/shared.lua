@@ -500,8 +500,11 @@ local STATES = {
 	-- complete = { glyph = "⚡\u{FE0F}", cols = 2, color = "#a6e3a1" },
 	complete = { glyph = "⚡️", cols = 2, color = "#a6e3a1" }, -- typed with VS16 attached directly
 
-	-- A gh-tui session, which announces itself over the same user-var channel
-	-- (bash/bash_github_tui's `_gh_tab_var`).
+	-- A `github` session, which announces itself over the same user-var channel
+	-- (bash/bash_github_tui's `_gh_tab_var`). The var is still named `gh_tui`
+	-- after the command's old name: it is read HERE, on the Windows host, out of
+	-- a different clone than the bash that writes it, so renaming it goes dark
+	-- until `make windows` has run. Not worth it for a name nobody types.
 	--
 	-- U+F408 is `oct-mark_github` — GitHub's own Octicons mark, patched into
 	-- 0xProto Nerd Font. NOT an emoji: Unicode has no GitHub logo at any
@@ -622,7 +625,7 @@ function M.claude_tab_titles()
 			st = STATES.working
 		elseif uvars.gh_tui == "1" then
 			-- Ranked under `busy` for the same reason: live evidence beats a claim.
-			-- Above the Claude branches because gh-tui is a foreground program you
+			-- Above the Claude branches because github is a foreground program you
 			-- are sitting in — while it holds the pane, that is what the pane is,
 			-- and its own var is cleared on the way out.
 			st = STATES.github

@@ -10,7 +10,7 @@
 #
 # `gha` is the no-TUI one-shot: the answer on stdout without entering a
 # screen. Everything else about Actions — logs, reruns, the browser tab —
-# lives behind gh-tui's CI / Actions screen.
+# lives behind github's CI / Actions screen.
 #
 # It draws a table on a TTY and plain columns when piped. Rendering it is
 # most of the code below, and almost all of that is width arithmetic —
@@ -68,7 +68,7 @@ __gh_default_branch() {
 # ─── Quick status ─────────────────────────────────────────────────
 #
 # Uses __duration_str and __relative_time from bash_theme, which bashrc
-# sources first. The gh-tui screens already depend on them the same way.
+# sources first. The github screens already depend on them the same way.
 
 # Horizontal rule: _gha_rule <left> <mid> <right> <w>...
 _gha_rule() {

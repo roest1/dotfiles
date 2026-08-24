@@ -8,7 +8,7 @@ The Rust terminal UIs. One crate per screen, **one binary per command** —
 nothing else in common.
 
 They are *not* modes of one program. `font` opens the font picker; `github`
-will open gh-tui. That is the shape Riley asked for and it is also what keeps
+will open github. That is the shape Riley asked for and it is also what keeps
 each binary's startup honest.
 
 ## Why Rust here and not elsewhere
@@ -130,8 +130,8 @@ man page to discover something that could have been a row.
 `app` keeps a screen STACK for this. `Flow::Push` opens one on top, `q` pops
 below the root and quits at it, and each frame carries its own cursor, scroll
 offset and reticle — so coming back lands on the row you left. That is the same
-property gh-tui gets from running one fzf inside another, and it is the reason
-gh-tui can move here without losing it.
+property github gets from running one fzf inside another, and it is the reason
+github can move here without losing it.
 
 ## Sharpness, and where it comes from
 

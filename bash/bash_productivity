@@ -74,7 +74,7 @@ fi
 #   FZF_MENU_EXPECT comma-separated keys that should end the menu and report
 #                   themselves. Output becomes two lines — the key (empty for a
 #                   plain enter) then the selection — so only call sites that
-#                   set it need to handle that. gh-tui uses it for `r`, which
+#                   set it need to handle that. github uses it for `r`, which
 #                   nothing else needs and which the pagers already spell the
 #                   same way.
 __fzf_menu() {
@@ -862,7 +862,7 @@ h() {
     gprune             Fetch + delete branches with gone remotes
 
   GitHub TUI                                              [gh, fzf, jq]
-    gh-tui             The repo on GitHub, live: actions · PRs · branches ·
+    github             The repo on GitHub, live: actions · PRs · branches ·
                        secrets · environments  (ctrl-/ or ? for help)
 
   GitHub Actions (one-shot, no TUI)                        [gh, jq]
@@ -1217,11 +1217,11 @@ gprune — clean up stale local branches
     2. Run `gprune` to clean up your local copy
 HELP
       ;;
-    gh-tui|gha)
+    github|gha)
       cat <<'HELP'
 GitHub — one TUI, plus one one-shot
 
-  gh-tui      The current repo on GitHub, in one TUI: Actions, Pull
+  github      The current repo on GitHub, in one TUI: Actions, Pull
               Requests, Branches, Secrets, Environments. Every screen is a
               list with a live preview — hover a workflow run and its jobs
               appear with only the failed steps expanded, log tail inline;
@@ -1234,7 +1234,7 @@ GitHub — one TUI, plus one one-shot
 
   gha exists because checking CI is the thing done most often, and a
   TUI trip is the wrong price for it. Everything else about Actions —
-  logs, reruns, the browser tab — is behind gh-tui's CI / Actions
+  logs, reruns, the browser tab — is behind github's CI / Actions
   screen. gha-fail and gha-open used to live out here; they were
   `gha | grep ❌` and a URL, and neither was ever run.
 
@@ -1242,10 +1242,10 @@ GitHub — one TUI, plus one one-shot
   plain status/name/url columns, so `gha | grep ❌` is still the
   answer gha-fail used to give.
 
-  Press ? in any gh-tui screen for that screen's help — what each action
+  Press ? in any github screen for that screen's help — what each action
   does, what the preview pane shows, and the keys it accepts. That help
   used to live here, which meant reading it required already knowing to
-  type `h gh-tui`, and kept it drifting out of step with the screens it
+  type `h github`, and kept it drifting out of step with the screens it
   described. It now sits next to what it documents.
 
   Navigation, everywhere:

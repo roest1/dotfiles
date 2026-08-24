@@ -1,6 +1,20 @@
 # The GitHub TUI
 
-**Status:** active. `gh-tui` is the single entry point.
+**Status:** active. `github` is the single entry point.
+
+**Renamed from `gh-tui`** (2026-08-24). The name moved ahead of the
+implementation on purpose: this is planned to become a `reticle` crate
+alongside `font`, and renaming at the rewrite would have cost two flag days of
+muscle memory instead of one. The command you type is now stable across the
+port; what runs underneath is not.
+
+Two names deliberately did NOT move with it. The file is still
+`bash/bash_github_tui`, because it is named for its role — the interactive
+layer of the github commands — and that is still what it is. The wezterm
+user-var is still `gh_tui`, because it is a WIRE name: bash writes it in the
+WSL guest and `wezterm/shared.lua` reads it on the Windows host, out of a
+separate clone, so renaming it leaves the tab mark dark until `make windows`
+has pulled the other side. Neither is typed by anyone.
 **Code:** `bash/bash_github_tui` · **Walkthrough:** `git/GITHUB_TOOLS.md`
 
 ## What it is
@@ -58,7 +72,7 @@ else.
 
 **One worker script, `declare -f`'d.** fzf's preview/reload/execute commands
 run in a child shell with none of the parent's functions. Rather than
-materialise each renderer as a file, `gh-tui` writes ONE script per session:
+materialise each renderer as a file, `github` writes ONE script per session:
 the session facts (`$D`, `$R`, `$CACHE`), then every `_gh*` function in the
 file printed with `declare -f`, then a dispatcher. Every fzf command is
 `bash $W verb args…`. So a preview is an ordinary bash function in the same
@@ -80,7 +94,7 @@ whole window. Verified against a real failure where the naive window
 returned checkout cleanup instead of the `make` error.
 
 **Immutable things are cached across sessions.** Rendered bodies of completed
-runs and logs of completed jobs go under `~/.cache/gh-tui/<owner>/<repo>/`,
+runs and logs of completed jobs go under `~/.cache/github/<owner>/<repo>/`,
 pruned at 14 days. A rerun invalidates (it is a new attempt of the same id).
 
 **One palette, one chrome.** The eight colours the prompt uses (bash_theme),
@@ -98,7 +112,7 @@ too — a y/N or a name prompt looks like every other screen instead of a bare
 0.29 (22.04) and 0.44 (24.04). So `deps.conf` moved fzf to `mise||pkg` — the
 same call, for the same reason, as nvim — and `bash/deps.sh` enforces the
 floor over an already-installed distro fzf, upgrading through the distro if
-that reaches it and via mise if not. `gh-tui` checks the floor itself and
+that reaches it and via mise if not. `github` checks the floor itself and
 refuses with the same instruction. The shell's other fzf uses (Ctrl+R/T, the
 menus in bash_productivity) run on any version.
 
@@ -110,11 +124,11 @@ when it has failed jobs whose logs haven't been fetched. Nowhere near the
 
 - **Only this file may invoke fzf.** CI checks it; the boundary is what
   keeps the interactive layer replaceable as a unit.
-- **`gh-tui` is the only public function.** CI checks that too.
+- **`github` is the only public function.** CI checks that too.
 - **`__` is shared across files, `_` is private to this one.** CI rejects a
   `__` name defined here.
 - **Menus go through `__fzf_menu`.** CI rejects a hand-rolled `--disabled`.
-- **`h` names `gh-tui` and nothing else from here.** Every screen is `_`- or
+- **`h` names `github` and nothing else from here.** Every screen is `_`- or
   `_ghw_`-prefixed, so the help check doesn't demand entries for things you
   can't type.
 

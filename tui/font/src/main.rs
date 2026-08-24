@@ -575,7 +575,7 @@ impl Screen for FontScreen {
             }
             // Screen-local keys arrive as Action::Key rather than being added to
             // the shared table in reticle::nav, so a key added here can never
-            // change what it means in gh-tui or the make-it console.
+            // change what it means in github or the make-it console.
             (Action::Key('p'), _) => {
                 self.preview = match self.preview {
                     Preview::Sheet => Preview::Specimen,
