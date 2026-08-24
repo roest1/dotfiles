@@ -80,8 +80,9 @@ $(eval $(ARGS):;@:)
 # are also empty unless stdout is a WezTerm terminal; see lib/sgr.sh.
 help: ## Show this help
 	@source "$(DOTFILES_DIR)/lib/sgr.sh"; \
+	source "$(DOTFILES_DIR)/lib/tty.sh"; \
 	echo ""; \
-	printf "%sdotfiles — %s%s\n" "$$SG_B" "$(UNAME)" "$$SG_OFF"; \
+	tty_scramble "$$SG_B" "$$SG_OFF" "dotfiles — $(UNAME)"; \
 	echo ""; \
 	awk -v b="$$SG_B" -v r="$$SG_R" -v o="$$SG_OFF" \
 	    'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ \

@@ -190,6 +190,33 @@ you write code here. Reasoning, revisit conditions and current status:
   Italic looks like the obvious carrier and is wrong: rose-pine italicises nvim's
   comments, so the whole editor would silently change font.
 
+  **`lib/tty.sh` is the sibling file, and the split between them is the guard,
+  not the feature.** It holds the escapes whose only precondition is a terminal
+  — the green/red/yellow marks in `make status`, and the decrypt animation on
+  `make help`'s banner. Green means green and `\r` means `\r` on every terminal,
+  so one condition is the honest requirement; SGR 6 means *rapid blink* off this
+  setup, so it needs all three. Folding the two together would have put two
+  different guarantees behind one set of variables whose header promises "empty
+  unless all three hold", and a caller could no longer tell which it was getting.
+
+  The cost is real and worth naming: the CI row that used to assert **no escape
+  at all** reaches a non-wezterm tty can no longer say that, because the banner
+  legitimately animates there. It now asserts the absence of both *carriers*
+  (SGR 6 and SGR 5) instead, plus the presence of the cursor-hide escape — that
+  last one in the other direction, so `lib/tty.sh` cannot quietly acquire
+  `lib/sgr.sh`'s three conditions and go plain everywhere without failing.
+  Probing that with `\r` would have passed vacuously: `script(1)` writes CRLF,
+  so a carriage return is in the capture whether anything animated or not.
+
+  The animation is on the banner and nothing else, deliberately. `dotfiles —
+  Linux` tells you nothing you did not already know, so nothing is lost while
+  it is illegible; the command list under it is the payload and is never
+  animated. It is a scramble rather than a typewriter for the same reason — a
+  typewriter's line does not *exist* yet, so the delay is spent on nothing,
+  where a scramble is at full width from the first frame and you can look past
+  it. The budget is a TOTAL (~400ms), not a per-character delay, because the
+  obvious 50ms-a-character spelling gets slower every time the string grows.
+
   The font is **generated, not downloaded** — `wezterm/mkmono.py` (PEP 723, run by `make
   mono-font`, same arrangement as `mise.toml`) derives a monospaced cut from upstream's
   variable Science Gothic, and the two `.ttf` files it writes are committed under
