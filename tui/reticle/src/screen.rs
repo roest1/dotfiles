@@ -1,14 +1,14 @@
 //! What a screen has to provide, and nothing more.
 //!
 //! Kept deliberately small so the next two screens are cheap. `make it` is a
-//! tree of Makefile groups with a help page on the right; `gh-tui` is a list of
+//! tree of Makefile groups with a help page on the right; `github` is a list of
 //! runs or PRs with a live preview on the right. Both are this shape: rows on
 //! the left, a pane on the right, single-key actions on the rows.
 //!
 //! `rows()` is rebuilt per draw rather than mutated in place. That is a real
 //! cost at very large N and it is the right trade here: a screen whose model is
 //! "derive the visible rows from state" cannot desynchronise its display from
-//! its state, which is the bug class that made the old gh-tui's screens stale.
+//! its state, which is the bug class that made the old fzf screens stale.
 
 use crate::nav::Action;
 
@@ -86,7 +86,7 @@ pub struct Image {
 }
 
 /// What a screen wants from the next moment, for work happening off the main
-/// thread. `gh-tui` will need exactly this for its `gh` calls; the font browser
+/// thread. `github` will need exactly this for its `gh` calls; the font browser
 /// needs it for HTTP.
 ///
 /// The three states exist because "keep waking me" and "something changed" are
@@ -107,7 +107,7 @@ pub enum Flow {
     /// pane's CONTENT changed, never for reticle motion.
     Dirty,
     /// Open a screen on top of this one, keeping this one's cursor exactly
-    /// where it was. `gh-tui` wants this for drilling into a run's logs; the
+    /// where it was. `github` wants this for drilling into a run's logs; the
     /// font picker wants it for browsing fonts it has not installed.
     Push(Box<dyn Screen>),
     /// Close this screen and go back. `q` does it for you at any depth below

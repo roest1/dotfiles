@@ -6,7 +6,7 @@
 #   source ~/.bash_github_tui
 #
 # Commands:
-#   gh-tui        All of GitHub for the current repo, in one TUI
+#   github        All of GitHub for the current repo, in one TUI
 #
 # The non-interactive gh command (gha) and the shared helpers (__gh_check,
 # __gh_repo, __gh_default_branch, _open_url) live in bash_github, which is
@@ -24,7 +24,7 @@
 #
 # fzf's preview, reload and execute commands run in a child shell that has
 # none of these functions. Rather than materialise every renderer as a
-# separate script, gh-tui writes ONE worker script per session — every
+# separate script, github writes ONE worker script per session — every
 # `_gh*` function in this file, dumped with `declare -f`, plus a dispatcher —
 # and every fzf command is `bash $W <verb> args…`. So a preview is an
 # ordinary bash function in this file, shellchecked and sourced like the
@@ -85,7 +85,7 @@ _gh_fzf_ok() {
   maj="${have%%.*}"; rest="${have#*.}"; min="${rest%%.*}"
   maj="${maj//[!0-9]/}"; min="${min//[!0-9]/}"
   if [[ -n "$maj" ]] && (( maj > 0 || ${min:-0} >= 65 )); then return 0; fi
-  echo "❌ gh-tui needs fzf ≥ 0.65 (have $have) — run: make install bash" >&2
+  echo "❌ github needs fzf ≥ 0.65 (have $have) — run: make install bash" >&2
   echo "   (or: mise use -g fzf@latest)" >&2
   return 1
 }
@@ -163,7 +163,7 @@ _gh_pause() {
 # tty: no `wezterm cli` (broken on this machine — WEZTERM_UNIX_SOCKET points
 # at a gui-sock that does not exist) and no file I/O per repaint.
 #
-# /dev/tty rather than stdout, because gh-tui's own stdout is redirected to
+# /dev/tty rather than stdout, because github's own stdout is redirected to
 # /dev/null and every screen runs inside fzf's alternate screen.
 #
 # Silent everywhere else: an unrecognised OSC is discarded by every terminal
@@ -174,6 +174,14 @@ _gh_pause() {
 # empty payload is betting on how its parser treats a zero-length decode — and
 # losing that bet leaves the pane wearing the mark until the shell dies. A var
 # that is present and reads "0" needs no such bet; the handler tests for "1".
+# The var is `gh_tui`, not `github`, and that is deliberate now that the command
+# is called `github`. This is a WIRE NAME: bash writes it in the WSL guest and
+# wezterm/shared.lua reads it on the Windows host, out of a SEPARATE clone. So
+# renaming it is a two-clone flag day -- the tab mark disappears until `make
+# windows` has pulled the host side -- bought for no user-visible gain, since
+# nobody types this. Same reasoning that keeps this file called
+# bash_github_tui: names that are read by something other than a person change
+# only when there is a reason beyond tidiness.
 _gh_tab_var() {
   [[ -w /dev/tty ]] || return 0
   command -v base64 >/dev/null 2>&1 || return 0
@@ -250,7 +258,7 @@ _ghw_main() {
     env-create)    _ghw_env_create ;;
     env-delete)    _ghw_env_delete "$@" ;;
     env-menu)      _ghw_env_menu "$@" ;;
-    *) echo "gh-tui worker: unknown verb '$verb'" >&2; return 1 ;;
+    *) echo "github worker: unknown verb '$verb'" >&2; return 1 ;;
   esac
 }
 
@@ -1302,12 +1310,12 @@ _ghw_pv_hub() {
 #
 # `?` in a menu and ctrl-/ in a list show the current screen's page. They
 # are written to $_GH_D/help/<name> once per session, because fzf's execute
-# binding runs a command, not a function. `h gh-tui` in bash_productivity
+# binding runs a command, not a function. `h github` in bash_productivity
 # points here rather than repeating any of it.
 
 _gh_help_hub() {
   cat <<'HELP'
-gh-tui — the repo, in one place
+github — the repo, in one place
 
   Every screen is a list with a live preview. Screens open instantly and
   fill in; nothing waits on the network before it appears. What you see in
@@ -1515,10 +1523,10 @@ HELP
 }
 
 # ─────────────────────────────────────────────────────────────────
-#  gh-tui — the hub
+#  github — the hub
 # ─────────────────────────────────────────────────────────────────
 
-gh-tui() {
+github() {
   __gh_check || return 1
   _gh_fzf_ok || return 1
 
@@ -1531,11 +1539,11 @@ gh-tui() {
 
   _gh_palette; _gh_style
   _GH_REPO="$repo"
-  _GH_D=$(mktemp -d "${TMPDIR:-/tmp}/gh-tui-XXXXXX") || return 1
+  _GH_D=$(mktemp -d "${TMPDIR:-/tmp}/github-XXXXXX") || return 1
   # Immutable things — bodies of completed runs, logs of completed jobs —
   # outlive the session so the second look at a run is instant. Two weeks
   # is long enough to matter and short enough not to.
-  _GH_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/gh-tui/$repo"
+  _GH_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/github/$repo"
   mkdir -p "$_GH_CACHE" "$_GH_D/help"
   find "$_GH_CACHE" -type f -mtime +14 -delete 2>/dev/null
 

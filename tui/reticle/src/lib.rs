@@ -1,6 +1,6 @@
 //! A terminal UI core: an animated reticle, nvim navigation, a redraw loop.
 //!
-//! Built for the font browser and shaped so `make it` and `gh-tui` can follow
+//! Built for the font browser and shaped so `make it` and `github` can follow
 //! it without a rewrite. Each of those stays its OWN binary and its own command
 //! -- `font`, `github`, `make it` -- sharing this crate rather than becoming
 //! modes of one program. The nav contract is the thing worth sharing; the

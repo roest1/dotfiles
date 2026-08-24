@@ -90,7 +90,7 @@ __NP_ON=$'\001'
 __NP_OFF=$'\002'
 
 # ─── Shared time helpers ─────────────────────────────────────────────
-# Used by PS1 and by the gh-tui screens for consistent timestamps.
+# Used by PS1 and by the github screens for consistent timestamps.
 
 # __parse_iso_epoch <iso_timestamp>
 # Converts ISO 8601 timestamp to epoch. Handles GNU + BSD date.

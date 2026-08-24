@@ -3,11 +3,11 @@
 The current repo on GitHub, from the terminal — one TUI for the things you'd
 otherwise open a browser tab for.
 
-> **One command: `gh-tui`.**
+> **One command: `github`.**
 
 | Command  | What it does                                                          |
 | -------- | --------------------------------------------------------------------- |
-| `gh-tui` | **The hub** → Actions · Pull Requests · Branches · Secrets · Environments |
+| `github` | **The hub** → Actions · Pull Requests · Branches · Secrets · Environments |
 | `gha`    | HEAD's checks as a table, names linked to their jobs — the one-shot     |
 
 Press `ctrl-/` in any list, or `?` in any menu, for that screen's help.
@@ -38,7 +38,7 @@ gh auth login          # gh, jq, and fzf ≥ 0.65 come from `make install bash`
 
 fzf's floor is real: the live previews use `--listen`, and the chrome uses
 `--style` and `--footer`, none of which the older fzf in apt has. `deps.conf`
-installs fzf through mise for that reason; `gh-tui` says so if it finds an old
+installs fzf through mise for that reason; `github` says so if it finds an old
 one instead of half-working.
 
 ---
@@ -111,7 +111,7 @@ says `UNKNOWN STEP`). A step's lines are reconstructed — its timestamp window,
 anchored on its own `##[group]Run …` marker and cut at its closing
 `##[error]`. Exact for `run:` and `uses:` steps; the runner's own Set up /
 Post / Complete steps get their whole window. Logs of completed jobs and
-rendered bodies of completed runs are cached under `~/.cache/gh-tui/`, so a
+rendered bodies of completed runs are cached under `~/.cache/github/`, so a
 second look is instant even in a new shell.
 
 ---

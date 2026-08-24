@@ -6,7 +6,7 @@
 //! to invent its own spelling of "go down" — it receives an `Action`.
 //!
 //! The bindings are nvim's, deliberately and completely: hjkl, gg/G, ctrl-d/u.
-//! `gh-tui` reads as *nearly* nvim and that is worse than not trying, because
+//! `github` reads as *nearly* nvim and that is worse than not trying, because
 //! the keys you reach for by reflex are the ones it gets wrong.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

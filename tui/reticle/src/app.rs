@@ -56,7 +56,7 @@ pub fn run(root: Box<dyn Screen>) -> io::Result<()> {
 
 /// One entry per screen on the stack. The cursor, the scroll offset and the
 /// reticle travel WITH the screen, so coming back lands you on the row you
-/// left rather than at the top — the same property gh-tui's nested fzf gets
+/// left rather than at the top — the same property the fzf implementation's nesting gets
 /// from running one inside the other.
 struct Frame {
     screen: Box<dyn Screen>,

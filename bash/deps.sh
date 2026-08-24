@@ -51,7 +51,7 @@ fi
 
 # ── fzf version floor ────────────────────────────────────────────────────────
 #
-# Same shape as the neovim floor in nvim/deps.sh, for the same reason. gh-tui
+# Same shape as the neovim floor in nvim/deps.sh, for the same reason. github
 # (bash_github_tui) is built on fzf features that arrived between 0.36 and
 # 0.65 — --listen for live previews, the start/focus events, --style and
 # --footer for the chrome — and apt carries 0.29 (Ubuntu 22.04) and 0.44
@@ -61,7 +61,7 @@ fi
 # upgrade through the distro if it can reach the floor (one binary, the
 # whole point), else install a current one through mise over the top.
 #
-# The floor is 0.65 (Aug 2025). gh-tui checks it too and refuses with the
+# The floor is 0.65 (Aug 2025). github checks it too and refuses with the
 # same instruction, so a stale machine says why rather than half-working.
 FZF_MIN_MAJOR=0
 FZF_MIN_MINOR=65
@@ -84,7 +84,7 @@ fzf_below_floor() {
 }
 
 echo ""
-echo "  fzf (gh-tui needs >= $FZF_MIN_MAJOR.$FZF_MIN_MINOR):"
+echo "  fzf (github needs >= $FZF_MIN_MAJOR.$FZF_MIN_MINOR):"
 _fzf_v="$(fzf_version)"
 if [ -z "$_fzf_v" ]; then
   echo "  ⚠️  fzf not installed — the [bash] tools should have provided it"
@@ -99,7 +99,7 @@ elif fzf_below_floor "$_fzf_v"; then
   if fzf_below_floor "$(fzf_version)"; then
     echo "  ➡️  $PM can't reach the floor — installing a current fzf via mise"
     mise_install_forced fzf || {
-      echo "  ❌ could not upgrade fzf. gh-tui will refuse to start on $_fzf_v;"
+      echo "  ❌ could not upgrade fzf. github will refuse to start on $_fzf_v;"
       echo "     the rest of the shell is unaffected. By hand: mise use -g fzf@latest"
     }
   fi

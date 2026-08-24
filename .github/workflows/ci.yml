@@ -690,7 +690,7 @@ jobs:
           done
           exit $bad
 
-      # gh-tui is the single public entry to the interactive layer. The five
+      # github is the single public entry to the interactive layer. The five
       # screens behind it (gpr, gha-ui, ghsecrets, ghbranch, ghenv) used to sit
       # next to it as top-level commands, which left six names competing for
       # one job and meant the hub had to be discovered rather than being the
@@ -700,11 +700,11 @@ jobs:
       # files, `_` is private to this one. Every screen is now `_`-prefixed,
       # which is what stops the help check above from demanding an `h` entry
       # for something you cannot type.
-      - name: bash_github_tui exposes only gh-tui
+      - name: bash_github_tui exposes only github
         run: |
           public=$(grep -oE '^[a-zA-Z][a-zA-Z0-9_-]*\(\)' bash/bash_github_tui | tr -d '()')
-          if [ "$public" != "gh-tui" ]; then
-            echo "bash_github_tui must define exactly one public function (gh-tui); found:"
+          if [ "$public" != "github" ]; then
+            echo "bash_github_tui must define exactly one public function (github); found:"
             echo "$public"
             exit 1
           fi
@@ -1081,10 +1081,23 @@ jobs:
       # The binary shadows nothing and nothing shadows it. A bash function named
       # `font` would win over the binary on PATH, silently reinstating the fzf
       # picker this replaced.
+      # DERIVED from the workspace, not a hand-kept list, and that matters right
+      # now: `gh-tui` has just been renamed to `github`, which is the name the
+      # planned reticle crate will take. The day tui/github/ is added to
+      # members, this check starts covering it and fails until the bash function
+      # is gone -- which is exactly the handover it should force. A hardcoded
+      # list would simply have stayed quiet and let both exist, with PATH order
+      # deciding which one runs.
+      #
+      # reticle is excluded because it is the framework and ships no binary.
       - name: No bash function shadows a tui binary
         run: |
           fail=0
-          for b in font; do
+          bins=$(sed -n '/^members *= *\[/,/\]/p' tui/Cargo.toml \
+                 | grep -oE '"[a-z0-9_-]+"' | tr -d '"' | grep -v '^reticle$')
+          [ -n "$bins" ] || { echo "could not read workspace members from tui/Cargo.toml"; exit 1; }
+          echo "tui binaries: $(echo "$bins" | tr '\n' ' ')"
+          for b in $bins; do
             if grep -qE "^$b\(\) \{" bash/*; then
               echo "a bash function named '$b' would shadow the tui binary"; fail=1
             fi
