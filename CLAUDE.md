@@ -238,9 +238,17 @@ you write code here. Reasoning, revisit conditions and current status:
   a full screen is fine.
 
   Both CI rows drive `script(1)` with an explicit `stty rows 50 cols 200`. A
-  runner's default pty is 80x24 — one row short of this menu — so without it
-  the animation would correctly decline and the row asserting it happens would
-  fail for a reason unrelated to the guard being tested.
+  runner's pty is unsized until something sets it — `stty size` reports `0 0` —
+  so without it the animation would correctly decline and the row asserting it
+  happens would fail for a reason unrelated to the guard being tested.
+
+  **The screen size comes from `stty size < /dev/tty`, never `tput`.** `tput
+  lines` needs a valid `$TERM` and exits 2 with *"No value for $TERM and no -T
+  specified"* without one — and CI sets no TERM, so the tput version declined on
+  every runner and failed the row asserting the animation happens. `stty` reads
+  the ioctl and never consults terminfo, so it answers in strictly more places.
+  It has to read `/dev/tty` rather than fd 1: inside `$( )` fd 1 is the capture
+  pipe, so `stty size <&1` reports *"Inappropriate ioctl for device"*.
 
   The font is **generated, not downloaded** — `wezterm/mkmono.py` (PEP 723, run by `make
   mono-font`, same arrangement as `mise.toml`) derives a monospaced cut from upstream's

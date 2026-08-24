@@ -115,12 +115,25 @@ tty_banner() {
   # scribbles on it. Both are decided here, before anything is printed, because
   # once a scrambled banner is on screen there is no safe way to go back and fix
   # it -- the same movement would be needed to undo it.
-  local height width
-  height=$(tput lines 2>/dev/null) || height=""
-  width=$(tput cols 2>/dev/null) || width=""
+  # stty rather than tput, and that is not a style preference: `tput lines`
+  # needs a valid $TERM and dies with "No value for $TERM" without one. CI does
+  # not set TERM, so tput made the animation decline on every runner -- and the
+  # row asserting the animation HAPPENS then failed for a reason that had
+  # nothing to do with what it was testing. stty reads the ioctl and never
+  # consults terminfo, so it answers the same question in more places.
+  #
+  # From /dev/tty, not fd 1. Inside $( ) fd 1 is the capture PIPE, so `stty size
+  # <&1` reads the pipe and reports "Inappropriate ioctl for device".
+  local size height width
+  size=$(stty size < /dev/tty 2>/dev/null) || { _tty_banner_plain; return; }
+  height=${size%% *}
+  width=${size##* }
   case "$height$width" in
     *[!0-9]* | '') _tty_banner_plain; return ;;
   esac
+  # A pty that was never sized reports 0 0. Declining there is right: with no
+  # idea how tall the screen is there is no way to know the banner survives it.
+  [ "$height" -gt 0 ] && [ "$width" -gt 0 ] || { _tty_banner_plain; return; }
   [ "$((up + 1))" -lt "$height" ] || { _tty_banner_plain; return; }
 
   # Escapes are zero-width on screen but are characters in the string, so the
