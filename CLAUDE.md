@@ -191,11 +191,26 @@ you write code here. Reasoning, revisit conditions and current status:
   comments, so the whole editor would silently change font.
 
   **`lib/tty.sh` is the sibling file, and the split between them is the guard,
-  not the feature.** It holds the escapes whose only precondition is a terminal
-  — the green/red/yellow marks in `make status`, and the decrypt animation on
-  `make help`'s banner. Green means green and `\r` means `\r` on every terminal,
-  so one condition is the honest requirement; SGR 6 means *rapid blink* off this
-  setup, so it needs all three. Folding the two together would have put two
+  not the feature.** It holds the escapes that need a terminal but
+  nothing about *which* terminal — the green/red/yellow marks in `make status`,
+  and the decrypt animation on `make help`'s banner. Green means green and `\r`
+  means `\r` everywhere, where SGR 6 means *rapid blink* off this setup.
+
+  So the two files ask different questions. `sgr.sh` asks "is this WezTerm,
+  running our config". `tty.sh` asks "is this a terminal at all, and does its
+  owner want decoration" — a tty, `TERM` not `dumb`, and `NO_COLOR` unset.
+  **`NO_COLOR` is tested for being SET, not for being non-empty**: the spec says
+  any value including the empty string means no, and `[ -n "$NO_COLOR" ]` is
+  exactly how that gets missed. CI asserts the empty case on its own for that
+  reason. `TERM=dumb` is the value defined as having no capabilities, so CSI
+  lands in it as literal text — an animation there is not a degraded effect,
+  it is garbage.
+
+  The animation is gated on `NO_COLOR` too, which reads past the letter of a
+  spec that only governs color. It is right anyway: the banner is decoration by
+  exactly the argument `NO_COLOR` is making, and someone who asked for less has
+  not asked for more. `TTY_ANIM` is computed separately from the color block so
+  the two can diverge if that turns out to be wrong. Folding the two together would have put two
   different guarantees behind one set of variables whose header promises "empty
   unless all three hold", and a caller could no longer tell which it was getting.
 

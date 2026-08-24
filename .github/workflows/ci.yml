@@ -272,8 +272,15 @@ jobs:
           # the animation would correctly decline, and the row below asserting
           # it happens would fail for a reason that has nothing to do with the
           # guard it is testing.
+          #
+          # TERM is set for the same reason, and it is not optional: script(1)
+          # sets TERM=dumb ITSELF when its parent has none, which a runner never
+          # does. lib/tty.sh refuses to animate a dumb terminal -- correctly,
+          # since CSI lands there as literal text -- so without this every row
+          # below would be testing a terminal that has declared it cannot draw.
+          TERMED=TERM=xterm-256color
           on_tty() {
-            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+            env $TERMED HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
               script -qec "stty rows 50 cols 200; make help" /dev/null | grep -qF "$3"
           }
 
@@ -320,7 +327,7 @@ jobs:
           # would silently truncate a row, and the FINAL frame would still look
           # entirely plausible. Only comparing it against the plain render
           # catches that.
-          render=$(HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
+          render=$(env $TERMED HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
                      script -qec "stty rows 50 cols 200; make help" /dev/null | tr -d '\r')
           upline=$(printf '%s\n' "$render" | grep -n $'^\033\[[0-9]*A' | tail -1 | cut -d: -f1)
           if [ -z "$upline" ]; then
@@ -337,6 +344,50 @@ jobs:
             fi
           fi
 
+          # NO_COLOR and TERM=dumb, both directions.
+          #
+          # https://no-color.org — set to ANYTHING, including EMPTY, means do
+          # not add color. The empty case is the one implementations get wrong,
+          # because the obvious `[ -n "$NO_COLOR" ]` passes it straight through,
+          # so it is asserted explicitly rather than assumed from the set case.
+          #
+          # TERM=dumb is the value defined as having no capabilities: CSI lands
+          # in it as literal text, so an animation there is not a degraded
+          # effect, it is garbage in the output.
+          #
+          # $TERMED FIRST, then the case under test -- env takes the last
+          # assignment, so the TERM=dumb row overrides it and the NO_COLOR rows
+          # keep a real terminal. Without that the NO_COLOR rows pass VACUOUSLY:
+          # script's TERM=dumb would have disabled the escapes on its own and
+          # the assertion would hold whether NO_COLOR were honored or not.
+          quiet() {   # $1 env assignment, $2 what to say if escapes survive
+            if env $TERMED "$1" TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
+                 script -qec "stty rows 50 cols 200; make help" /dev/null \
+               | grep -qF "$esc"; then
+              echo "escapes survived $2"; fail=1
+            fi
+          }
+          # ...and the positive control, so the three rows below cannot all be
+          # passing because nothing ever emits escapes in this fixture.
+          if ! env $TERMED TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
+                 script -qec "stty rows 50 cols 200; make help" /dev/null \
+               | grep -qF "$esc"; then
+            echo "the NO_COLOR rows are vacuous -- nothing decorates even when allowed"
+            fail=1
+          fi
+          quiet NO_COLOR=1 "NO_COLOR=1"
+          quiet NO_COLOR=  "NO_COLOR= (empty is still set, per the spec)"
+          quiet TERM=dumb  "TERM=dumb"
+
+          # ...and the menu is still all there when it declines to decorate.
+          for e in NO_COLOR=1 TERM=dumb; do
+            got=$(env $TERMED "$e" TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
+                    script -qec "stty rows 50 cols 200; make help" /dev/null \
+                  | tr -d '\r' | sed 's/[[:space:]]*$//' | grep -v '^$')
+            want=$(make help | sed 's/[[:space:]]*$//' | grep -v '^$')
+            [ "$got" = "$want" ] || { echo "$e changed the OUTPUT, not just the styling"; fail=1; }
+          done
+
           # All three hold, so the carrier itself must appear — grepping for
           # any escape would keep passing if SGR 6 were swapped for something
           # else, such as the italic that rose-pine already spends on nvim's
@@ -346,7 +397,7 @@ jobs:
           fi
           # The rows above go through the $HOME/.config fallback; this one
           # proves the XDG_CONFIG_HOME half of the guard is live too.
-          if ! HOME="$unlinked" XDG_CONFIG_HOME="$linked/.config" TERM_PROGRAM=WezTerm \
+          if ! env $TERMED HOME="$unlinked" XDG_CONFIG_HOME="$linked/.config" TERM_PROGRAM=WezTerm \
                script -qec "make help" /dev/null | grep -qF "$carrier"; then
             echo "carrier missing when XDG_CONFIG_HOME names the config"; fail=1
           fi
