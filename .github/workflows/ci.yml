@@ -337,6 +337,36 @@ jobs:
             fi
           fi
 
+          # NO_COLOR and TERM=dumb, both directions.
+          #
+          # https://no-color.org — set to ANYTHING, including EMPTY, means do
+          # not add color. The empty case is the one implementations get wrong,
+          # because the obvious `[ -n "$NO_COLOR" ]` passes it straight through,
+          # so it is asserted explicitly rather than assumed from the set case.
+          #
+          # TERM=dumb is the value defined as having no capabilities: CSI lands
+          # in it as literal text, so an animation there is not a degraded
+          # effect, it is garbage in the output.
+          quiet() {   # $1 env assignment, $2 what to say if escapes survive
+            if env "$1" TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
+                 script -qec "stty rows 50 cols 200; make help" /dev/null \
+               | grep -qF "$esc"; then
+              echo "escapes survived $2"; fail=1
+            fi
+          }
+          quiet NO_COLOR=1 "NO_COLOR=1"
+          quiet NO_COLOR=  "NO_COLOR= (empty is still set, per the spec)"
+          quiet TERM=dumb  "TERM=dumb"
+
+          # ...and the menu is still all there when it declines to decorate.
+          for e in NO_COLOR=1 TERM=dumb; do
+            got=$(env "$e" TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
+                    script -qec "stty rows 50 cols 200; make help" /dev/null \
+                  | tr -d '\r' | sed 's/[[:space:]]*$//' | grep -v '^$')
+            want=$(make help | sed 's/[[:space:]]*$//' | grep -v '^$')
+            [ "$got" = "$want" ] || { echo "$e changed the OUTPUT, not just the styling"; fail=1; }
+          done
+
           # All three hold, so the carrier itself must appear — grepping for
           # any escape would keep passing if SGR 6 were swapped for something
           # else, such as the italic that rose-pine already spends on nvim's

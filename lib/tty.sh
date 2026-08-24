@@ -23,25 +23,46 @@
 # sgr.sh offers, for a different question.
 
 # shellcheck disable=SC2034  # consumed by callers that source this file
-if [ -t 1 ]; then
-  # 39 (default foreground), NOT 0. A full reset would also clear the Science
-  # Gothic carrier, and lib/status.sh wraps whole lines in $SG ... $SG_OFF with
-  # these marks INSIDE. Resetting the color must not silently drop the font
-  # halfway along the line.
-  TTY_OK=$'\033[32m'    # green — matches what the manifest declares
-  TTY_BAD=$'\033[31m'   # red   — drift, and the summary will name it
-  TTY_NA=$'\033[33m'    # yellow — not applicable / not checked here
-  TTY_OFF=$'\033[39m'
+
+# Motion: a terminal that can move a cursor. TERM=dumb cannot -- it is the one
+# TERM value defined as having no capabilities, so CSI sequences land in it as
+# literal text rather than as movement.
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ]; then
   TTY_HIDE=$'\033[?25l'
   TTY_SHOW=$'\033[?25h'
   TTY_ANIM=1
+else
+  TTY_HIDE=''
+  TTY_SHOW=''
+  TTY_ANIM=0
+fi
+
+# Color: everything motion needs, plus NO_COLOR.
+#
+# https://no-color.org — set to ANYTHING, including empty, means "do not add
+# color". Checked with -z on the value rather than by existence, which is the
+# one thing the spec is explicit about and the thing implementations get wrong.
+#
+# The animation is gated on it too, which reads past the letter of a spec that
+# only governs color. It is the right call anyway: the banner is decoration by
+# exactly the argument NO_COLOR is making, and someone who has asked for less
+# has not asked for more. TTY_ANIM stays separate above so the two can diverge
+# if that ever turns out to be wrong.
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ] && [ -z "${NO_COLOR+x}" ]; then
+  TTY_OK=$'\033[32m'    # green — matches what the manifest declares
+  TTY_BAD=$'\033[31m'   # red   — drift, and the summary will name it
+  TTY_NA=$'\033[33m'    # yellow — not applicable / not checked here
+  # 39 (default foreground), NOT 0. A full reset would also clear the Science
+  # Gothic carrier, and lib/status.sh wraps whole lines in $SG ... $SG_OFF with
+  # these marks INSIDE. Resetting the color must not silently drop the font
+  # halfway along the line. Not 22;39 either: nothing here sets bold, so
+  # cancelling it would only risk clobbering a caller's.
+  TTY_OFF=$'\033[39m'
 else
   TTY_OK=''
   TTY_BAD=''
   TTY_NA=''
   TTY_OFF=''
-  TTY_HIDE=''
-  TTY_SHOW=''
   TTY_ANIM=0
 fi
 
