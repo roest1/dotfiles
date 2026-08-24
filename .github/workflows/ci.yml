@@ -264,20 +264,79 @@ jobs:
           HOME="$linked" make link wezterm >/dev/null
 
           # $1 home, $2 TERM_PROGRAM, $3 pattern — true when $3 reaches the tty
+          #
+          # The pty is sized explicitly. tty_banner prints the whole menu and
+          # then walks the cursor back UP to the banner, which it will only do
+          # when the output fits the screen and no line wraps -- and a runner's
+          # default pty is 80x24, one row short of this menu. Without the stty
+          # the animation would correctly decline, and the row below asserting
+          # it happens would fail for a reason that has nothing to do with the
+          # guard it is testing.
           on_tty() {
             HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
-              script -qec "make help" /dev/null | grep -qF "$3"
+              script -qec "stty rows 50 cols 200; make help" /dev/null | grep -qF "$3"
           }
 
-          # In wezterm, but the config isn't linked: being in wezterm does not
-          # mean wezterm has the font_rules.
-          if on_tty "$unlinked" WezTerm "$esc"; then
-            echo "escapes on a wezterm tty before the config was linked"; fail=1
+          # These two rows used to assert NO ESCAPE AT ALL, which was stronger and
+          # is no longer true: lib/tty.sh emits color and a carriage return for
+          # the decrypt banner and the status marks, guarded on `-t 1` alone.
+          # That guard is weaker ON PURPOSE -- green means green and \r means \r
+          # on every terminal, where SGR 6 means RAPID BLINK off this setup. So
+          # what these rows protect is the carrier specifically, not the escape
+          # byte. Both carriers: SGR 5 is the nvim editor lane and would strobe
+          # just as badly.
+          slow=$'\033[5m'
+          no_carrier() {   # $1 home, $2 TERM_PROGRAM, $3 what to say if it leaks
+            if on_tty "$1" "$2" "$carrier"; then echo "SGR 6 $3"; fail=1; fi
+            if on_tty "$1" "$2" "$slow";    then echo "SGR 5 $3"; fail=1; fi
+          }
+          no_carrier "$unlinked" WezTerm "on a wezterm tty before the config was linked"
+          no_carrier "$linked"   xterm   "on a non-wezterm tty"
+
+          # ...and the other direction, or the weaker guard could quietly acquire
+          # the stronger one and nothing would notice. A non-wezterm tty must
+          # STILL get the banner animation, because a carriage return means the
+          # same thing on every terminal.
+          #
+          # Probed by the cursor-hide escape rather than by \r, which would have
+          # passed vacuously: script(1) writes CRLF line endings, so a carriage
+          # return is in this output whether anything animated or not. \033[?25l
+          # is emitted by tty_banner and by nothing else here.
+          hide=$'\033[?25l'
+          if ! on_tty "$linked" xterm "$hide"; then
+            echo "the banner stopped animating on a non-wezterm tty -- lib/tty.sh"
+            echo "has probably acquired lib/sgr.sh's three conditions by mistake"
+            fail=1
           fi
-          # A tty, but not wezterm: here SGR 6 would mean rapid blink.
-          if on_tty "$linked" xterm "$esc"; then
-            echo "escapes on a non-wezterm tty"; fail=1
+
+          # THE ANIMATION MAY HIDE CHARACTERS THAT ARE ABOUT TO ARRIVE. It may
+          # never drop one.
+          #
+          # This replaced a byte-order row asserting the menu was printed before
+          # the cursor moved, which was the right check for the previous shape
+          # (banner-only, menu instant) and is meaningless now that the rows type
+          # in too. What matters instead is that the animation is a pure
+          # presentation of the same text: a bug in the escape-aware prefix walk
+          # would silently truncate a row, and the FINAL frame would still look
+          # entirely plausible. Only comparing it against the plain render
+          # catches that.
+          render=$(HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
+                     script -qec "stty rows 50 cols 200; make help" /dev/null | tr -d '\r')
+          upline=$(printf '%s\n' "$render" | grep -n $'^\033\[[0-9]*A' | tail -1 | cut -d: -f1)
+          if [ -z "$upline" ]; then
+            echo "make help did not animate on a sized wezterm tty"; fail=1
+          else
+            final=$(printf '%s\n' "$render" | tail -n +"$upline" \
+                    | sed $'s/\033\[[0-9;?]*[a-zA-Z]//g' | sed 's/[[:space:]]*$//' | grep -v '^$')
+            plain=$(make help | sed 's/[[:space:]]*$//' | grep -v '^$')
+            if [ "$final" != "$plain" ]; then
+              echo "the animation's final frame does not match the plain render --"
+              echo "a row is being truncated or dropped by the prefix walk"
+              diff <(printf '%s\n' "$plain") <(printf '%s\n' "$final") | head -10
+              fail=1
+            fi
           fi
+
           # All three hold, so the carrier itself must appear — grepping for
           # any escape would keep passing if SGR 6 were swapped for something
           # else, such as the italic that rose-pine already spends on nvim's

@@ -36,6 +36,18 @@ source "$HERE_STATUS/pkg.sh"
 # no branching. See lib/sgr.sh for why the guard has two halves.
 # shellcheck source=./sgr.sh
 source "$HERE_STATUS/sgr.sh"
+# Sets TTY_* — color for the marks, and empty in a pipe. A DIFFERENT guard from
+# sgr.sh's: green means green everywhere, so it needs a tty and nothing else,
+# where SGR 6 means rapid blink off this setup and needs all three. See lib/tty.sh.
+# shellcheck source=./tty.sh
+source "$HERE_STATUS/tty.sh"
+
+# The three marks, colored once here rather than at 25 call sites. Note the
+# color resets with 39 (default foreground) rather than 0, so the Science
+# Gothic carrier these sit INSIDE survives to the end of the line.
+MARK_OK="${TTY_OK}✓${TTY_OFF}"
+MARK_BAD="${TTY_BAD}✗${TTY_OFF}"
+MARK_NA="${TTY_NA}·${TTY_OFF}"
 
 # STATUS_DRIFT is the total, and is what callers outside this file read
 # (ci.yml asserts on it after calling status_links alone). The two halves are
@@ -161,16 +173,16 @@ status_links() {
     if [[ -L "$dest" ]]; then
       local actual; actual="$(readlink "$dest")"
       if [[ "$actual" == "$target" ]]; then
-        printf "%s  ✓ %-38s%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
+        printf "%s  $MARK_OK %-38s%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
       else
-        printf "%s  ✗ %-38s points at %s%s\n" "$SG" "${dest/#$HOME/\~}" "${actual/#$HOME/\~}" "$SG_OFF"
+        printf "%s  $MARK_BAD %-38s points at %s%s\n" "$SG" "${dest/#$HOME/\~}" "${actual/#$HOME/\~}" "$SG_OFF"
         _drift_link
       fi
     elif [[ -e "$dest" ]]; then
-      printf "%s  ✗ %-38s is a real file, not a link into this repo%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
+      printf "%s  $MARK_BAD %-38s is a real file, not a link into this repo%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
       _drift_link
     else
-      printf "%s  · %-38s not linked (run: make link)%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
+      printf "%s  $MARK_NA %-38s not linked (run: make link)%s\n" "$SG" "${dest/#$HOME/\~}" "$SG_OFF"
       _drift_link
     fi
   done < <(manifest_lines link "$@")
@@ -189,19 +201,19 @@ status_tools() {
     actual="$(provider_of "$cmd")"
 
     if ! tool_applies_here "$cmd"; then
-      printf "%s  · %-14s n/a — installed on the Windows host%s\n" "$SG" "$cmd" "$SG_OFF"
+      printf "%s  $MARK_NA %-14s n/a — installed on the Windows host%s\n" "$SG" "$cmd" "$SG_OFF"
     elif [[ "$actual" == "absent" ]]; then
-      printf "%s  · %-14s not installed (declared %s)%s\n" "$SG" "$cmd" "$provider" "$SG_OFF"
+      printf "%s  $MARK_NA %-14s not installed (declared %s)%s\n" "$SG" "$cmd" "$provider" "$SG_OFF"
       _drift_tool
     elif [[ "$actual" == "mise-stale" ]]; then
       IFS=$'\t' read -r want have <<<"$(_mise_pin_versions "$cmd")"
-      printf "%s  ✗ %-14s pinned %s not installed (active: %s)%s\n" \
+      printf "%s  $MARK_BAD %-14s pinned %s not installed (active: %s)%s\n" \
         "$SG" "$cmd" "${want:-?}" "${have:-none}" "$SG_OFF"
       _drift_stale
     elif provider_satisfies "$provider" "$actual"; then
-      printf "%s  ✓ %-14s %s%s\n" "$SG" "$cmd" "$actual" "$SG_OFF"
+      printf "%s  $MARK_OK %-14s %s%s\n" "$SG" "$cmd" "$actual" "$SG_OFF"
     else
-      printf "%s  ✗ %-14s declared %-12s actual %-8s %s%s\n" \
+      printf "%s  $MARK_BAD %-14s declared %-12s actual %-8s %s%s\n" \
         "$SG" "$cmd" "$provider" "$actual" "$(command -v "$cmd" | sed "s|^$HOME|~|")" "$SG_OFF"
       _drift_tool
     fi
@@ -242,7 +254,7 @@ status_windows() {
   printf "%s[windows] host clone%s\n" "$SG_B" "$SG_OFF"
 
   if [[ -z "$win" || ! -d "$win/.git" ]]; then
-    printf "%s  · not found under /mnt/c/Users/*/dotfiles%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_NA not found under /mnt/c/Users/*/dotfiles%s\n" "$SG" "$SG_OFF"
     echo "      wezterm.exe reads its config from a clone on C:. If you use the"
     echo "      Windows host, see windows/README.md; if you do not, ignore this."
     return 0
@@ -260,22 +272,22 @@ status_windows() {
   branch="$(git -C "$win" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 
   if [[ -z "$have" ]]; then
-    printf "%s  ✗ [out of date]  cannot read HEAD in %s%s\n" "$SG" "$win" "$SG_OFF"
+    printf "%s  $MARK_BAD [out of date]  cannot read HEAD in %s%s\n" "$SG" "$win" "$SG_OFF"
     _drift_windows
     return 0
   fi
 
   if [[ -z "$want" ]]; then
-    printf "%s  · [unknown]      no origin/main here to compare against%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_NA [unknown]      no origin/main here to compare against%s\n" "$SG" "$SG_OFF"
     return 0
   fi
 
   if [[ "$have" == "$want" ]]; then
-    printf "%s  ✓ [up to date]   %s @ %s%s\n" "$SG" "${branch:-detached}" "${have:0:7}" "$SG_OFF"
+    printf "%s  $MARK_OK [up to date]   %s @ %s%s\n" "$SG" "${branch:-detached}" "${have:0:7}" "$SG_OFF"
     return 0
   fi
 
-  printf "%s  ✗ [out of date]  %s @ %s — origin/main is %s%s\n" \
+  printf "%s  $MARK_BAD [out of date]  %s @ %s — origin/main is %s%s\n" \
     "$SG" "${branch:-detached}" "${have:0:7}" "${want:0:7}" "$SG_OFF"
   _drift_windows
 }
@@ -326,9 +338,9 @@ status_fonts() {
     ttfs=$(find -L "$dir" -maxdepth 1 -name '*.ttf' 2>/dev/null | wc -l | tr -d ' ')
   fi
   if [[ "$ttfs" -gt 0 ]]; then
-    printf "%s  ✓ %-38s %s font file(s)%s\n" "$SG" "$shown" "$ttfs" "$SG_OFF"
+    printf "%s  $MARK_OK %-38s %s font file(s)%s\n" "$SG" "$shown" "$ttfs" "$SG_OFF"
   else
-    printf "%s  ✗ %-38s no font files — run 'make link'%s\n" "$SG" "$shown" "$SG_OFF"
+    printf "%s  $MARK_BAD %-38s no font files — run 'make link'%s\n" "$SG" "$shown" "$SG_OFF"
     _drift_font
   fi
 
@@ -339,7 +351,7 @@ status_fonts() {
   if command -v font >/dev/null 2>&1; then
     font show || _drift_font
   else
-    printf "%s  · lanes not shown — the 'font' picker is not installed%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_NA lanes not shown — the 'font' picker is not installed%s\n" "$SG" "$SG_OFF"
     echo "      It lives in [tui]. Add tui to ~/.config/dotfiles/sections, or"
     echo "      run 'make install tui'."
   fi
@@ -361,12 +373,12 @@ status_fonts_resolution() {
   # Under WSL there is no wezterm in the guest ON PURPOSE -- wezterm.exe runs on
   # the host and draws the pixels, so the guest has no binary to ask. Not drift.
   if is_wsl; then
-    printf "%s  · resolution not checked — wezterm.exe is on the Windows host%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_NA resolution not checked — wezterm.exe is on the Windows host%s\n" "$SG" "$SG_OFF"
     return 0
   fi
 
   if ! command -v wezterm >/dev/null 2>&1; then
-    printf "%s  · resolution not checked — wezterm is not installed here%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_NA resolution not checked — wezterm is not installed here%s\n" "$SG" "$SG_OFF"
     return 0
   fi
 
@@ -377,12 +389,12 @@ status_fonts_resolution() {
   # this exit non-zero and report "said nothing" on every machine.
   out="$(wezterm ls-fonts 2>/dev/null)"
   if [[ -z "$out" ]]; then
-    printf "%s  · resolution not checked — 'wezterm ls-fonts' said nothing%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_NA resolution not checked — 'wezterm ls-fonts' said nothing%s\n" "$SG" "$SG_OFF"
     return 0
   fi
 
   if [[ "$out" != *"Science Gothic Mono"* ]]; then
-    printf "%s  ✗ font_rules never mention Science Gothic Mono%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_BAD font_rules never mention Science Gothic Mono%s\n" "$SG" "$SG_OFF"
     echo "      wezterm is reading a config that is not this repo's. Check that"
     echo "      ~/.config/wezterm/wezterm.lua links here, then restart wezterm —"
     echo "      a running process does not pick up a pulled config."
@@ -391,9 +403,9 @@ status_fonts_resolution() {
   fi
 
   if [[ "$out" == *"$dir"* ]]; then
-    printf "%s  ✓ Science Gothic Mono resolves inside the linked font dir%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_OK Science Gothic Mono resolves inside the linked font dir%s\n" "$SG" "$SG_OFF"
   else
-    printf "%s  ✗ Science Gothic Mono resolves OUTSIDE the linked font dir%s\n" "$SG" "$SG_OFF"
+    printf "%s  $MARK_BAD Science Gothic Mono resolves OUTSIDE the linked font dir%s\n" "$SG" "$SG_OFF"
     echo "      A system-installed copy is shadowing the one in this repo. Two"
     echo "      files claiming the same family resolve by first match and the"
     echo "      loser is silent. Remove the other copy — these fonts are meant"
@@ -427,28 +439,28 @@ status_all() {
     printf "%s%s item(s) out of sync%s\n" "$SG" "$STATUS_DRIFT" "$SG_OFF"
     echo ""
     if [[ $STATUS_DRIFT_LINKS -gt 0 ]]; then
-      echo "  ✗ links ($STATUS_DRIFT_LINKS) — run 'make link' to repoint them"
+      echo "  $MARK_BAD links ($STATUS_DRIFT_LINKS) — run 'make link' to repoint them"
     fi
     if [[ $STATUS_DRIFT_STALE -gt 0 ]]; then
-      echo "  ✗ pins ($STATUS_DRIFT_STALE) — mise.toml pins a version this machine never installed."
+      echo "  $MARK_BAD pins ($STATUS_DRIFT_STALE) — mise.toml pins a version this machine never installed."
       echo "             Run 'mise install'. 'make install' will NOT fix it: the old"
       echo "             shim is still on PATH, so mise_install short-circuits."
     fi
     if [[ $STATUS_DRIFT_WINDOWS -gt 0 ]]; then
-      echo "  ✗ windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is behind origin/main."
+      echo "  $MARK_BAD windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is behind origin/main."
       echo "             Fix it from here:"
       echo "               make windows"
       echo "             That pulls the host clone and re-runs its installer, which is"
       echo "             not optional when an update added a link or a font."
     fi
     if [[ $STATUS_DRIFT_FONTS -gt 0 ]]; then
-      echo "  ✗ fonts ($STATUS_DRIFT_FONTS) — the font lanes cannot work as configured."
+      echo "  $MARK_BAD fonts ($STATUS_DRIFT_FONTS) — the font lanes cannot work as configured."
       echo "             Only the provable half is counted here: files present, and"
       echo "             what wezterm resolved. Whether the binary APPLIES the rule"
       echo "             is the carrier line above — that one is for your eyes."
     fi
     if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
-      echo "  ✗ tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."
+      echo "  $MARK_BAD tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."
       echo "             Either fix deps.conf to match reality, or uninstall and"
       echo "             re-run 'make install' to get the declared one."
     fi

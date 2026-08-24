@@ -190,6 +190,82 @@ you write code here. Reasoning, revisit conditions and current status:
   Italic looks like the obvious carrier and is wrong: rose-pine italicises nvim's
   comments, so the whole editor would silently change font.
 
+  **`lib/tty.sh` is the sibling file, and the split between them is the guard,
+  not the feature.** It holds the escapes whose only precondition is a terminal
+  — the green/red/yellow marks in `make status`, and the decrypt animation on
+  `make help`'s banner. Green means green and `\r` means `\r` on every terminal,
+  so one condition is the honest requirement; SGR 6 means *rapid blink* off this
+  setup, so it needs all three. Folding the two together would have put two
+  different guarantees behind one set of variables whose header promises "empty
+  unless all three hold", and a caller could no longer tell which it was getting.
+
+  The cost is real and worth naming: the CI row that used to assert **no escape
+  at all** reaches a non-wezterm tty can no longer say that, because the banner
+  legitimately animates there. It now asserts the absence of both *carriers*
+  (SGR 6 and SGR 5) instead, plus the presence of the cursor-hide escape — that
+  last one in the other direction, so `lib/tty.sh` cannot quietly acquire
+  `lib/sgr.sh`'s three conditions and go plain everywhere without failing.
+  Probing that with `\r` would have passed vacuously: `script(1)` writes CRLF,
+  so a carriage return is in the capture whether anything animated or not.
+
+  **`tty_banner` runs two effects on ONE frame clock**: the banner decrypts
+  while every menu row types out. Sharing the clock is why they compose — run
+  in sequence they would be two delays stacked and `make help` would cost the
+  sum; together the whole thing is one ~400ms budget. The budget is a TOTAL,
+  not a per-character delay, because the obvious 50ms-a-character spelling gets
+  slower every time a target is added, silently.
+
+  **The rows type in PARALLEL, not one after another.** Sequentially, 22 rows
+  at any readable speed is several seconds. In parallel the menu costs the same
+  as its longest row — and because typing runs left to right and `make <target>`
+  is the left column, the useful half is legible at ~25% of the budget, with the
+  descriptions you already know arriving last.
+
+  There was an intermediate design where only the banner animated and the menu
+  printed instantly, and the reason it lost is worth keeping: it was chosen
+  because a *sequential* typewriter leaves the menu unreadable for its whole
+  duration, which is a real cost on the command you run when you are lost. The
+  parallel version does not have that property, which is what made the trade
+  affordable. If this ever feels like a tax again, that intermediate shape is
+  the fallback, not "make it faster".
+
+  That buys two more preconditions, both decided *before* anything is printed,
+  because once a half-drawn menu is on screen there is no safe way back — the
+  same cursor movement would be needed to undo it. The output must fit the
+  screen, and no line may wrap: a wrapped line occupies two screen rows, so the
+  up-count undercounts and the cursor scribbles into the middle of the menu.
+  Measuring the width means stripping the escapes first, since the SG codes are
+  zero-width on screen but are characters in the string.
+
+  Scrolling is *not* one of the failure modes, which is the case that looks
+  fatal and isn't: relative cursor movement survives a scroll, because the
+  banner and the cursor move up together. Running `make help` at the bottom of
+  a full screen is fine.
+
+  **CI compares the animation's FINAL FRAME against the plain render**, and
+  that is the assertion worth keeping rather than the byte-order one it
+  replaced. The animation may hide characters that are about to arrive; it may
+  never drop one. A bug in the escape-aware prefix walk would truncate a row and
+  the final frame would still look entirely plausible — only the comparison
+  catches it. (A row cannot be cut with `${row:0:k}`: the SG codes are
+  zero-width on screen but real characters in the string, so slicing by
+  character both miscounts and can sever an escape, leaving the terminal in
+  whatever state the fragment implied. Each row is walked once and snapshotted
+  at the frame points instead.)
+
+  Both CI rows drive `script(1)` with an explicit `stty rows 50 cols 200`. A
+  runner's pty is unsized until something sets it — `stty size` reports `0 0` —
+  so without it the animation would correctly decline and the row asserting it
+  happens would fail for a reason unrelated to the guard being tested.
+
+  **The screen size comes from `stty size < /dev/tty`, never `tput`.** `tput
+  lines` needs a valid `$TERM` and exits 2 with *"No value for $TERM and no -T
+  specified"* without one — and CI sets no TERM, so the tput version declined on
+  every runner and failed the row asserting the animation happens. `stty` reads
+  the ioctl and never consults terminfo, so it answers in strictly more places.
+  It has to read `/dev/tty` rather than fd 1: inside `$( )` fd 1 is the capture
+  pipe, so `stty size <&1` reports *"Inappropriate ioctl for device"*.
+
   The font is **generated, not downloaded** — `wezterm/mkmono.py` (PEP 723, run by `make
   mono-font`, same arrangement as `mise.toml`) derives a monospaced cut from upstream's
   variable Science Gothic, and the two `.ttf` files it writes are committed under
