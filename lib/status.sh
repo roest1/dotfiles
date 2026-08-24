@@ -48,11 +48,13 @@ STATUS_DRIFT=0
 STATUS_DRIFT_LINKS=0
 STATUS_DRIFT_TOOLS=0
 STATUS_DRIFT_STALE=0
+STATUS_DRIFT_FONTS=0
 
 _drift_link()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
 _drift_tool()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
 _drift_stale() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_STALE=$((STATUS_DRIFT_STALE + 1)); }
 _drift_windows() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WINDOWS=$((STATUS_DRIFT_WINDOWS + 1)); }
+_drift_font()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_FONTS=$((STATUS_DRIFT_FONTS + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
@@ -278,19 +280,144 @@ status_windows() {
   _drift_windows
 }
 
+# ── Font lanes ───────────────────────────────────────────────────────────────
+#
+# The [wezterm] question the manifest cannot answer: the links can all be right
+# and the lanes still render in the base font.
+#
+# This used to be a version floor -- wezterm/MIN_VERSION, a build stamp compared
+# on every install. It inferred a render-time behavior from a number, which is
+# not inferable, and it could not fail safe: every build at or above the floor
+# passed untested, so the silent failure it existed to catch survived inside its
+# own green tick.
+#
+# What is here instead splits the question at the line of what is knowable:
+#
+#   provable    the font files exist where font_dirs points, and what wezterm
+#               actually resolved the family to. These count as drift.
+#   not         whether the binary APPLIES font_rules on the blink attribute at
+#               draw time. Nothing can read that but an eye, so `font show`
+#               prints the carrier and this counts nothing for it.
+#
+# Belongs to [wezterm] rather than [tui] because the subject is wezterm's font
+# lanes; `font` is only the implementation that answers, the same way bash calls
+# into the picker rather than carrying a second copy of "measure a font".
+status_fonts() {
+  # Scope exactly as status_links does, by asking the manifest rather than
+  # inventing a second rule: no arguments means every section, so this runs on a
+  # bare `make status` and is skipped by `make status bash`.
+  local section _rest in_scope=0
+  while IFS=$'\t' read -r section _rest; do
+    [[ "$section" == wezterm ]] && { in_scope=1; break; }
+  done < <(manifest_lines link "$@")
+  [[ $in_scope -eq 1 ]] || return 0
+
+  echo ""
+  printf "%s[wezterm] fonts%s\n" "$SG_B" "$SG_OFF"
+
+  local dir="${XDG_CONFIG_HOME:-$HOME/.config}/wezterm/fonts"
+  local shown="${dir/#$HOME/\~}"
+
+  # font_dirs reads this path, so an empty or absent directory is the whole
+  # mechanism gone -- and a link can point at a directory that has nothing in
+  # it, which status_links cannot see because the link itself is correct.
+  local ttfs=0
+  if [[ -d "$dir" ]]; then
+    ttfs=$(find -L "$dir" -maxdepth 1 -name '*.ttf' 2>/dev/null | wc -l | tr -d ' ')
+  fi
+  if [[ "$ttfs" -gt 0 ]]; then
+    printf "%s  ✓ %-38s %s font file(s)%s\n" "$SG" "$shown" "$ttfs" "$SG_OFF"
+  else
+    printf "%s  ✗ %-38s no font files — run 'make link'%s\n" "$SG" "$shown" "$SG_OFF"
+    _drift_font
+  fi
+
+  status_fonts_resolution "$dir"
+
+  # `font` belongs to [tui], which is a section a machine may legitimately not
+  # have selected. Absent is reported, never counted: an opt-out is not drift.
+  if command -v font >/dev/null 2>&1; then
+    font show || _drift_font
+  else
+    printf "%s  · lanes not shown — the 'font' picker is not installed%s\n" "$SG" "$SG_OFF"
+    echo "      It lives in [tui]. Add tui to ~/.config/dotfiles/sections, or"
+    echo "      run 'make install tui'."
+  fi
+}
+
+# What wezterm RESOLVED the carrier family to, which is the one failure a
+# correct config still produces: two files claiming 'Science Gothic Mono'
+# resolve by first match, and the loser is silently the wrong glyphs. That cost
+# an afternoon once, and no amount of reading wezterm.lua would have shown it.
+#
+# Deliberately tolerant of ls-fonts' output FORMAT. It asks one question -- did
+# the family resolve to a file under the linked directory -- by looking for that
+# path anywhere in the output, rather than parsing columns that upstream is free
+# to rearrange. A brittle parser here would fail closed on a machine that is
+# fine, which is the failure mode this whole block exists to stop repeating.
+status_fonts_resolution() {
+  local dir="$1"
+
+  # Under WSL there is no wezterm in the guest ON PURPOSE -- wezterm.exe runs on
+  # the host and draws the pixels, so the guest has no binary to ask. Not drift.
+  if is_wsl; then
+    printf "%s  · resolution not checked — wezterm.exe is on the Windows host%s\n" "$SG" "$SG_OFF"
+    return 0
+  fi
+
+  if ! command -v wezterm >/dev/null 2>&1; then
+    printf "%s  · resolution not checked — wezterm is not installed here%s\n" "$SG" "$SG_OFF"
+    return 0
+  fi
+
+  local out
+  # Bare `ls-fonts`, which is what prints the rule list with each resolved file
+  # path in a comment. There is no --rules flag -- the flags are --list-system,
+  # --text, --codepoints and --rasterize-ascii -- and asking for one would make
+  # this exit non-zero and report "said nothing" on every machine.
+  out="$(wezterm ls-fonts 2>/dev/null)"
+  if [[ -z "$out" ]]; then
+    printf "%s  · resolution not checked — 'wezterm ls-fonts' said nothing%s\n" "$SG" "$SG_OFF"
+    return 0
+  fi
+
+  if [[ "$out" != *"Science Gothic Mono"* ]]; then
+    printf "%s  ✗ font_rules never mention Science Gothic Mono%s\n" "$SG" "$SG_OFF"
+    echo "      wezterm is reading a config that is not this repo's. Check that"
+    echo "      ~/.config/wezterm/wezterm.lua links here, then restart wezterm —"
+    echo "      a running process does not pick up a pulled config."
+    _drift_font
+    return 0
+  fi
+
+  if [[ "$out" == *"$dir"* ]]; then
+    printf "%s  ✓ Science Gothic Mono resolves inside the linked font dir%s\n" "$SG" "$SG_OFF"
+  else
+    printf "%s  ✗ Science Gothic Mono resolves OUTSIDE the linked font dir%s\n" "$SG" "$SG_OFF"
+    echo "      A system-installed copy is shadowing the one in this repo. Two"
+    echo "      files claiming the same family resolve by first match and the"
+    echo "      loser is silent. Remove the other copy — these fonts are meant"
+    echo "      to be read via font_dirs, never installed into the font path."
+    _drift_font
+  fi
+}
+
 status_all() {
   STATUS_DRIFT=0
   STATUS_DRIFT_LINKS=0
   STATUS_DRIFT_TOOLS=0
   STATUS_DRIFT_STALE=0
   STATUS_DRIFT_WINDOWS=0
+  STATUS_DRIFT_FONTS=0
   echo ""
   printf "%ssync status — deps.conf vs. this machine%s\n" "$SG_B" "$SG_OFF"
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
   status_links "$@"
   status_tools "$@"
+  status_fonts "$@"
   status_windows
-  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE + STATUS_DRIFT_WINDOWS ))
+  STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE \
+                   + STATUS_DRIFT_WINDOWS + STATUS_DRIFT_FONTS ))
 
   echo ""
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -313,6 +440,12 @@ status_all() {
       echo "               make windows"
       echo "             That pulls the host clone and re-runs its installer, which is"
       echo "             not optional when an update added a link or a font."
+    fi
+    if [[ $STATUS_DRIFT_FONTS -gt 0 ]]; then
+      echo "  ✗ fonts ($STATUS_DRIFT_FONTS) — the font lanes cannot work as configured."
+      echo "             Only the provable half is counted here: files present, and"
+      echo "             what wezterm resolved. Whether the binary APPLIES the rule"
+      echo "             is the carrier line above — that one is for your eyes."
     fi
     if [[ $STATUS_DRIFT_TOOLS -gt 0 ]]; then
       echo "  ✗ tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."

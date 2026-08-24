@@ -761,10 +761,15 @@ reload() {
 #   font            the lane picker, replacing an fzf picker that re-spawned a
 #                   previewer on every cursor move — ~300ms a keystroke, most of
 #                   it uv startup and re-parsing fonts that had not changed.
-#   font browse     Google's monospace families, replacing the bash+fzf browser.
-#                   It prefetches the rows AROUND the cursor, so the one you are
+#                   Browsing Google's monospace families is INSIDE it, as the
+#                   last row under an opened lane rather than a subcommand. It
+#                   prefetches the rows AROUND the cursor, so the one you are
 #                   about to reach has already arrived; a shell function
 #                   re-execing curl per preview could not do that.
+#   font show       what is set, and whether wezterm is honoring it. The picker
+#                   rasterizes its own previews, so it looks right whether or
+#                   not the lanes are live; `show` prints real SGR 6 and SGR 5
+#                   text instead, which is a picture of what wezterm DID.
 #
 # A bash function would SHADOW that binary — functions win over PATH — which is
 # why nothing here is called `font`, and why CI checks for it.
@@ -889,7 +894,7 @@ h() {
   Terminal                                                    [wezterm]
     font               Pick the font for each of wezterm's lanes   [tui]
                        shell · nvim.ui · nvim.editor · claude
-                       (font show / font reset)
+                       (font show — also checks the lanes are live)
 
   Dotfiles
     dotfiles           Open dotfiles dir in nvim
@@ -1342,8 +1347,14 @@ HELP
 font — pick the font for each of wezterm's lanes
 
   font              Open the picker
-  font show         What is set now
+  font show         What is set, and whether wezterm is honoring it
   font reset        Back to the defaults wezterm.lua ships
+
+  `font show` ends with the CARRIER — real SGR 6 and SGR 5 text next to
+  plain. Three different faces means the lanes are live; one face means
+  wezterm is not matching font_rules on the blink attribute and every
+  lane is silently rendering in the base font. `make status wezterm`
+  runs the same thing alongside the checks a program can make.
 
   That is the whole command surface. Everything else is inside the TUI,
   which states its own keys in the footer — including browsing Google's

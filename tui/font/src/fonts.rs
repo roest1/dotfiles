@@ -320,7 +320,8 @@ pub fn measure(path: &str) -> Option<(Vec<u8>, Metrics)> {
 }
 
 /// Style names read from the FILES themselves, for fonts fontconfig has never
-/// seen — anything `fontbrowse` has downloaded but not installed.
+/// seen — anything the browse screen has fetched into `fetch`'s cache but that
+/// has not been installed.
 ///
 /// A variable font's cuts are its named instances, not a name field: nameID 17
 /// on VictorMono[wght] is "Thin", the DEFAULT instance, so reading it reports

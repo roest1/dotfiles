@@ -91,8 +91,31 @@ $Links = @(
 # is a statement rather than an element: PowerShell would write it to the output
 # stream, print it to the console, and install nothing - which reads as "I
 # enabled gsudo and it silently didn't work".
+#
+# wez.wezterm.nightly, NOT wez.wezterm, and the .nightly is not a channel
+# preference -- it is the only package that can run this repo's config.
+#
+# wez.wezterm tops out at 20240203, the last tagged release, from February
+# 2024. Upstream never stopped developing; it stopped TAGGING. main is 900+
+# commits and 30+ contributors past that tag and gets pushed daily, and every
+# one of those fixes ships only through the nightly. There is no maintained
+# stable branch to prefer, so installing wez.wezterm here would pin the host
+# to a binary that predates font_rules matching the blink attribute -- which
+# is to say the SGR 6 and SGR 5 lanes render in the base font, silently.
+#
+# Note that this is an ID, not a --version. The nightlies are a separate
+# winget package; `--id wez.wezterm --version nightly` simply fails. Both are
+# built by the same ci/deploy.sh on the same GitHub-hosted runners and publish
+# a .sha256 next to the installer, so the provenance is identical -- what
+# differs is the trigger.
+#
+# You cannot pin a historical nightly. Upstream uploads with `gh release
+# upload --clobber nightly`, so the asset URL is rolling; winget's archived
+# dated manifests pin a SHA256 against that same rolling URL and stop
+# resolving the moment a newer build lands. Keep the setup .exe you installed
+# from if you want a rollback -- that is the only one there is.
 $WingetTools = @(
-    @{ Command = 'wezterm'; Package = 'wez.wezterm' }
+    @{ Command = 'wezterm'; Package = 'wez.wezterm.nightly' }
     # @{ Command = 'gsudo';   Package = 'gerardog.gsudo' }
 )
 
