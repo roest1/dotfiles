@@ -50,26 +50,57 @@ jobs:
       # check rather than a code review note is that the bug is invisible until
       # a path happens to collide, which can be years later and in a commit that
       # touched neither the target nor the Makefile.
-      # ONE floor, read by both platforms. The value lives in a file rather than
-      # in each installer because a number duplicated across a .sh and a .ps1 is
-      # the same drift that has bitten this repo four times now -- tab_bar,
-      # shared.lua, JetBrainsMono, Science Gothic. A file cannot disagree with
-      # itself; this only has to check that nobody has inlined it since.
-      - name: The wezterm version floor has one source
+      # The version floor is RETIRED, and this is what keeps it retired.
+      #
+      # wezterm/MIN_VERSION inferred whether a binary applies font_rules on the
+      # blink attribute from its build stamp. That is not inferable, and the
+      # check could not fail safe: every build at or above the floor passed
+      # untested, so the silent failure it existed to catch survived inside its
+      # own green tick. It is easy to miss that and "restore" it.
+      #
+      # What replaced it splits the question at the line of what is provable:
+      # status_fonts answers files/link/ls-fonts resolution, and `font` shows a
+      # carrier line for the half only an eye can read.
+      - name: The font lane check asks what it can prove
         run: |
           set -uo pipefail
           bad=0
-          [ -s wezterm/MIN_VERSION ] || { echo "wezterm/MIN_VERSION is missing or empty"; bad=1; }
-          floor=$(tr -d '[:space:]' < wezterm/MIN_VERSION 2>/dev/null || true)
-          case "$floor" in
-            20[0-9][0-9][0-9][0-9][0-9][0-9]) ;;
-            *) echo "wezterm/MIN_VERSION should be a YYYYMMDD build stamp, got '$floor'"; bad=1 ;;
-          esac
-          grep -q 'MIN_VERSION' wezterm/deps.sh \
-            || { echo "wezterm/deps.sh no longer reads MIN_VERSION"; bad=1; }
-          grep -q 'MIN_VERSION' windows/deps.ps1 \
-            || { echo "windows/deps.ps1 no longer reads MIN_VERSION"; bad=1; }
-          [ $bad -eq 0 ] && echo "ok: one floor ($floor), read by both platforms"
+          [ -e wezterm/MIN_VERSION ] \
+            && { echo "wezterm/MIN_VERSION is back -- a build stamp cannot answer this; see status_fonts"; bad=1; }
+          # Comment lines are stripped first, deliberately: both files EXPLAIN
+          # at length why the floor is gone, and naming the thing you removed is
+          # how the next person finds out not to re-add it. Only a real read of
+          # it is the regression.
+          for f in wezterm/deps.sh windows/deps.ps1; do
+            grep -v '^[[:space:]]*#' "$f" | grep -q 'MIN_VERSION' \
+              && { echo "$f reads MIN_VERSION again"; bad=1; }
+          done
+          grep -q '^status_fonts()' lib/status.sh \
+            || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
+          grep -q 'status_fonts "\$@"' lib/status.sh \
+            || { echo "status_all no longer calls status_fonts with its scope"; bad=1; }
+          # The carrier is informational: it is unreadable over ssh, in a pipe,
+          # and on any non-wezterm terminal, so counting it would report drift
+          # on machines that are fine. Only the provable half may call _drift_.
+          grep -q '_drift_font' lib/status.sh \
+            || { echo "status_fonts records no drift at all -- the provable half should"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: no floor, and status_fonts asks only answerable questions"
+          exit $bad
+
+      # The host installs the NIGHTLY package, and that is load-bearing rather
+      # than a channel preference: wez.wezterm tops out at the Feb 2024 tag,
+      # which predates font_rules matching blink, so it renders the SGR 6 and
+      # SGR 5 lanes in the base font with no warning. An id, not a --version --
+      # the nightlies are a separate winget package.
+      - name: The Windows host installs a wezterm that can run this config
+        run: |
+          set -uo pipefail
+          bad=0
+          grep -q "Package = 'wez.wezterm.nightly'" windows/install.ps1 \
+            || { echo "windows/install.ps1 no longer installs wez.wezterm.nightly"; bad=1; }
+          grep -qE "Package = 'wez\.wezterm'" windows/install.ps1 \
+            && { echo "windows/install.ps1 installs the 2024 stable -- the font lanes fail silently on it"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: host gets the nightly"
           exit $bad
 
       - name: Every Makefile target is .PHONY
@@ -835,6 +866,59 @@ jobs:
       # installs BY NAME, so declaring `tool cargo font` would fetch a
       # stranger's crate and report success — the manifest has to say `manual`
       # and let tui/deps.sh install from the local path.
+      # The carrier is the whole point of `font show`, and it is guarded by the
+      # same three conditions as lib/sgr.sh -- for the same three DIFFERENT
+      # reasons. Asserted here because none of them is visible to whoever edits
+      # show.rs: they are always in WezTerm, always on a tty, always linked.
+      #
+      # Outside those conditions SGR 6 and SGR 5 mean what they actually say --
+      # rapid and slow blink -- so the failure is a strobing terminal over ssh,
+      # or escapes in a pipe that `make status | tee` then greps.
+      - name: font show carries escapes only on a linked wezterm tty
+        run: |
+          fail=0
+          esc=$'\033['
+          carrier=$'\033[6'   # SGR 6, the `make` output lane
+          slow=$'\033[5m'     # SGR 5, the nvim editor lane
+          F=tui/target/release/font
+
+          # A pipe is the case CI itself creates.
+          if "$F" show | grep -qF "$esc"; then
+            echo "font show leaked escapes into a pipe"; fail=1
+          fi
+
+          if ! command -v script >/dev/null 2>&1; then
+            echo "no script(1) here; the tty rows were skipped"; exit $fail
+          fi
+
+          # Same fixture-home approach as the `make help` truth table above:
+          # each row states its own preconditions, so none of this depends on
+          # whether an earlier step in this job happened to run `make link`.
+          unlinked=$(mktemp -d)
+          linked=$(mktemp -d)
+          HOME="$linked" make link wezterm >/dev/null
+
+          on_tty() {
+            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+              script -qec "$PWD/$F show" /dev/null | grep -qF "$3"
+          }
+
+          if on_tty "$unlinked" WezTerm "$esc"; then
+            echo "escapes on a wezterm tty before the config was linked"; fail=1
+          fi
+          if on_tty "$linked" xterm "$esc"; then
+            echo "escapes on a non-wezterm tty -- SGR 6 there is rapid blink"; fail=1
+          fi
+          # Both lanes, by their specific attribute. Grepping for any escape
+          # would keep passing if the carrier were swapped for a colour.
+          if ! on_tty "$linked" WezTerm "$carrier"; then
+            echo "SGR 6 missing on a linked wezterm tty"; fail=1
+          fi
+          if ! on_tty "$linked" WezTerm "$slow"; then
+            echo "SGR 5 missing on a linked wezterm tty"; fail=1
+          fi
+          exit $fail
+
       - name: The tui section installs from a path, not from crates.io
         run: |
           source lib/manifest.sh

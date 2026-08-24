@@ -180,34 +180,94 @@ which reads no manifest at all. There is no `[windows]` section and no
 `platform` line type; CI rejects both. The reasoning for that reversal is in
 `install.ps1`'s own header and in the note under `[wezterm]` in `deps.conf`.
 
-## The font lanes need a nightly wezterm
+## The host runs the nightly wezterm, deliberately
+
+`$WingetTools` installs **`wez.wezterm.nightly`**, not `wez.wezterm`, and that
+is a requirement rather than a taste for the bleeding edge.
 
 `make` output in Science Gothic Mono (SGR 6) and the nvim editor lane (SGR 5)
-both depend on wezterm matching `font_rules` on the **blink** attribute. The last
-stable release — `20240203`, February 2024, and still the newest thing
-`wez.wezterm` offers — does not do it. It parses the attribute and will happily
-*animate* it, but never applies the rule, so the text renders in the base font
-and **nothing warns you**.
+both depend on wezterm matching `font_rules` on the **blink** attribute. The
+last tagged release — `20240203`, February 2024 — does not. It parses the
+attribute and will happily *animate* it, but never applies the rule, so the text
+renders in the base font and **nothing warns you**.
 
-`wezterm/MIN_VERSION` records the floor, and `deps.ps1` checks it on every run.
+That tag is also the newest thing `wez.wezterm` offers, which reads like a
+project that stopped. It isn't. Upstream stopped **tagging**, not developing:
+`main` is 900+ commits and 30+ contributors past that tag and gets pushed daily,
+and every one of those fixes ships only through the nightly. There is no
+maintained stable branch to prefer, so installing `wez.wezterm` would pin this
+machine to a two-and-a-half-year-old terminal — a program whose whole job is
+parsing untrusted escape sequences — with nobody backporting to it.
 
 ```powershell
 winget install --exact --id wez.wezterm.nightly
 ```
 
-Note the **id**, not a `--version`: the nightlies are a separate winget package.
-If winget objects to the existing install, `winget uninstall --exact --id
-wez.wezterm` first.
+Note the **id**, not a `--version`: the nightlies are a separate winget package,
+so `--id wez.wezterm --version nightly` simply fails. If the 2024 stable is
+already installed, remove it first rather than installing alongside — two
+`wezterm.exe` on one box means `PATH` order decides which one runs, and the
+dormant copy is the older one:
 
-**You cannot pin a specific historical nightly**, on either platform, and it is
-worth knowing why rather than trying. Upstream publishes nightlies to a single
-rolling tag whose assets are replaced in place. winget archives dated nightly
-manifests, which *looks* like it solves this — but each one pins a SHA256
-against that same rolling URL, so an older manifest stops installing the moment
-a newer nightly lands.
+```powershell
+winget uninstall --exact --id wez.wezterm
+```
 
-What you can do is put both machines on the current nightly at the same time,
-and let the floor catch drift after that.
+### What you are trusting
+
+Both packages are built by the same `ci/deploy.sh` on the same GitHub-hosted
+runners from the same repo; the nightly and tag workflows differ in **trigger**,
+not in build. The upload job runs `sha256sum` over each artifact and publishes
+`WezTerm-nightly-setup.exe.sha256` next to the installer, and winget's manifest
+pins that hash — so the download is checksum-verified end to end, and you can
+check it yourself against the published file. The job is gated on
+`github.repository == 'wezterm/wezterm'`, so a fork cannot publish to it.
+
+Neither build is code-signed, so SmartScreen warns on first run. That was
+equally true of the 2024 stable; it is not something the nightly gives up.
+
+The real cost of a nightly is **regression, not compromise** — `main` can be
+broken on any given day. Which matters more than usual here because:
+
+**You cannot pin a specific historical nightly.** Upstream uploads with
+`gh release upload --clobber nightly`, so the asset URL is rolling. winget
+archives dated nightly manifests, which *looks* like it solves this — but each
+one pins a SHA256 against that same rolling URL, so an older manifest stops
+resolving the moment a newer build lands. The archive is a record, not a way
+back.
+
+So keep the `WezTerm-nightly-setup.exe` you installed from, somewhere outside
+the repo. That is the only rollback there is.
+
+### Checking that the lanes actually work
+
+There is no version floor any more, and reintroducing one is the wrong move. A
+build stamp cannot answer whether a binary applies `font_rules` at draw time,
+and a floor cannot fail safe — every build at or above it passes untested, so
+the silent failure the check exists to catch survives inside its own green tick.
+
+The question splits instead along what is knowable:
+
+- `make status wezterm`, from the WSL guest, checks what a program can prove:
+  the font files are where `font_dirs` points, and — on a Linux host, where
+  there is a binary to ask — what `wezterm ls-fonts` actually resolved
+  the family to. That last one catches a system-installed copy shadowing the
+  repo's.
+- `font show` ends with the **carrier**: real SGR 6 and SGR 5 text next to
+  plain. Three different faces means the lanes are live. One face means they
+  are not, whatever the version says.
+
+The carrier is the only check that crosses the guest boundary — the escape is
+written in WSL and drawn by `wezterm.exe` on the host — so on this machine it is
+the one that tests what you actually see.
+
+After installing, quit **every** wezterm window before judging any of it. A
+running process does not pick up a new font list or a pulled config, and a tab
+switch is not a reload:
+
+```powershell
+Get-Process wezterm* | Stop-Process -Force
+```
 
 ## Troubleshooting
 

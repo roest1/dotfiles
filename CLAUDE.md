@@ -55,8 +55,19 @@ quietly done the opposite of what it was told.
 see `make help`
 
 `make check` asks "does this command exist." `make status` asks "is this machine
-what the manifest says" — link targets and per-tool provenance. Prefer `status`
-when the question is whether the repo is still telling the truth.
+what the manifest says" — link targets, per-tool provenance, and the font lanes.
+Prefer `status` when the question is whether the repo is still telling the truth.
+
+The font block is the one part that admits a limit rather than answering. It
+reports what a program can prove — the files are where `font_dirs` points, and
+what `wezterm ls-fonts` actually resolved the family to — and then runs
+`font show`, whose carrier prints real SGR 6 and SGR 5 text for the half only an
+eye can read. **Only the provable half counts as drift**, because the carrier is
+unreadable over ssh, in a pipe and on any other terminal, and counting it would
+report red on machines that are fine. This replaced a `wezterm/MIN_VERSION`
+floor that inferred render-time behavior from a build stamp; don't restore it,
+for the reason in `wezterm/deps.sh` — a floor cannot fail safe, so every build
+above it passed untested and the silent failure survived inside a green tick.
 
 It does not report "installed but not declared". That list can't be computed
 correctly — nothing distinguishes a dotfiles dependency from a project-scoped

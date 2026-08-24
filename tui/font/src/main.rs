@@ -14,6 +14,7 @@ mod fetch;
 mod fonts;
 mod lanes;
 mod render;
+mod show;
 mod theme;
 
 use std::collections::HashMap;
@@ -607,10 +608,10 @@ fn main() -> std::io::Result<()> {
 
     match std::env::args().nth(1).as_deref() {
         Some("show") => {
-            for (lane, value) in lanes::read() {
-                println!("  {lane:<12}{value:<28} {}", lanes::covers(&lane));
-            }
-            println!("\n  state: {}", lanes::state_path().display());
+            // Exits non-zero when a lane names a family this machine does not
+            // have. status_fonts (lib/status.sh) counts drift on that and on
+            // nothing else here -- see the note on the exit code in show.rs.
+            std::process::exit(show::run());
         }
         Some("reset") => {
             let _ = std::fs::remove_file(lanes::state_path());
@@ -620,7 +621,7 @@ fn main() -> std::io::Result<()> {
         // one it replaces. Not in --help: it is a test hook, not a feature.
         Some("-h") | Some("--help") => {
             println!("font           pick the font for each of wezterm's lanes");
-            println!("font show      what is set now");
+            println!("font show      what is set now, and whether wezterm honors it");
             println!("font reset     back to the defaults wezterm.lua ships");
             println!();
             println!("Browsing Google's fonts is inside the picker: open a lane,");

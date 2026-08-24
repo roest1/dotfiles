@@ -32,8 +32,9 @@ pins that.
   screen provides), `app` (the loop), `image` (inline images).
 - `font/` — two screens. `fonts` (discovery + measurement), `render`
   (rasterising, the contact sheet, glyph-distinctness), `lanes` (the
-  machine-local `fonts.conf`), `fetch` (the prefetching cache behind
-  `font browse`), `browse` (the Google-fonts screen), `main` (the picker).
+  machine-local `fonts.conf`), `fetch` (the prefetching cache behind the browse
+  screen), `browse` (the Google-fonts screen), `show` (`font show` — the lane
+  report and the carrier), `main` (the picker).
 
 ## Things not to undo
 
@@ -83,10 +84,40 @@ pins that.
 - **You cannot rasterise a font you do not have.** "Preview without
   downloading" is not a thing; preview without INSTALLING is, and that is what
   the cache is for. Nothing reaches `~/.local/share/fonts` without Enter.
-- **`font inspect` is the one implementation of "measure a font".** `fontbrowse`
-  (bash) calls it rather than carrying its own. The Python previewer that used
-  to do this was deleted because the two had already drifted on which file
-  counted as Regular.
+- **There is ONE implementation of "measure a font", `fonts::measure`.** The
+  Python previewer that used to carry a second one was deleted because the two
+  had already drifted on which file counted as Regular. (This bullet used to
+  name a `font inspect` subcommand and a `fontbrowse` bash caller; neither
+  exists — the command surface is the three below, and browsing is a row inside
+  the picker. The principle outlived both spellings.)
+
+- **`font show`'s carrier is the only part of this crate that does not
+  rasterise.** Everything else here draws type by decoding the file with fontdue
+  and shipping a PNG, which is why the picker looked perfect on a machine where
+  the lanes were dead: a rasterised specimen is a picture of what this process
+  thinks the font is, not of what wezterm did with it. The carrier prints real
+  SGR 6 and SGR 5 text and lets the terminal answer. Do not "unify" it with the
+  rendering path — the whole value is that it goes through the code being tested.
+
+  It replaced a version floor (`wezterm/MIN_VERSION`) that inferred the same
+  answer from a build stamp. That could not fail safe: every build at or above
+  the floor passed untested. Don't bring it back — `status_fonts` in
+  `lib/status.sh` asks the provable half, and this asks your eyes.
+
+  Each sample resets with `\x1b[22;25m` immediately after itself, so a
+  truncated line cannot leave the terminal in SGR 6 and silently reskin
+  everything printed after it.
+
+- **`font show` exits non-zero ONLY for a lane naming a family this machine does
+  not have**, because that is the only thing here a program can judge.
+  `status_fonts` counts that as drift and counts nothing else, so `make status`
+  stays green over ssh, in a pipe and on a non-wezterm terminal — all places the
+  carrier is unreadable and the machine is fine.
+
+  Inside WSL it reports `host` rather than MISSING, and exits 0. The guest has
+  no fonts on purpose: wezterm.exe resolves families on the Windows side, so
+  presence is UNKNOWABLE from in here, not false. Reporting MISSING would have
+  made `make status` red on the platform this repo is most often driven from.
 
 ## The command surface is three commands
 
