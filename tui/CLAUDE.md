@@ -8,8 +8,20 @@ The Rust terminal UIs. One crate per screen, **one binary per command** —
 nothing else in common.
 
 They are *not* modes of one program. `font` opens the font picker; `github`
-will open github. That is the shape Riley asked for and it is also what keeps
-each binary's startup honest.
+will open the GitHub screens. That is the shape Riley asked for and it is also
+what keeps each binary's startup honest.
+
+**Each crate is a library plus a thin binary**, which is what lets that hold
+while `make it` still reaches everything. `reticle::app::run` and `Flow::Push`
+both take `Box<dyn Screen>` from anywhere, so a screen is reusable across
+binaries: `font` runs `FontScreen` as its root, and the console pushes the SAME
+type as a row in its tree. One implementation, two doors. The alternative was a
+second font screen living inside the console, which is how the two drift.
+
+The binaries stay honest because a binary links what it uses: `font` still
+starts in ~1ms and pulls in a picker, not a CI dashboard. It is the console
+that depends on everything, which is correct — it is the thing that shows
+everything.
 
 ## Why Rust here and not elsewhere
 
@@ -30,11 +42,13 @@ pins that.
 - `reticle/` — the framework. `term` (raw mode, alt screen, restore-on-panic),
   `nav` (the keymap), `reticle` (the animated brackets), `screen` (what a
   screen provides), `app` (the loop), `image` (inline images).
-- `font/` — two screens. `fonts` (discovery + measurement), `render`
-  (rasterising, the contact sheet, glyph-distinctness), `lanes` (the
-  machine-local `fonts.conf`), `fetch` (the prefetching cache behind the browse
-  screen), `browse` (the Google-fonts screen), `show` (`font show` — the lane
-  report and the carrier), `main` (the picker).
+- `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
+  and the crate-root re-exports), `picker` (the lane tree — the root screen),
+  `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
+  glyph-distinctness), `lanes` (the machine-local `fonts.conf`), `fetch` (the
+  prefetching cache behind the browse screen), `browse` (the Google-fonts
+  screen), `show` (`font show` — the lane report and the carrier), `main`
+  (argument handling and nothing else).
 
 ## Things not to undo
 
@@ -118,6 +132,18 @@ pins that.
   no fonts on purpose: wezterm.exe resolves families on the Windows side, so
   presence is UNKNOWABLE from in here, not false. Reporting MISSING would have
   made `make status` red on the platform this repo is most often driven from.
+
+- **A screen's type is public; everything else can stay crate-private.**
+  `lib.rs` re-exports `FontScreen`, `Preview` and `specimen` at the crate ROOT
+  rather than making callers reach into `picker::`, because that is where they
+  already lived when this was one file and `browse` addresses them as
+  `crate::specimen` / `crate::Preview`. Keeping the paths identical is what
+  made the lib/bin split a move rather than a rewrite.
+
+  Making `new()` public turned on `clippy::new_without_default`, which only
+  fires for public items — so the split surfaced two real omissions rather than
+  inventing them. They got `Default` impls, not `#[allow]`: a type whose `new()`
+  takes no arguments and cannot fail *is* `Default`, and saying so is the fix.
 
 ## The command surface is three commands
 

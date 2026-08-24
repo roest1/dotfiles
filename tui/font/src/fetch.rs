@@ -154,6 +154,12 @@ fn fetch_one(slug: &str) -> Result<Vec<PathBuf>, String> {
     Ok(out)
 }
 
+impl Default for Fetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Fetcher {
     /// Three workers: enough that a stalled request does not block the queue,
     /// few enough to stay polite to two public APIs.
