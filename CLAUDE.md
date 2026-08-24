@@ -217,6 +217,31 @@ you write code here. Reasoning, revisit conditions and current status:
   it. The budget is a TOTAL (~400ms), not a per-character delay, because the
   obvious 50ms-a-character spelling gets slower every time the string grows.
 
+  **`tty_banner` prints the whole menu FIRST and then walks the cursor back up
+  to the banner**, and that is the shape rather than a bare scramble because
+  the first version got this wrong. It animated and *then* printed, which made
+  `make help` — the command whose entire job is fast orientation — cost 400ms
+  before its first useful line. Every run felt like a load. A CI row asserts
+  the byte order now, so it cannot regress silently.
+
+  That buys two more preconditions, both decided *before* anything is printed,
+  because once a scrambled banner is on screen there is no safe way back — the
+  same cursor movement would be needed to undo it. The output must fit the
+  screen, and no line may wrap: a wrapped line occupies two screen rows, so the
+  up-count undercounts and the cursor scribbles into the middle of the menu.
+  Measuring the width means stripping the escapes first, since the SG codes are
+  zero-width on screen but are characters in the string.
+
+  Scrolling is *not* one of the failure modes, which is the case that looks
+  fatal and isn't: relative cursor movement survives a scroll, because the
+  banner and the cursor move up together. Running `make help` at the bottom of
+  a full screen is fine.
+
+  Both CI rows drive `script(1)` with an explicit `stty rows 50 cols 200`. A
+  runner's default pty is 80x24 — one row short of this menu — so without it
+  the animation would correctly decline and the row asserting it happens would
+  fail for a reason unrelated to the guard being tested.
+
   The font is **generated, not downloaded** — `wezterm/mkmono.py` (PEP 723, run by `make
   mono-font`, same arrangement as `mise.toml`) derives a monospaced cut from upstream's
   variable Science Gothic, and the two `.ttf` files it writes are committed under

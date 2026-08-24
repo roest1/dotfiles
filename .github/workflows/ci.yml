@@ -264,9 +264,17 @@ jobs:
           HOME="$linked" make link wezterm >/dev/null
 
           # $1 home, $2 TERM_PROGRAM, $3 pattern — true when $3 reaches the tty
+          #
+          # The pty is sized explicitly. tty_banner prints the whole menu and
+          # then walks the cursor back UP to the banner, which it will only do
+          # when the output fits the screen and no line wraps -- and a runner's
+          # default pty is 80x24, one row short of this menu. Without the stty
+          # the animation would correctly decline, and the row below asserting
+          # it happens would fail for a reason that has nothing to do with the
+          # guard it is testing.
           on_tty() {
             HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
-              script -qec "make help" /dev/null | grep -qF "$3"
+              script -qec "stty rows 50 cols 200; make help" /dev/null | grep -qF "$3"
           }
 
           # These two rows used to assert NO ESCAPE AT ALL, which was stronger and
@@ -293,11 +301,27 @@ jobs:
           # Probed by the cursor-hide escape rather than by \r, which would have
           # passed vacuously: script(1) writes CRLF line endings, so a carriage
           # return is in this output whether anything animated or not. \033[?25l
-          # is emitted by tty_scramble and by nothing else here.
+          # is emitted by tty_banner and by nothing else here.
           hide=$'\033[?25l'
           if ! on_tty "$linked" xterm "$hide"; then
             echo "the banner stopped animating on a non-wezterm tty -- lib/tty.sh"
             echo "has probably acquired lib/sgr.sh's three conditions by mistake"
+            fail=1
+          fi
+
+          # The menu must be on screen BEFORE the animation starts, which is the
+          # whole reason tty_banner exists rather than a bare scramble: animating
+          # first cost `make help` 400ms before its first useful line. Asserted
+          # by byte order -- the last line of the menu is written before the
+          # cursor ever moves up to the banner.
+          order=$(HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
+                    script -qec "stty rows 50 cols 200; make help" /dev/null \
+                  | tr -d '\r' | grep -n 'comment it out in deps.conf\|\[[0-9]*A' \
+                  | head -2 | cut -d: -f1 | tr '\n' ' ')
+          set -- $order
+          if [ -n "${2:-}" ] && [ "${1:-0}" -gt "${2:-0}" ]; then
+            echo "the banner animates BEFORE the menu is printed -- make help is"
+            echo "blocking on the animation again"
             fail=1
           fi
 

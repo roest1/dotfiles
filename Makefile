@@ -81,20 +81,21 @@ $(eval $(ARGS):;@:)
 help: ## Show this help
 	@source "$(DOTFILES_DIR)/lib/sgr.sh"; \
 	source "$(DOTFILES_DIR)/lib/tty.sh"; \
+	body=$$( \
+	  echo ""; \
+	  awk -v b="$$SG_B" -v r="$$SG_R" -v o="$$SG_OFF" \
+	      'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ \
+	       {printf "  %smake %-12s%s %s%s\n", b, $$1, r, $$2, o}' $(MAKEFILE_LIST); \
+	  echo ""; \
+	  printf "  %sSections (from deps.conf):%s %s\n" "$$SG_B" "$$SG_OFF" "$(SECTIONS)"; \
+	  printf "%s    make install nvim        install just that section%s\n" "$$SG" "$$SG_OFF"; \
+	  printf "%s    make link bash           link just that section's config%s\n" "$$SG" "$$SG_OFF"; \
+	  printf "%s    make check nvim          verify just that section%s\n" "$$SG" "$$SG_OFF"; \
+	  echo ""; \
+	  printf "%s  To skip a single tool, comment it out in deps.conf.%s\n" "$$SG" "$$SG_OFF" \
+	); \
 	echo ""; \
-	tty_scramble "$$SG_B" "$$SG_OFF" "dotfiles — $(UNAME)"; \
-	echo ""; \
-	awk -v b="$$SG_B" -v r="$$SG_R" -v o="$$SG_OFF" \
-	    'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ \
-	     {printf "  %smake %-12s%s %s%s\n", b, $$1, r, $$2, o}' $(MAKEFILE_LIST); \
-	echo ""; \
-	printf "  %sSections (from deps.conf):%s %s\n" "$$SG_B" "$$SG_OFF" "$(SECTIONS)"; \
-	printf "%s    make install nvim        install just that section%s\n" "$$SG" "$$SG_OFF"; \
-	printf "%s    make link bash           link just that section's config%s\n" "$$SG" "$$SG_OFF"; \
-	printf "%s    make check nvim          verify just that section%s\n" "$$SG" "$$SG_OFF"; \
-	echo ""; \
-	printf "%s  To skip a single tool, comment it out in deps.conf.%s\n" "$$SG" "$$SG_OFF"; \
-	echo ""
+	tty_banner "$$SG_B" "$$SG_OFF" "dotfiles — $(UNAME)" "$$body"
 
 sections: ## List sections declared in deps.conf
 	@echo "$(SECTIONS)" | tr ' ' '\n'
