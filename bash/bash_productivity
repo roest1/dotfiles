@@ -897,6 +897,9 @@ h() {
                        (font show — also checks the lanes are live)
 
   Dotfiles
+    dots               The console: every target and section, navigable  [tui]
+                       Reads the Makefile and deps.conf — nothing to keep
+                       in sync, and nothing to remember
     dotfiles           Open dotfiles dir in nvim
     reload             Re-source ~/.bashrc
 
@@ -1340,6 +1343,43 @@ loop — repeat a command (like watch)
 
   Clears the screen each iteration and shows a timestamp.
   Ctrl+C to stop.
+HELP
+      ;;
+    dots)
+      cat <<'HELP'
+dots — the dotfiles console
+
+  A tree of everything this repo can do on the left, what the thing
+  under the cursor actually IS on the right.
+
+  The point is not saved keystrokes — `make status` is nine characters.
+  It is not having to already know that `make status` exists, what it
+  answers, and how it differs from `make check`.
+
+  Three kinds of row:
+
+    targets     Every target `make help` lists. Enter runs it on the
+                REAL terminal, so sudo can prompt and the output is
+                exactly what you would have seen typing the command.
+    sections    Every section in deps.conf. Enter OPENS it rather than
+                running anything: a section is an argument, not a
+                target — `make nvim` is a no-op stub — so the three
+                verbs that do take one are rows underneath.
+    fonts       Opens `font`'s own picker. Not a copy of it: the same
+                screen its binary runs, pushed onto this one.
+
+  Nothing in it is authored twice. Target summaries are the `##` text
+  `make help` already shows; the long form of a target is the comment
+  block above its rule in the Makefile; sections come from deps.conf.
+  Which means a comment above a rule is user-facing documentation now
+  — write it for someone deciding whether to run the thing.
+
+  It is not a make target, on purpose. `make font` does not exist
+  either, and a second name for one thing is drift. `make help` points
+  at it so it is still discoverable from the place you look when lost.
+
+  in the console: j/k move · h/l close/open · gg/G ends
+                  ctrl-d/u page · enter run or open · q quit
 HELP
       ;;
     font)

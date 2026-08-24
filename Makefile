@@ -92,7 +92,9 @@ help: ## Show this help
 	  printf "%s    make link bash           link just that section's config%s\n" "$$SG" "$$SG_OFF"; \
 	  printf "%s    make check nvim          verify just that section%s\n" "$$SG" "$$SG_OFF"; \
 	  echo ""; \
-	  printf "%s  To skip a single tool, comment it out in deps.conf.%s\n" "$$SG" "$$SG_OFF" \
+	  printf "%s  To skip a single tool, comment it out in deps.conf.%s\n" "$$SG" "$$SG_OFF"; \
+	  echo ""; \
+	  printf "  %sdots%s  everything above, navigable — targets, sections, fonts\n" "$$SG_B" "$$SG_OFF" \
 	); \
 	echo ""; \
 	tty_banner "$$SG_B" "$$SG_OFF" "dotfiles — $(UNAME)" "$$body"
