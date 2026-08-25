@@ -15,9 +15,10 @@
 
 use std::path::PathBuf;
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen};
+use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::repo::{self, Section, Target};
+use crate::run::Run;
 
 pub struct Console {
     root: PathBuf,
@@ -25,6 +26,7 @@ pub struct Console {
     sections: Vec<Section>,
     open: Option<usize>,
     status: String,
+    run: Option<Run>,
     /// `footer()` takes no selection, so the last focused row is remembered
     /// here. Keeping the footer in step with what the cursor is actually on is
     /// the whole reason it exists -- a static footer offering `enter run` over
@@ -46,6 +48,22 @@ enum At {
 }
 
 const VERBS: [&str; 3] = ["install", "link", "check"];
+
+/// The targets that can reach `sudo`, and therefore the only ones that are NOT
+/// streamed into the pane.
+///
+///   install   lib/pkg.sh's pkg_install -> `sudo apt|dnf install`
+///   shell     the Makefile's own recipe -> `sudo tee -a /etc/shells`
+///
+/// They detach instead: the terminal goes back, the real sudo prompts in the
+/// open, and this process never sees a password. Every alternative — an askpass
+/// helper, `sudo -S`, a NOPASSWD drop-in — ends with a dotfiles repo handling
+/// credentials, and a feel-good feature does not buy that.
+///
+/// `repo::escalating_targets` re-derives this from the tree and a test asserts
+/// the two agree, so a new sudo call site anywhere breaks the build rather than
+/// silently arriving inside a streamed pane.
+pub const ESCALATES: [&str; 2] = ["install", "shell"];
 
 fn plural(n: usize, word: &str) -> String {
     if n == 1 {
@@ -70,6 +88,7 @@ impl Console {
             root,
             open: None,
             status: String::new(),
+            run: None,
             focus_sel: 0,
         }
     }
@@ -112,17 +131,28 @@ impl Console {
         At::Nothing
     }
 
-    fn make(&self, args: &[&str]) -> Flow {
-        // -C rather than a chdir, so the child's cwd is the repo without this
-        // process ever moving: `dots` may be running from anywhere under it,
-        // and a later screen that reads a relative path would inherit the move.
-        let mut argv = vec![
-            "make".to_string(),
-            "-C".to_string(),
-            self.root.display().to_string(),
-        ];
-        argv.extend(args.iter().map(|s| s.to_string()));
-        Flow::Detach(argv)
+    /// Stream it, unless it can escalate — then hand the terminal over.
+    ///
+    /// -C rather than a chdir either way, so the child's cwd is the repo
+    /// without this process ever moving: `dots` may be running from anywhere
+    /// under it, and a later screen reading a relative path would inherit it.
+    fn make(&mut self, args: &[&str], label: &str) -> Flow {
+        if ESCALATES.contains(&label) {
+            let mut argv = vec![
+                "make".to_string(),
+                "-C".to_string(),
+                self.root.display().to_string(),
+                "--no-print-directory".to_string(),
+            ];
+            argv.extend(args.iter().map(|s| s.to_string()));
+            return Flow::Detach(argv);
+        }
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        match Run::start(&self.root, &owned, label) {
+            Ok(run) => self.run = Some(run),
+            Err(e) => self.status = format!("could not start make {label}: {e}"),
+        }
+        Flow::Dirty
     }
 }
 
@@ -176,7 +206,17 @@ impl Screen for Console {
         rows
     }
 
-    fn pane(&mut self, sel: usize, _cols: u16, _rows: u16) -> Pane {
+    fn pane(&mut self, sel: usize, _cols: u16, rows: u16) -> Pane {
+        // A run owns the pane while it exists. Showing whatever the cursor
+        // happens to be over while an install scrolls past would be the wrong
+        // thing on both counts -- you cannot read the install, and the page you
+        // are "looking at" is one you did not ask for.
+        if let Some(r) = self.run.as_ref() {
+            return Pane {
+                image: None,
+                lines: r.tail(rows as usize),
+            };
+        }
         let mut lines: Vec<String> = Vec::new();
         match self.at(sel) {
             At::Target(i) => {
@@ -184,6 +224,12 @@ impl Screen for Console {
                 lines.push(format!("make {}", t.name));
                 lines.push(String::new());
                 lines.push(t.summary.clone());
+                if ESCALATES.contains(&t.name.as_str()) {
+                    lines.push(String::new());
+                    lines.push("Runs on the real terminal rather than in this".into());
+                    lines.push("pane: it can need sudo, and a password prompt".into());
+                    lines.push("cannot be shown in here.".into());
+                }
                 if !t.page.is_empty() {
                     lines.push(String::new());
                     lines.extend(t.page.iter().cloned());
@@ -253,11 +299,13 @@ impl Screen for Console {
         match (action, self.at(sel)) {
             (Action::Activate, At::Target(i)) => {
                 let name = self.targets[i].name.clone();
-                self.make(&[&name])
+                self.make(&[&name], &name)
             }
+            // The VERB decides, not the section: `make install nvim` reaches
+            // pkg_install exactly as `make install` does.
             (Action::Activate, At::SectionVerb(i, v)) => {
                 let name = self.sections[i].name.clone();
-                self.make(&[v, &name])
+                self.make(&[v, &name], v)
             }
             (Action::Activate | Action::Open, At::Section(i)) => {
                 self.open = if self.open == Some(i) { None } else { Some(i) };
@@ -268,11 +316,38 @@ impl Screen for Console {
                 Flow::Dirty
             }
             (Action::Activate, At::Fonts) => Flow::Push(Box::new(font::FontScreen::new())),
+            // One key, two states, both named in the footer: stop it if it is
+            // going, clear it if it is not.
+            (Action::Key('x'), _) => match self.run.as_mut() {
+                Some(r) if r.running() => {
+                    r.stop();
+                    Flow::Dirty
+                }
+                Some(_) => {
+                    self.run = None;
+                    Flow::Dirty
+                }
+                None => Flow::Continue,
+            },
             _ => Flow::Continue,
         }
     }
 
+    fn tick(&mut self) -> Tick {
+        match self.run.as_mut() {
+            Some(r) => r.tick(),
+            None => Tick::Idle,
+        }
+    }
+
     fn footer(&self) -> String {
+        if let Some(r) = self.run.as_ref() {
+            return if r.running() {
+                "x stop".into()
+            } else {
+                "x clear".into()
+            };
+        }
         match self.at(self.focus_sel) {
             // No `q` hint here: app appends it from the stack depth, because
             // only the stack knows whether q quits or goes back one screen.
