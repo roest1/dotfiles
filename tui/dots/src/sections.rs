@@ -291,12 +291,16 @@ mod tests {
         let text = fs::read_to_string(&path).expect("read");
         for name in catalogue() {
             assert!(
-                text.lines().any(|l| l.trim_start_matches('#').trim() == name),
+                text.lines()
+                    .any(|l| l.trim_start_matches('#').trim() == name),
                 "{name} is missing from the written file"
             );
         }
         assert!(text.lines().any(|l| l.trim() == "#nvim"));
-        assert!(text.contains("DELETE THIS FILE"), "the way back must be in it");
+        assert!(
+            text.contains("DELETE THIS FILE"),
+            "the way back must be in it"
+        );
     }
 
     /// Hand-edited files are the normal case for this path — it predates the

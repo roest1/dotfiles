@@ -1,0 +1,19 @@
+[package]
+name = "github"
+description = "GitHub for the machine you are on — your repos, then everything about one."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "github"
+path = "src/lib.rs"
+
+[[bin]]
+name = "github"
+path = "src/main.rs"
+
+[dependencies]
+reticle = { path = "../reticle" }
+libc = "0.2"
