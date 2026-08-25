@@ -196,8 +196,8 @@ vim.api.nvim_create_autocmd('FileType', {
 -- one autocmd covers oil's <CR> (which goes through bufadd + :buffer, not
 -- :edit), `nvim x.pdf`, :e, and telescope alike.
 --
--- vim.ui.open is what keeps this portable: it dispatches to xdg-open, open, or
--- wslview itself, so this needs no platform conditional.
+-- vim.ui.open carries this on mac and on a real Linux desktop. It is NOT
+-- enough under WSL, and the failure is silent both ways — see os_open below.
 --
 -- Raster images only. SVG is deliberately absent: it is text, and editing one
 -- in the buffer is a thing you actually want. In-terminal rendering was the
@@ -206,11 +206,75 @@ vim.api.nvim_create_autocmd('FileType', {
 -- that neither supports it.
 --
 -- Escape hatch: `:noautocmd e file.pdf` skips this and loads the raw bytes.
+
+--- Resolve explorer.exe: PATH first, then the canonical Windows location.
+-- The fallback is not belt-and-braces. `appendWindowsPath = false` in
+-- /etc/wsl.conf keeps the Windows PATH out of the shell (it is worth having —
+-- it stops Windows binaries shadowing Linux ones), and the consequence is that
+-- exepath() finds nothing. Same shape, same reason, as find_powershell() in
+-- lua/external/pasteimg.lua.
+local function find_explorer()
+  local p = vim.fn.exepath 'explorer.exe'
+  if p ~= '' then
+    return p
+  end
+  if vim.fn.executable '/mnt/c/Windows/explorer.exe' == 1 then
+    return '/mnt/c/Windows/explorer.exe'
+  end
+  return nil
+end
+
+--- Hand `path` to the OS viewer. Returns (true) or (nil, message).
+--
+-- Under WSL this must not go through vim.ui.open, and the reason is an ordering
+-- detail in nvim's own _get_open_cmd(): it tries xdg-open BEFORE wslview. WSL
+-- with WSLg has a working xdg-open, so xdg-open always wins — and then hands
+-- the file to whatever Linux desktop entry happens to be installed in the
+-- guest. Both outcomes are wrong and neither is visible:
+--
+--   • .pdf   → xpdf.desktop, i.e. an X11 PDF viewer drawn through WSLg. It
+--              does open, which is why this reads as "the plugin is flaky"
+--              rather than "the plugin is broken".
+--   • .png   → no desktop entry for image/png at all, so xdg-open prints
+--              "No applications found for mimetype" — to a pipe nvim
+--              explicitly discards (vim.ui.open sets stdout=false, stderr=false
+--              for xdg-open specifically). <CR> becomes a silent no-op.
+--
+-- Falling back to wslview does not help either: wslu's wslview probes
+-- /proc/sys/fs/binfmt_misc/WSLInterop, and a systemd-enabled WSL registers that
+-- handler as WSLInterop-LATE instead, so wslview reports "WSL Interoperability
+-- is disabled" on a machine where interop is working fine.
+--
+-- explorer.exe is the route with no such moving parts: it is the Windows shell
+-- opener, it accepts the \\wsl.localhost\... UNC that wslpath produces, and it
+-- needs nothing installed in the guest.
+local function os_open(path)
+  if vim.fn.has 'wsl' ~= 1 then
+    return vim.ui.open(path)
+  end
+
+  local exe = find_explorer()
+  if not exe then
+    return nil, 'explorer.exe not found — is WSL interop enabled?'
+  end
+
+  local win = vim.trim(vim.fn.system { 'wslpath', '-w', path })
+  if vim.v.shell_error ~= 0 or win == '' then
+    return nil, 'wslpath could not convert ' .. path
+  end
+
+  -- explorer.exe exits 1 on SUCCESS, so its status carries no information and
+  -- must not be waited on or checked. Detach and trust it — the same bargain
+  -- vim.ui.open already strikes with xdg-open.
+  vim.system({ exe, win }, { detach = true })
+  return true
+end
+
 vim.api.nvim_create_autocmd('BufReadCmd', {
   pattern = { '*.pdf', '*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp', '*.bmp', '*.avif' },
   callback = function(args)
     local path = vim.fn.fnamemodify(args.file, ':p')
-    local ok, err = vim.ui.open(path)
+    local ok, err = os_open(path)
     -- vim.ui.open returns nil,err rather than throwing when the machine has no
     -- handler at all — a headless RHEL box or a minimal container. Deleting the
     -- buffer there would make <CR> a silent no-op, which is worse than the
