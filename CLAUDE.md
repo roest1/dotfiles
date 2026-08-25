@@ -56,6 +56,14 @@ quietly done the opposite of what it was told.
 sections it skipped rather than dropping them silently, since a section added to
 `deps.conf` after the file was seeded is missing from it by accident, not by choice.
 
+**`dots` writes this file** — space on a section row toggles it — which is the reason to
+reach for the console over an editor here. Absent and everything-commented-in are *not*
+the same state, and that is invisible in a text editor: with the file present this machine
+sweeps exactly the names in it, so a section added to `deps.conf` later arrives **off**,
+where a machine with no file picks it up. The console names which of the two is in force
+and carries a row that deletes the file to get back to the first. Details next to the
+code: [`tui/CLAUDE.md`](tui/CLAUDE.md).
+
 see `make help`
 
 `make check` asks "does this command exist." `make status` asks "is this machine

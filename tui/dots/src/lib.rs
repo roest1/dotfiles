@@ -10,11 +10,18 @@
 //! comment block above its rule, and sections come from `deps.conf`. See
 //! `repo.rs`, which is the only file that reads any of it.
 //!
+//! One thing it OWNS rather than reads: `~/.config/dotfiles/sections`, this
+//! machine's answer to which sections `make` sweeps. That is the difference
+//! between a launcher and a config surface, and it is deliberately the same
+//! shape as `font`'s `lanes.rs` — machine-local, outside the work tree, whole
+//! file rewritten, delete it to get the default back. See `sections.rs`.
+//!
 //! A library as well as a binary, for the same reason `font` is: a screen is
 //! reusable, and this one will eventually be pushed from somewhere else too.
 
 pub mod console;
 pub mod repo;
 pub mod run;
+pub mod sections;
 
 pub use console::Console;

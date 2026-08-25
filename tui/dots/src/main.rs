@@ -18,9 +18,11 @@ fn main() -> std::io::Result<()> {
             println!();
             println!("Everything is inside the TUI; it states its own keys in the");
             println!("footer. Targets run on the real terminal, so sudo can prompt.");
+            println!("space picks which sections THIS machine sweeps, written to");
+            println!("~/.config/dotfiles/sections — never to deps.conf.");
             println!();
             println!("  j/k move · h/l close/open · gg/G ends");
-            println!("  ctrl-d/u page · enter run or open · q quit");
+            println!("  ctrl-d/u page · enter run or open · space toggle · q quit");
         }
         _ => app::run(Box::new(Console::new()))?,
     }

@@ -43,7 +43,8 @@ pins that.
   `nav` (the keymap), `reticle` (the animated brackets), `screen` (what a
   screen provides), `app` (the loop), `image` (inline images).
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
-  file that parses either), `console` (the tree), plus the lib/bin pair.
+  file that parses either), `sections` (the machine-local sections file — the
+  only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
 - `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
   and the crate-root re-exports), `picker` (the lane tree — the root screen),
   `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
@@ -159,6 +160,57 @@ pins that.
   The tests parse the REAL Makefile rather than a fixture, because the thing
   that breaks is not the parser — it is someone reformatting a rule and the
   console quietly losing a page.
+
+- **`dots` READS the repo and OWNS `~/.config/dotfiles/sections`, and that
+  split is the whole design.** Everything derived from the tree — targets,
+  their pages, the section list — is the same on every machine by definition,
+  so a console over it is a launcher. The sections file is the opposite: it
+  exists to differ per machine, and until now nothing wrote it but an editor.
+  A second store lands the same way (`~/.gitconfig.local` is the obvious next
+  one) — machine-local, outside the work tree, whole file rewritten, delete it
+  to get the default back. `font`'s `lanes.rs` was the first of these and this
+  follows it deliberately.
+
+  The rule that decides what may become a row: **a row under `dots` changes
+  THIS machine.** `font` qualifies and is already pushed as one. `github`
+  changes a repo on a server, so it is a sibling binary and not a row —
+  otherwise the console becomes a launcher again, one screen at a time.
+
+- **Absent and everything-ticked are DIFFERENT states, and rendering them
+  identically is the bug this screen exists to avoid.** `manifest_enabled`
+  prints the names it finds in the file, so a machine with no file gets
+  whatever `deps.conf` declares *now and later*, while a machine with a file
+  gets exactly the names in it — the same section added upstream arrives ON in
+  one case and OFF, silently, in the other. Nine ticked boxes look the same
+  either way.
+
+  Hence `Mode`, hence the header saying which contract is in force rather than
+  "all", and hence `follow deps.conf` being a ROW: nobody discovers that
+  undoing a checklist means deleting a file whose path they would have to know
+  first. `sections::tests::a_new_section_arrives_off_when_pinned_and_on_when_following`
+  is the test that pins the distinction; if it ever goes, the header is lying.
+
+- **Space toggles; Enter still opens.** The key that rewrites a file must not
+  be the key that expands a tree — and the three verbs under a section are what
+  you came for far more often than the toggle is. Space also works on the verb
+  rows, so an open section is not three rows where its own switch stops
+  working. The footer names the RESULT ("skip it here" / "sweep it here"), not
+  the action, because `space toggle` makes you press it to find out which way
+  it goes.
+
+- **`set` writes and then RE-READS, rather than updating state from what it
+  just wrote.** A read-only config dir then shows up as the toggle not moving,
+  with the reason in the status line, instead of a ticked box over a file that
+  never changed. Toggling everything off is allowed rather than prevented:
+  `manifest_scope_into` refuses an all-off file and says how to fix it, so the
+  failure is safe — but it fires at `make install` time, possibly days later,
+  so the console says so at the moment of the toggle.
+
+- **Both modes add or drop a row, so `at()` and `rows()` can drift.** That is
+  the exact bug the `At` enum was introduced to prevent, now with a moving
+  target. `console::tests::walk_agrees` asserts every selectable index resolves
+  to the row actually drawn at it, in all three shapes (following, pinned,
+  section open). Do not add a conditional row without extending it.
 
 - **`dots` is not a make target, deliberately.** `make font` does not exist
   either. The console was called `make it` on `feat/make-console`, and keeping
