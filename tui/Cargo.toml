@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["reticle", "font", "dots"]
+members = ["reticle", "font", "dots", "github"]
 
 [workspace.package]
 version = "0.1.0"

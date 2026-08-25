@@ -329,7 +329,8 @@ impl Screen for Console {
         }
         if self.local.mode == Mode::Pinned {
             rows.push(
-                Row::leaf("follow deps.conf").detail("drop this machine's list, take the catalogue"),
+                Row::leaf("follow deps.conf")
+                    .detail("drop this machine's list, take the catalogue"),
             );
         }
 
@@ -395,7 +396,10 @@ impl Screen for Console {
                     lines.push("`make prune` is what removes links.".into());
                 }
                 lines.push(String::new());
-                lines.push(format!("Either way `make install {}` still installs", s.name));
+                lines.push(format!(
+                    "Either way `make install {}` still installs",
+                    s.name
+                ));
                 lines.push("it: naming a section explicitly wins, which is what".into());
                 lines.push("makes this a preference and not a wall.".into());
                 if self.local.mode == Mode::Following {

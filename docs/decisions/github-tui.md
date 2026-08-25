@@ -132,15 +132,106 @@ when it has failed jobs whose logs haven't been fetched. Nowhere near the
   `_ghw_`-prefixed, so the help check doesn't demand entries for things you
   can't type.
 
+## The port to `reticle`
+
+Decided 2026-08-25, before any code. The three things below are the ones that
+are expensive to retrofit; everything else stays deferrable.
+
+**Account-rooted, not repo-rooted.** Today `__gh_repo` is `gh repo view` in
+the cwd and every screen inherits that ambient `$R`. The target is a
+hierarchy — your orgs, an org's repos and settings, then a repo's screens —
+because the goal is not visiting github.com for anything done weekly. Adding a
+root screen later is cheap; threading scope through 85 `gh` call sites written
+against ambient state is not. So scope is settled first.
+
+**`~/github/` is the index.** Reading it gives an instant, offline root list of
+the repos actually cared about — a better default than everything the account
+can see — with live data filling in after, the same way screens already open
+before their data arrives. Repos not cloned come from the API below the fold
+and clone into the matching slot.
+
+The tree was measured before the reader was written, and the obvious design —
+parse `~/github/<org>/<repo>` — is wrong on this machine four ways: the
+directory `orgs/codegig` holds the org `codegig-br`; depth is not fixed
+(`orgs/codegig/clients/shell/atlas`); some clones are other people's
+(`bilawalsidhu`, `yt-dlp`); one has no remote at all. So the path gives
+GROUPING and the remote gives IDENTITY, and neither can give both. Details in
+`tui/github/src/index.rs`.
+
+**One command, no flags, seeded selection.** `github` inside a repo does not
+open the repo hub *as* root; root stays underneath, so `q` walks up rather than
+quitting out of context. A flag or a mode would have made the root unreachable
+from inside a repo.
+
+The org level is a GROUP inside root today, not a screen — there is no
+org-level data yet to put on one. When there is (settings, teams, members) it
+becomes a screen and the seeded stack is `[root, org, repo]`; until then it is
+`[root]` with the repo's row selected, and `[root, repo]` once repo screens
+exist. `app::run_stack` already takes the stack, and `Screen::initial_sel` is
+how a screen says which row to open on — asked of the screen because only it
+knows where its own rows landed.
+
+Two properties this depends on: screens must fetch on entry or focus, or
+seeding the stack would fetch lists that get skipped past and make the repo
+case slower than today; and "am I in a repo" must be answered offline (walk up
+for `.git`, or test cwd against `~/github/`), not with `gh repo view`.
+
+### Sequencing
+
+Root screen first — it is new work rather than a port, it is small, and it
+says whether the list-and-pane shape survives a repo list before 2500 lines
+are rewritten. A repo list from local clones is also short enough not to need
+filtering, which defers the one open framework question. Then Actions, which
+is the only screen exercising live refresh, cross-session caching and the step
+slicing at once; if that survives, the rest is mechanical.
+
+**The bash file is replaced as a unit, not incrementally.** It stays complete
+and untouched until the Rust side covers what is actually used, then it is
+deleted in one commit. A `github` dispatching to both halves is the drift this
+repo keeps deleting, and the CI rule that only this file may invoke fzf is
+what makes replacing it wholesale possible.
+
+**The binary keeps shelling out to `gh`.** Auth, enterprise hosts and token
+refresh are solved, and `gh api` returns JSON for serde. Going direct buys
+nothing and costs an auth implementation.
+
+**Name collision, until the swap.** A bash function beats PATH, so a `github`
+binary cannot be installed while `github()` is defined here — CI asserts it.
+The crate builds under `cargo run` and is absent from `deps.conf` and
+`tui/deps.sh` until the commit that deletes the bash function adds it to both.
+
+### What the port deletes rather than translates
+
+Roughly half this file exists to work around fzf, not to do GitHub work: the
+`declare -f` worker script, its 25-verb dispatcher and its calling-convention
+rule (fzf's children run in a fresh shell; a Rust preview is a method call);
+`--listen`, `FZF_PORT`, the curl POST and the per-instance tick lock file
+(`Tick::Busy`/`Changed` plus a worker thread — `font`'s `Fetcher` is the
+reference); nested fzf (`Flow::Push`); and 67 jq programs (serde).
+
+Port the step-log slicing with tests written first. It is the most hard-won
+logic here and a subtle regression in it would look entirely plausible.
+
+### Not being ported yet, and why
+
+**Rulesets and permissions.** Not because the editor is menus-and-pauses where
+the rest is list-and-preview — that was the old reason. The real one: they
+have not been used enough to know what the screen should show. Porting
+unvalidated behaviour preserves it bug-for-bug and lets it set the shape of
+the screen. Use them on github.com first, then build the screen the use
+produced. Same for **issues**, which nothing here has yet.
+
 ## Still open
 
-- **The rulesets editor is the old code with the new chrome.** It works and
-  is reached from the Branches screen (`ctrl-s`, or a branch's menu), but it
-  is menus-and-pauses where the rest is list-and-preview. Worth redoing as a
-  ruleset list with the effective-rules preview when it next earns attention.
-- **Issues.** The obvious missing screen for "one-stop shop"; the list +
-  preview + keys shape makes it ~60 lines. Not done because nothing here has
-  issues yet and untested code is worse than absent code.
+- **Filtering.** fzf gives fuzzy-filter-as-you-type for free; `reticle::nav`
+  maps every bare char to `Action::Key(c)`, which is what makes single-key
+  actions work, so there is no text-entry mode to add it to. Needed by the
+  long lists, not by the root screen. A modal state in `nav` is a change to
+  the one file screens are told not to touch.
+- **Text input and confirm.** `_gh_input` and `_gh_confirm` have no reticle
+  equivalent; secret-set, env-create, pr-create and every delete need them.
+  Framework-level and shared, so they land in `reticle` before the screens
+  that need them.
 - **Mouse.** fzf can bind mouse events. It cuts against the keyboard
   contract, so it should be a deliberate decision rather than accretion.
 - **Demos.** `vhs` is the modern single-binary option; worth a recording now

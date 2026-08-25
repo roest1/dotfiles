@@ -148,4 +148,18 @@ pub trait Screen {
     /// from `pane` because prefetching must happen even for rows you skim past
     /// without stopping on.
     fn focus(&mut self, _sel: usize) {}
+
+    /// Which row to open on. Default: the first.
+    ///
+    /// Asked of the screen rather than passed in beside it, because the screen
+    /// is the only thing that knows which of its rows the answer corresponds
+    /// to -- `github` run inside a repo wants that repo's row, and where that
+    /// lands depends on which lanes it decided to open. A caller would have to
+    /// reimplement the row walk to compute it.
+    ///
+    /// Clamped by `app` to the rows actually produced, and skipped past if it
+    /// names a spacer, so a stale answer cannot put the cursor nowhere.
+    fn initial_sel(&self) -> usize {
+        0
+    }
 }

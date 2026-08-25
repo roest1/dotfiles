@@ -45,12 +45,29 @@ fn left_width(cols: u16) -> u16 {
 const PALETTE_WANTED: &[u8] = &[75, 110, 108, 114, 210, 221, 244, 250];
 
 pub fn run(root: Box<dyn Screen>) -> io::Result<()> {
+    run_stack(vec![root])
+}
+
+/// Start with screens ALREADY pushed, topmost last.
+///
+/// So a command can open where you are standing without that becoming a mode.
+/// `github` run inside a repo seeds `[root, org, repo]` and shows the repo; `q`
+/// then walks up to the org and the root and quits at it, which is what this
+/// function already did for screens pushed by hand. The alternative -- making
+/// the repo the root when the cwd is one -- leaves the org and the rest of the
+/// account unreachable without leaving the program.
+///
+/// Screens below the top are NOT asked for rows or a pane until they are
+/// reached, so a seeded path costs nothing for the levels skipped past. That is
+/// load-bearing rather than incidental: a screen that fetched on construction
+/// would make the seeded case slower than the unseeded one.
+pub fn run_stack(screens: Vec<Box<dyn Screen>>) -> io::Result<()> {
     let mut term = Terminal::take()?;
     // After raw mode, before anything is drawn: the replies are only readable
     // once the terminal has stopped line-buffering, and they would otherwise
     // land in the middle of the first frame.
     crate::set_term_info(crate::probe::probe(PALETTE_WANTED));
-    let res = event_loop(root, &mut term);
+    let res = event_loop(screens, &mut term);
     term.restore()?;
     res
 }
@@ -98,17 +115,31 @@ fn detach(term: &mut Terminal, out: &mut impl Write, argv: &[String]) -> io::Res
     term.resume()
 }
 
-fn event_loop(root: Box<dyn Screen>, term: &mut Terminal) -> io::Result<()> {
+fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<()> {
     let mut out = io::stdout();
     let mut keys = Keymap::default();
-    let mut stack = vec![Frame {
-        screen: root,
-        sel: 0,
-        top: 0,
-        reticle: Reticle::new(0),
-    }];
-    stack[0].screen.focus(0);
-    let mut rows = stack[0].screen.rows();
+    let mut stack: Vec<Frame> = screens
+        .into_iter()
+        .map(|screen| Frame {
+            screen,
+            sel: 0,
+            top: 0,
+            reticle: Reticle::new(0),
+        })
+        .collect();
+    // An empty stack would index out of bounds on the first frame rather than
+    // showing nothing, so the one caller that can produce it gets a root.
+    if stack.is_empty() {
+        return Ok(());
+    }
+    // Only the TOP screen is focused and asked for rows. The ones underneath
+    // are untouched until popped to, which is what keeps a seeded path free.
+    let top = stack.len() - 1;
+    let mut rows = stack[top].screen.rows();
+    let sel = start_sel(stack[top].screen.as_ref(), &rows);
+    stack[top].sel = sel;
+    stack[top].reticle = Reticle::new(sel);
+    stack[top].screen.focus(sel);
     let mut last = Instant::now();
     let mut pane_dirty = true;
     let mut busy = false;
@@ -391,6 +422,21 @@ fn draw_rows(
 }
 
 const SPREAD_ROOM: u16 = 5;
+
+/// Where a screen opens: what it asked for, clamped to what it drew.
+///
+/// Both guards are load-bearing. A screen computes its answer from its own row
+/// walk, so an out-of-range one is a bug in that walk rather than a reason to
+/// put the cursor past the end; and a spacer is a legal index that navigation
+/// otherwise never lands on, so landing there once at startup would be the one
+/// place a blank row can hold the cursor.
+fn start_sel(screen: &dyn Screen, rows: &[Row]) -> usize {
+    if rows.is_empty() {
+        return 0;
+    }
+    let want = screen.initial_sel().min(rows.len() - 1);
+    first_selectable(rows, want, 1)
+}
 
 /// The nearest selectable row at or after `from`, searching in `dir`. Falls
 /// back to `from` so a list that is entirely spacers cannot hang the caller.

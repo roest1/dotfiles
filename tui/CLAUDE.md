@@ -45,6 +45,9 @@ pins that.
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
   only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
+- `github/` — the port, root-first. `index` (every clone under `~/github`, read
+  from disk), `root` (the repo tree), plus the lib/bin pair. **Not installed
+  yet** — see below.
 - `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
   and the crate-root re-exports), `picker` (the lane tree — the root screen),
   `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
@@ -211,6 +214,46 @@ pins that.
   target. `console::tests::walk_agrees` asserts every selectable index resolves
   to the row actually drawn at it, in all three shapes (following, pinned,
   section open). Do not add a conditional row without extending it.
+
+- **`github` builds but does not install, and that is the whole plan.** A bash
+  function beats PATH and `github()` is still defined in `bash_github_tui`, so
+  a `github` binary installed now could not win anyway — CI asserts the rule.
+  It is therefore absent from `deps.conf` and `tui/deps.sh` until the commit
+  that deletes the bash function adds it to both. Develop with `cargo run -p
+  github`. Do NOT wire up a half-ported `github` that dispatches to both
+  halves; replacing that file as a unit is exactly what the CI rule "only
+  bash_github_tui may invoke fzf" was built to allow.
+
+- **`index` groups by PATH and identifies by REMOTE, because on the real tree
+  neither can do both.** Measured before the reader was written:
+  `~/github/orgs/codegig` holds the org `codegig-br`; depth is not fixed
+  (`orgs/codegig/clients/shell/atlas`); `private/repos/jarvis-project` holds
+  other people's clones; one repo has no remote. Grouping by owner would file
+  someone else's clone under its own heading and have nowhere to put the
+  remoteless one. So the lane comes from where you filed it and the slug comes
+  from `origin`.
+
+  Both are read as FILES — `.git/config` and `.git/HEAD` parsed directly, not
+  `git config` and `git branch`. Twenty-seven process spawns is the difference
+  between a screen that opens instantly and one you watch open, and instant is
+  this screen's entire claim. `current()` walks up for `.git` rather than
+  asking `gh repo view`, for the same reason plus working offline.
+
+- **A row says the unusual thing and stays quiet otherwise.** The first version
+  put `owner/name` on every row, which on the real tree is thirteen rows of
+  `roest1/<the-directory-name>` under a heading that already said `roest1` —
+  and the column truncates, so the noise pushed the genuinely different ones
+  (`bilawalsidhu/gods-eye-view`, `local only`) off the end. Now the slug shows
+  only when the directory was renamed or the owner is not the lane's, and the
+  branch badge only when it is not `main`/`master`. Same rule as `dots`' `off`
+  badge.
+
+- **`Screen::initial_sel` is asked of the screen, not passed to it.** `github`
+  inside a repo opens on that repo's row, and which row that is depends on
+  which lanes the screen decided to open — a caller would have to reimplement
+  the row walk to know. `app` clamps the answer to the rows actually drawn and
+  skips a spacer, so a stale one cannot park the cursor in a blank row, which
+  is the one place navigation otherwise never lands.
 
 - **`dots` is not a make target, deliberately.** `make font` does not exist
   either. The console was called `make it` on `feat/make-console`, and keeping
