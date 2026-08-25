@@ -171,17 +171,41 @@ pins that.
   `MAKEFLAGS`/`MAKELEVEL` inheritance the bash console had to unset cannot
   arise. That was on the salvage list and simply evaporated.
 
-- **Enter on a target hands the terminal back rather than streaming into the
-  pane** (`Flow::Detach`). A child on the real tty can prompt for a sudo
-  password; a pane cannot, because raw mode has already taken the keyboard.
-  That one fact is what made the bash console carry sudo priming AND a
-  credential keepalive — both deleted rather than ported. It also means the
-  output is exactly what you would have seen typing the command.
+- **Twelve targets stream into the pane. Two detach. The split is sudo, and
+  it is not a preference.** A child on the real tty can prompt for a password;
+  a pane cannot, raw mode having already taken the keyboard. So `install` and
+  `shell` — the only two that can reach `sudo`, via `pkg_install` and via
+  `sudo tee -a /etc/shells` — hand the terminal back (`Flow::Detach`) and run
+  where the real sudo can prompt in the open.
 
-  `Terminal::suspend`/`resume` exist for this and are not `restore()` then
-  `take()`: `take()` installs a panic hook wrapping the previous one, so
+  **`dots` contains no sudo code at all**, and that is the design rather than
+  an omission. Streaming those two would have required priming plus a
+  credential keepalive (what `lib/tui.sh` did, holding a passwordless-root
+  window open for the session), or an askpass helper, or `sudo -S` — and the
+  last two put a password through this process. A feel-good feature does not
+  buy that. sudo-rs does not change it either: escalation needs a setuid-root
+  binary, so there is no "just for this app" install, and the problem is pty
+  ownership rather than sudo's implementation language.
+
+  `Terminal::suspend`/`resume` exist for the detach and are not `restore()`
+  then `take()`: `take()` installs a panic hook wrapping the previous one, so
   re-taking per run would stack a hook per invocation for the life of the
   process.
+
+- **`console::ESCALATES` is checked against the tree, not trusted.**
+  `repo::sudo_files` and `repo::sudo_recipes` re-derive the escalating set and
+  a test asserts the two agree, so a new `sudo` call site anywhere breaks the
+  build rather than quietly arriving inside a streamed pane. The failure is
+  worth stating: a target missing from `ESCALATES` gets STREAMED, and its
+  password prompt fires into a pane that cannot show it.
+
+  That test immediately earned itself twice. It found `bootstrap.sh`, which
+  escalates and which `dots` can never run — excluded now as a claim about
+  reachability rather than a convenience. And it found a bug in its OWN parser:
+  `make shell` wraps its recipe in `ifeq ($(UNAME),Darwin)`, the scanner read
+  the directive as a new rule, and the escalation was attributed to no target
+  at all — the tree and the console agreeing when they did not, which is the
+  exact failure the test exists to prevent.
 
 ## The command surface is three commands
 

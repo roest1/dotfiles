@@ -15,5 +15,6 @@
 
 pub mod console;
 pub mod repo;
+pub mod run;
 
 pub use console::Console;
