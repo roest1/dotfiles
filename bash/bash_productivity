@@ -899,7 +899,8 @@ h() {
   Dotfiles
     dots               The console: every target and section, navigable  [tui]
                        Reads the Makefile and deps.conf — nothing to keep
-                       in sync, and nothing to remember
+                       in sync, and nothing to remember. space picks which
+                       sections THIS machine sweeps
     dotfiles           Open dotfiles dir in nvim
     reload             Re-source ~/.bashrc
 
@@ -1365,8 +1366,27 @@ dots — the dotfiles console
                 running anything: a section is an argument, not a
                 target — `make nvim` is a no-op stub — so the three
                 verbs that do take one are rows underneath.
+                SPACE toggles whether this machine sweeps a section,
+                writing ~/.config/dotfiles/sections. Not deps.conf,
+                which every machine reads — the skip stays outside the
+                work tree, so it never becomes a diff you carry.
     fonts       Opens `font`'s own picker. Not a copy of it: the same
                 screen its binary runs, pushed onto this one.
+
+  Watch the sections header, because the two states differ in a way
+  a row of ticks cannot show:
+
+    following deps.conf    no file. Every section, including ones
+                           added to deps.conf later.
+    N of M on this machine a file exists. Exactly these names, so a
+                           section added later arrives OFF.
+
+  The `follow deps.conf` row goes back to the first state by deleting
+  the file. Ticking everything is NOT the same thing.
+
+  Either way `make install <section>` still installs it: naming a
+  section explicitly wins, which is what makes this a preference
+  rather than a wall.
 
   Nothing in it is authored twice. Target summaries are the `##` text
   `make help` already shows; the long form of a target is the comment
@@ -1379,7 +1399,8 @@ dots — the dotfiles console
   at it so it is still discoverable from the place you look when lost.
 
   in the console: j/k move · h/l close/open · gg/G ends
-                  ctrl-d/u page · enter run or open · q quit
+                  ctrl-d/u page · enter run or open · space toggle
+                  a section on this machine · q quit
 HELP
       ;;
     font)
