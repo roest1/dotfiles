@@ -109,6 +109,13 @@ raw bytes anyway, use `:noautocmd e file.pdf`.
 buffer. Images are not rendered inside nvim because wezterm's kitty graphics
 support is too incomplete for snacks.image or image.nvim to rely on.
 
+Under WSL the file goes to the WINDOWS default viewer, via explorer.exe. It
+does not go through vim.ui.open there: nvim tries xdg-open before wslview, and
+WSLg supplies a working xdg-open, so the file would be handed to whatever
+Linux desktop entry the guest happens to have — xpdf for a .pdf, and for a
+.png usually nothing at all, failing into a discarded stderr. See the comment
+above os_open() for the whole chain.
+
 On a machine with no desktop handler at all (headless RHEL, a container), it
 warns and loads the file normally instead — the same binary buffer you got
 before this existed. It never becomes a silent no-op.
