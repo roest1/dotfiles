@@ -3,7 +3,7 @@
 ## Overview
 
 The Rust terminal UIs. One crate per screen, **one binary per command** —
-`font` today, `github` and the `make it` console next. They share
+`font` and `dots` today, `github` next. They share
 `reticle/` and nothing else, because a font picker and a CI dashboard have
 nothing else in common.
 
@@ -42,6 +42,12 @@ pins that.
 - `reticle/` — the framework. `term` (raw mode, alt screen, restore-on-panic),
   `nav` (the keymap), `reticle` (the animated brackets), `screen` (what a
   screen provides), `app` (the loop), `image` (inline images).
+- `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
+  file that parses either), `sections` (the machine-local sections file — the
+  only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
+- `github/` — the port, root-first. `index` (every clone under `~/github`, read
+  from disk), `root` (the repo tree), plus the lib/bin pair. **Not installed
+  yet** — see below.
 - `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
   and the crate-root re-exports), `picker` (the lane tree — the root screen),
   `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
@@ -144,6 +150,157 @@ pins that.
   fires for public items — so the split surfaced two real omissions rather than
   inventing them. They got `Default` impls, not `#[allow]`: a type whose `new()`
   takes no arguments and cannot fail *is* `Default`, and saying so is the fix.
+
+- **`dots` reads the repo; it does not restate it.** Target names and summaries
+  are the `##` markers `make help` already renders, a target's long form is the
+  comment block above its rule, and sections come from `deps.conf`. Nothing is
+  authored twice, which has one consequence to actually absorb: **a comment
+  above a rule in the Makefile is user-facing documentation now.** Write it for
+  someone deciding whether to run the thing.
+
+  A blank line ends a block. That is what stops a file-header banner being read
+  as the first target's page, and how a target opts out of having a long form.
+  The tests parse the REAL Makefile rather than a fixture, because the thing
+  that breaks is not the parser — it is someone reformatting a rule and the
+  console quietly losing a page.
+
+- **`dots` READS the repo and OWNS `~/.config/dotfiles/sections`, and that
+  split is the whole design.** Everything derived from the tree — targets,
+  their pages, the section list — is the same on every machine by definition,
+  so a console over it is a launcher. The sections file is the opposite: it
+  exists to differ per machine, and until now nothing wrote it but an editor.
+  A second store lands the same way (`~/.gitconfig.local` is the obvious next
+  one) — machine-local, outside the work tree, whole file rewritten, delete it
+  to get the default back. `font`'s `lanes.rs` was the first of these and this
+  follows it deliberately.
+
+  The rule that decides what may become a row: **a row under `dots` changes
+  THIS machine.** `font` qualifies and is already pushed as one. `github`
+  changes a repo on a server, so it is a sibling binary and not a row —
+  otherwise the console becomes a launcher again, one screen at a time.
+
+- **Absent and everything-ticked are DIFFERENT states, and rendering them
+  identically is the bug this screen exists to avoid.** `manifest_enabled`
+  prints the names it finds in the file, so a machine with no file gets
+  whatever `deps.conf` declares *now and later*, while a machine with a file
+  gets exactly the names in it — the same section added upstream arrives ON in
+  one case and OFF, silently, in the other. Nine ticked boxes look the same
+  either way.
+
+  Hence `Mode`, hence the header saying which contract is in force rather than
+  "all", and hence `follow deps.conf` being a ROW: nobody discovers that
+  undoing a checklist means deleting a file whose path they would have to know
+  first. `sections::tests::a_new_section_arrives_off_when_pinned_and_on_when_following`
+  is the test that pins the distinction; if it ever goes, the header is lying.
+
+- **Space toggles; Enter still opens.** The key that rewrites a file must not
+  be the key that expands a tree — and the three verbs under a section are what
+  you came for far more often than the toggle is. Space also works on the verb
+  rows, so an open section is not three rows where its own switch stops
+  working. The footer names the RESULT ("skip it here" / "sweep it here"), not
+  the action, because `space toggle` makes you press it to find out which way
+  it goes.
+
+- **`set` writes and then RE-READS, rather than updating state from what it
+  just wrote.** A read-only config dir then shows up as the toggle not moving,
+  with the reason in the status line, instead of a ticked box over a file that
+  never changed. Toggling everything off is allowed rather than prevented:
+  `manifest_scope_into` refuses an all-off file and says how to fix it, so the
+  failure is safe — but it fires at `make install` time, possibly days later,
+  so the console says so at the moment of the toggle.
+
+- **Both modes add or drop a row, so `at()` and `rows()` can drift.** That is
+  the exact bug the `At` enum was introduced to prevent, now with a moving
+  target. `console::tests::walk_agrees` asserts every selectable index resolves
+  to the row actually drawn at it, in all three shapes (following, pinned,
+  section open). Do not add a conditional row without extending it.
+
+- **`github` builds but does not install, and that is the whole plan.** A bash
+  function beats PATH and `github()` is still defined in `bash_github_tui`, so
+  a `github` binary installed now could not win anyway — CI asserts the rule.
+  It is therefore absent from `deps.conf` and `tui/deps.sh` until the commit
+  that deletes the bash function adds it to both. Develop with `cargo run -p
+  github`. Do NOT wire up a half-ported `github` that dispatches to both
+  halves; replacing that file as a unit is exactly what the CI rule "only
+  bash_github_tui may invoke fzf" was built to allow.
+
+- **`index` groups by PATH and identifies by REMOTE, because on the real tree
+  neither can do both.** Measured before the reader was written:
+  `~/github/orgs/codegig` holds the org `codegig-br`; depth is not fixed
+  (`orgs/codegig/clients/shell/atlas`); `private/repos/jarvis-project` holds
+  other people's clones; one repo has no remote. Grouping by owner would file
+  someone else's clone under its own heading and have nowhere to put the
+  remoteless one. So the lane comes from where you filed it and the slug comes
+  from `origin`.
+
+  Both are read as FILES — `.git/config` and `.git/HEAD` parsed directly, not
+  `git config` and `git branch`. Twenty-seven process spawns is the difference
+  between a screen that opens instantly and one you watch open, and instant is
+  this screen's entire claim. `current()` walks up for `.git` rather than
+  asking `gh repo view`, for the same reason plus working offline.
+
+- **A row says the unusual thing and stays quiet otherwise.** The first version
+  put `owner/name` on every row, which on the real tree is thirteen rows of
+  `roest1/<the-directory-name>` under a heading that already said `roest1` —
+  and the column truncates, so the noise pushed the genuinely different ones
+  (`bilawalsidhu/gods-eye-view`, `local only`) off the end. Now the slug shows
+  only when the directory was renamed or the owner is not the lane's, and the
+  branch badge only when it is not `main`/`master`. Same rule as `dots`' `off`
+  badge.
+
+- **`Screen::initial_sel` is asked of the screen, not passed to it.** `github`
+  inside a repo opens on that repo's row, and which row that is depends on
+  which lanes the screen decided to open — a caller would have to reimplement
+  the row walk to know. `app` clamps the answer to the rows actually drawn and
+  skips a spacer, so a stale one cannot park the cursor in a blank row, which
+  is the one place navigation otherwise never lands.
+
+- **`dots` is not a make target, deliberately.** `make font` does not exist
+  either. The console was called `make it` on `feat/make-console`, and keeping
+  both a target and a binary would have been a second name for one thing —
+  exactly the drift this repo keeps deleting. `make help` ends with a pointer
+  at `dots` instead, so the discoverability a bare binary would lose is bought
+  back for one line.
+
+  A happy consequence: `dots` is no longer started BY make, so the
+  `MAKEFLAGS`/`MAKELEVEL` inheritance the bash console had to unset cannot
+  arise. That was on the salvage list and simply evaporated.
+
+- **Twelve targets stream into the pane. Two detach. The split is sudo, and
+  it is not a preference.** A child on the real tty can prompt for a password;
+  a pane cannot, raw mode having already taken the keyboard. So `install` and
+  `shell` — the only two that can reach `sudo`, via `pkg_install` and via
+  `sudo tee -a /etc/shells` — hand the terminal back (`Flow::Detach`) and run
+  where the real sudo can prompt in the open.
+
+  **`dots` contains no sudo code at all**, and that is the design rather than
+  an omission. Streaming those two would have required priming plus a
+  credential keepalive (what `lib/tui.sh` did, holding a passwordless-root
+  window open for the session), or an askpass helper, or `sudo -S` — and the
+  last two put a password through this process. A feel-good feature does not
+  buy that. sudo-rs does not change it either: escalation needs a setuid-root
+  binary, so there is no "just for this app" install, and the problem is pty
+  ownership rather than sudo's implementation language.
+
+  `Terminal::suspend`/`resume` exist for the detach and are not `restore()`
+  then `take()`: `take()` installs a panic hook wrapping the previous one, so
+  re-taking per run would stack a hook per invocation for the life of the
+  process.
+
+- **`console::ESCALATES` is checked against the tree, not trusted.**
+  `repo::sudo_files` and `repo::sudo_recipes` re-derive the escalating set and
+  a test asserts the two agree, so a new `sudo` call site anywhere breaks the
+  build rather than quietly arriving inside a streamed pane. The failure is
+  worth stating: a target missing from `ESCALATES` gets STREAMED, and its
+  password prompt fires into a pane that cannot show it.
+
+  That test immediately earned itself twice. It found `bootstrap.sh`, which
+  escalates and which `dots` can never run — excluded now as a claim about
+  reachability rather than a convenience. And it found a bug in its OWN parser:
+  `make shell` wraps its recipe in `ifeq ($(UNAME),Darwin)`, the scanner read
+  the directive as a new rule, and the escalation was attributed to no target
+  at all — the tree and the console agreeing when they did not, which is the
+  exact failure the test exists to prevent.
 
 ## The command surface is three commands
 

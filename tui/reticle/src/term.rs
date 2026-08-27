@@ -49,6 +49,35 @@ impl Terminal {
         crossterm::terminal::size()
     }
 
+    /// Give the terminal back for the duration of a child process, then take
+    /// it again. This is how `dots` runs a make target: the child inherits the
+    /// REAL tty, so `sudo` can prompt, colour works, and the output is exactly
+    /// what you would have seen typing the command yourself.
+    ///
+    /// Deliberately not `restore()` followed by `take()`. `take()` installs a
+    /// panic hook that wraps the previous one, so re-taking once per run would
+    /// stack a hook per invocation for the life of the process. These two touch
+    /// only the three pieces of state that actually need to move.
+    pub fn suspend(&mut self) -> io::Result<()> {
+        if self.restored {
+            return Ok(());
+        }
+        let mut out = io::stdout();
+        execute!(out, DisableMouseCapture, cursor::Show, LeaveAlternateScreen)?;
+        disable_raw_mode()?;
+        out.flush()
+    }
+
+    pub fn resume(&mut self) -> io::Result<()> {
+        if self.restored {
+            return Ok(());
+        }
+        enable_raw_mode()?;
+        let mut out = io::stdout();
+        execute!(out, EnterAlternateScreen, EnableMouseCapture, cursor::Hide)?;
+        out.flush()
+    }
+
     /// Idempotent, because `Drop` and an explicit call must not double-restore.
     pub fn restore(&mut self) -> io::Result<()> {
         if self.restored {
