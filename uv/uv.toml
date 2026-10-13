@@ -1,0 +1,30 @@
+# ~/.config/uv/uv.toml — user-level uv configuration.
+#
+# Both settings below are lifted verbatim from the config Fedora's RPM ships at
+# /etc/uv/uv.toml, and that provenance is the point rather than a footnote: they
+# are the distro's opinion, they are the right one, and this repo no longer
+# installs the distro's uv. See [uv] in deps.conf for why. Without this file the
+# behaviour those two lines describe would have quietly left with the package.
+#
+# User level beats system level in uv's precedence order (project > user >
+# system), so this also wins on a machine that still has /etc/uv/uv.toml —
+# a box mid-migration gets the same behaviour as one that has been converted.
+
+# Don't reach for the network to satisfy a Python that isn't here. `uv run` on a
+# script whose PEP 723 header names a version this machine lacks should say so,
+# not silently download a second interpreter — bash/tabular.py is run this way
+# by 2parquet/2feather/2pickle, and a several-hundred-MB surprise inside what
+# looks like a file conversion is the failure being avoided.
+#
+# Managed Pythons are still available; they just have to be asked for:
+#   uv python install 3.13
+# https://docs.astral.sh/uv/reference/settings/#python-downloads
+python-downloads = "manual"
+
+# Prefer the system interpreter over a managed one. The default ("managed")
+# means ANY managed Python wins every operation that doesn't name a version —
+# including one installed months ago and since passed by the system's own.
+# Distro Pythons get distro maintenance and are integrated with the rest of the
+# machine; that is worth more here than being a release ahead.
+# https://docs.astral.sh/uv/reference/settings/#python-preference
+python-preference = "system"

@@ -3,14 +3,6 @@
   "enabledPlugins": {
     "lua-lsp@claude-plugins-official": true
   },
-  "extraKnownMarketplaces": {
-    "claude-video": {
-      "source": {
-        "repo": "bradautomates/claude-video",
-        "source": "github"
-      }
-    }
-  },
   "hooks": {
     "Notification": [
       {
@@ -32,20 +24,6 @@
         ]
       }
     ]
-  },
-  "modelSettings": {
-    "claude-fable-5": {
-      "effortLevel": "xhigh"
-    },
-    "claude-opus-5": {
-      "effortLevel": "xhigh"
-    },
-    "claude-opus-5-5": {
-      "effortLevel": "high"
-    },
-    "claude-sonnet-5": {
-      "effortLevel": "medium"
-    }
   },
   "permissions": {
     "defaultMode": "auto",

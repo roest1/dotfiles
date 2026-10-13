@@ -190,7 +190,7 @@ mise-lock: ## Regenerate mise.toml from deps.conf and refresh mise.lock
 # network and no font tooling — only this target does. Re-run after an upstream
 # Science Gothic release.
 mono-font: ## Regenerate wezterm/fonts from upstream Science Gothic
-	@command -v uv >/dev/null 2>&1 || { echo "uv not installed — declared in deps.conf [bash]"; exit 1; }
+	@command -v uv >/dev/null 2>&1 || { echo "uv not installed — declared in deps.conf [uv]; run: make install uv"; exit 1; }
 	@src=$$(mktemp); \
 	if curl -fsSL -o "$$src" \
 	     "https://raw.githubusercontent.com/google/fonts/main/ofl/sciencegothic/ScienceGothic%5BCTRS,slnt,wdth,wght%5D.ttf"; then \
