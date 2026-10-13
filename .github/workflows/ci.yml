@@ -77,7 +77,9 @@ jobs:
           done
           grep -q '^status_fonts()' lib/status.sh \
             || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
-          grep -q 'status_fonts "\$@"' lib/status.sh \
+          # The scope is the sections-file-narrowed list since status honors
+          # ~/.config/dotfiles/sections, not the raw arguments.
+          grep -q 'status_fonts "\${scope\[@\]}"' lib/status.sh \
             || { echo "status_all no longer calls status_fonts with its scope"; bad=1; }
           # The carrier is informational: it is unreadable over ssh, in a pipe,
           # and on any non-wezterm terminal, so counting it would report drift
