@@ -77,7 +77,9 @@ jobs:
           done
           grep -q '^status_fonts()' lib/status.sh \
             || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
-          grep -q 'status_fonts "\$@"' lib/status.sh \
+          # The scope is the sections-file-narrowed list since status honors
+          # ~/.config/dotfiles/sections, not the raw arguments.
+          grep -q 'status_fonts "\${scope\[@\]}"' lib/status.sh \
             || { echo "status_all no longer calls status_fonts with its scope"; bad=1; }
           # The carrier is informational: it is unreadable over ssh, in a pipe,
           # and on any non-wezterm terminal, so counting it would report drift
@@ -571,6 +573,32 @@ jobs:
                   'source lib/manifest.sh; manifest_scope_into bash >/dev/null 2>&1; echo "${MANIFEST_SCOPE[*]}"')
           [ "$got" = "bash" ] || { echo "expected scope 'bash', got '$got'"; fail=1; }
 
+          exit $fail
+
+      # The file was wired into install and check but not status, so a headless
+      # box that opted out of [wezterm] reported it as drift indefinitely — the
+      # one command meant to answer "is this machine what it should be" said no
+      # to a machine that was exactly what it chose to be. Same four rows as
+      # above, asked of status: narrowed, named, explicit wins, absent is all.
+      - name: make status leaves an opted-out section alone
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          make sections | sed 's/^wezterm$/# wezterm/' > "$tmp/sections"
+          fail=0
+
+          out=$(DOTFILES_SECTIONS_FILE=$tmp/sections make status 2>&1)
+          ! grep -q '^\[wezterm\]' <<<"$out" || { echo "opted-out [wezterm] still reported"; fail=1; }
+          grep -q 'not selected here: wezterm' <<<"$out" || { echo "the skip must be named, not silent"; fail=1; }
+
+          out=$(DOTFILES_SECTIONS_FILE=$tmp/sections make status wezterm 2>&1)
+          grep -q '^\[wezterm\] links' <<<"$out" || { echo "naming a section must still check it"; fail=1; }
+
+          out=$(DOTFILES_SECTIONS_FILE=$tmp/none make status 2>&1)
+          grep -q '^\[wezterm\] links' <<<"$out" || { echo "no file must still mean every section"; fail=1; }
+          ! grep -q 'not selected here' <<<"$out" || { echo "no file, nothing skipped"; fail=1; }
+
+          [ $fail -eq 0 ] && echo "ok: status honors the sections file the way install does"
           exit $fail
 
       - name: Sections are discoverable
