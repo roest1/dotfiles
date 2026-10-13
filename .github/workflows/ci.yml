@@ -1448,6 +1448,16 @@ jobs:
             */Cellar/*) echo "uv came from brew — ensure_uv preferred the keg"; exit 1 ;;
           esac
 
+          # Not a distro build is necessary, not sufficient: pip --user also
+          # installs into ~/.local/bin, and that copy cannot self-update
+          # either. uv decides from the receipt Astral's installer writes, so
+          # assert the receipt exists and names the directory that runs.
+          receipt="${XDG_CONFIG_HOME:-$HOME/.config}/uv/uv-receipt.json"
+          test -r "$receipt" || { echo "no $receipt — 'uv self update' will refuse"; exit 1; }
+          prefix=$(sed -n 's/.*"install_prefix": *"\([^"]*\)".*/\1/p' "$receipt")
+          [ "$prefix" = "$(dirname "$(command -v uv)")" ] \
+            || { echo "receipt is for '$prefix', but uv runs from $(command -v uv)"; exit 1; }
+
           # The config has to be readable where uv looks for it, or the two
           # settings this section exists to carry are not in effect.
           test -L "$HOME/.config/uv/uv.toml" || { echo "uv.toml not linked"; exit 1; }

@@ -76,6 +76,34 @@ uv_is_packaged() {
   return 1
 }
 
+# Can THIS binary update itself? uv answers that from the receipt Astral's
+# installer writes, so ask the same file rather than guessing from the path.
+# ~/.local/bin is also where `pip install --user uv` puts its copy — on RHEL
+# that one was reported ✅ here while `uv self update` refused it, because the
+# checks above only know rpm, dpkg and brew.
+#
+# The receipt names the directory it installed into, and that has to be the
+# directory of the binary that runs: a receipt left over from a removed
+# install, or a pipx symlink resolving into its venv, must not count.
+uv_receipt() {
+  echo "${XDG_CONFIG_HOME:-$HOME/.config}/uv/uv-receipt.json"
+}
+
+uv_has_receipt() {
+  local dir receipt prefix
+  dir="$(dirname "$1")"
+  receipt="$(uv_receipt)"
+  [ -r "$receipt" ] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    prefix="$(jq -r '.install_prefix // empty' "$receipt" 2>/dev/null)"
+  else
+    # [uv] does not depend on [bash], so jq may be absent. The receipt is
+    # cargo-dist's compact JSON; this reads the one field this needs.
+    prefix="$(sed -n 's/.*"install_prefix": *"\([^"]*\)".*/\1/p' "$receipt")"
+  fi
+  [ -n "$prefix" ] && [ "$prefix" = "$dir" ]
+}
+
 uv_remove_hint() {
   case "$PM" in
     dnf)  echo "sudo dnf remove uv" ;;
@@ -102,11 +130,25 @@ done < <(uv_paths)
 
 version="$(uv --version 2>/dev/null || echo 'version unknown')"
 shown="${active/#$HOME/\~}"
+shown_receipt="$(uv_receipt)"; shown_receipt="${shown_receipt/#$HOME/\~}"
 
 if [ "$copies" -eq 0 ]; then
   # ensure_uv said yes and PATH says no. A shell function or alias shadowing
   # the binary is the only way here, and guessing which is worse than saying so.
   echo "  ⚠️  uv answers to 'command -v' but is not a file on PATH — skipping"
+elif [ -z "$packaged" ] && ! uv_has_receipt "$active"; then
+  # No package manager owns it, and Astral's installer did not put it there
+  # either: pip --user, pipx or a hand-copied binary. Which one is not
+  # knowable from here, so name the likely two and stop guessing.
+  echo "  ⚠️  $version — $shown"
+  echo "      not from Astral's installer (no receipt for this directory in"
+  echo "      ${shown_receipt}), so 'uv self update' refuses it."
+  echo ""
+  echo "      Most likely pip --user or pipx, which also install here:"
+  echo "        python3 -m pip show uv    # or: pipx list"
+  echo "      Remove it with whichever owns it, then:"
+  echo "        make install uv"
+  echo "        hash -r    # in any shell that has already run uv"
 elif [ -z "$packaged" ]; then
   echo "  ✅ $version — $shown"
   if [ "$copies" -gt 1 ]; then
