@@ -12,6 +12,7 @@
     "yaml-language-server": "^1.15.0"
   },
   "overrides": {
+    "fast-uri": ">=3.1.6 <4",
     "minimatch": ">=10.2.1"
   },
   "devDependencies": {
