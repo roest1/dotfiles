@@ -452,9 +452,34 @@ status_all() {
   echo ""
   printf "%ssync status — deps.conf vs. this machine%s\n" "$SG_B" "$SG_OFF"
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
-  status_links "$@"
-  status_tools "$@"
-  status_fonts "$@"
+
+  # The same scope `make install` and `make check` use (lib/run.sh): with no
+  # arguments ~/.config/dotfiles/sections narrows it, and naming a section
+  # still wins. Status was left out when that file arrived, so a section a
+  # machine had opted out of kept counting as drift — a headless box reported
+  # wezterm missing forever. An opt-out is not drift (see status_fonts).
+  #
+  # Skipped sections are NAMED rather than dropped silently. A section added to
+  # deps.conf after the file was seeded is absent from it by accident, not by
+  # choice, and this line is the only place that difference is visible.
+  manifest_scope_into "$@" || return 0
+  local -a scope=(${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"})
+  if (( $# == 0 )) && [[ -f "$DOTFILES_SECTIONS_FILE" ]]; then
+    local s skipped=""
+    while IFS= read -r s; do
+      case " ${scope[*]} " in *" $s "*) ;; *) skipped="$skipped $s" ;; esac
+    done < <(manifest_sections)
+    if [[ -n "$skipped" ]]; then
+      echo ""
+      printf "%s  $MARK_NA not selected here:%s — %s%s\n" \
+        "$SG" "$skipped" "${DOTFILES_SECTIONS_FILE/#$HOME/~}" "$SG_OFF"
+      echo "      Opted out, so not counted. 'make status <name>' checks one anyway."
+    fi
+  fi
+
+  status_links "${scope[@]}"
+  status_tools "${scope[@]}"
+  status_fonts "${scope[@]}"
   status_windows
   status_wsl_interop
   STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE \
