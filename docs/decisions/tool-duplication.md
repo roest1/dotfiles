@@ -80,6 +80,46 @@ Doing that here reclaimed 324M, taking `~/.local/share/mise/installs` from 842M 
 or in mise knows they are duplicates of a declared tool, because knowing that requires
 reading `deps.conf`.
 
+## A second instance: uv, where the copies differ in *capability*
+
+The mise cases above differ by version. uv differs by what the binary can do, which is
+worse, because no version comparison finds it.
+
+```
+$ type -a uv
+uv is /home/roest/.local/bin/uv        # standalone installer, 0.12.9
+uv is /usr/bin/uv                      # uv-0.11.32-1.fc44.x86_64
+
+$ uv self update
+error: uv was installed through an external package manager and cannot update itself.
+```
+
+Distro builds compile `uv self update` out. So the copy that *can* keep itself current is
+the one on `~/.local/bin`, and the copy that cannot is the one PATH order happened to
+hand to a shell whose `hash` table predated the other. That last part is the sting: the
+shell reported 0.11.32 while `uvx uvhow` — which resolves PATH itself — correctly
+reported 0.12.9 at `~/.local/bin/uv`. Two tools disagreed about which uv was installed,
+and both were right.
+
+`make status` printed `✓ uv manual` throughout, and was also right. `manual` is a
+wildcard in `provider_satisfies`, so any provenance satisfies it — which is what stops
+zoxide and wezterm reading as drift, and is exactly why it cannot see this.
+
+The response was to make `[uv]` a section and put a **one-tool version of the reporting
+half** in `uv/deps.sh`: enumerate every uv on PATH, ask `rpm`/`dpkg`/brew which of them a
+package manager owns, and print the state with the single command that fixes it. It
+removes nothing, per the rule below.
+
+That file is a reasonable template for the general command, and it is also evidence for
+the open questions:
+
+- **Q1 is answered, for this case at least.** `type -a` was not enough. Both copies would
+  resolve to `provider_of` answers that satisfy the declaration; the question worth asking
+  was "which of these is package-manager-owned", which is one third of `provider_of` and
+  needs no shim resolution at all.
+- **Q2 leans "advice".** The shadowed uv is a real hazard and the machine still works
+  perfectly. `uv/deps.sh` warns and exits 0.
+
 ## Why this is computable, unlike "installed but not declared"
 
 `CLAUDE.md` rules out reporting "installed but not declared", and the reasoning holds:
@@ -95,7 +135,8 @@ It describes the repo's own dependencies and nothing else, which is the standing
 ## Sketch, not a commitment
 
 Reporting is the easy, safe half and should come first — a `shadowed` note in
-`make status`, or a separate `make doctor`:
+`make status`, or a separate `make doctor`. `uv/deps.sh` already does it for one tool;
+generalising it means reading the manifest instead of hard-coding the name:
 
 ```
 ✓ tree-sitter    mise        2 shadowed (~/.cargo/bin, linuxbrew)

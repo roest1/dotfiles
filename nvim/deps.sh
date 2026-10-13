@@ -203,6 +203,8 @@ echo ""
 echo "  clipboard image paste:"
 
 if is_wsl; then
+  # powershell.exe is an .exe, so this backend is only as alive as WSL interop.
+  ensure_wsl_interop || true
   echo "  ✅ WSL — uses Windows PowerShell, no install needed"
 elif [ "$(uname -s)" = "Darwin" ]; then
   pkg_install "pngpaste" || echo "  ⚠️  :PasteImage will not work without pngpaste"

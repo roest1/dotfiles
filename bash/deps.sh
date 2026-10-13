@@ -39,15 +39,17 @@ if ! command -v zoxide >/dev/null 2>&1; then
   curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
 fi
 
-# uv: same shape as zoxide. Fedora and Homebrew package it; Ubuntu 24.04 does
-# not, so `pkg` alone leaves 2parquet/2feather/2pickle unusable there. This is
-# the same installer lib/pkg.sh already curls when it needs uv to install a uv
-# tool — declaring `uv` as a tool in its own right just means it now happens
-# whether or not something else pulled it in first.
-if ! command -v uv >/dev/null 2>&1; then
-  echo "  ➡️  uv not packaged here — using the official installer..."
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-fi
+# uv is NOT installed here, and the absence is deliberate. It moved to its own
+# [uv] section, because this section may not depend on a curl-piped installer
+# (see CONTRIBUTING.md) and uv can no longer come from `pkg` — the distro build
+# has `uv self update` compiled out. `make install` sweeps [uv] too, so a normal
+# machine is unaffected; a machine that opts out of [uv] loses exactly
+# 2parquet/2feather/2pickle, which guard on `command -v uv` and say so.
+
+# WSL: clip.exe, and every other .exe, stops running when a package upgrade
+# restarts systemd-binfmt. See ensure_wsl_interop in lib/pkg.sh. Never fatal —
+# a guest without sudo still gets the rest of this file.
+ensure_wsl_interop || true
 
 # ── fzf version floor ────────────────────────────────────────────────────────
 #

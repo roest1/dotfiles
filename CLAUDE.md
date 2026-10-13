@@ -130,6 +130,24 @@ for bindgen, WSL clipboard probing) belongs in an optional `<section>/deps.sh`, 
 `lib/run.sh` runs after that section's tools. Declarative for the common case, script for
 the rest — don't force an `if` into the manifest.
 
+**`[uv]` is the one section that prefers an official installer over `pkg` on purpose**,
+and it will read as a violation of the paragraph above if you don't know why. The
+distro's uv has `uv self update` compiled out, so it is stuck at whatever the distro last
+packaged — Fedora 44 sat on 0.11.32 against upstream 0.12.9 — while uv ships weekly. That
+is a capability difference rather than a version floor, so no `||` chain can express it:
+`manual` installs nothing, and chains are tried before any `deps.sh` runs, so
+`manual||pkg` installs the distro copy first and never reaches the installer it is
+supposed to prefer. The preference therefore lives in `ensure_uv` (`lib/pkg.sh`), which
+curls astral.sh and falls back to `pkg` only when the network is unreachable.
+`uv/deps.sh` reports — and deliberately never removes — a distro uv already on the
+machine, for the reason in `docs/decisions/tool-duplication.md`.
+
+That move is also why `uv` is not in `[bash]` any more: that section may not depend on a
+curl-piped installer, and `2parquet`/`2feather`/`2pickle` guard on `command -v uv` so it
+doesn't have to. And it is why `uv/uv.toml` is tracked — `python-downloads = "manual"`
+and `python-preference = "system"` came from `/etc/uv/uv.toml`, which the RPM owns, so
+uninstalling the package to get a self-updatable uv would have silently reverted both.
+
 ### Why not Nix
 
 Deferred. Dependencies are _data_, so adopting Nix means writing a `nix` provider in
@@ -414,6 +432,16 @@ you write code here. Reasoning, revisit conditions and current status:
   `wezterm.exe` load a config over `\\wsl.localhost\...`; the maintainer has said the WSL
   filesystem isn't visible to the host that way. Hence a second clone on `C:` and a
   PowerShell installer, rather than teaching `install.sh` to reach across.
+- **`Exec format error` from `clip.exe` is a lost binfmt entry, not a PATH problem.** A
+  WSL guest runs `.exe` files through a `binfmt_misc` entry WSL writes into `/proc` at
+  boot, with no `binfmt.d` file behind it. With `systemd=true`, any package upgrade that
+  ships a `binfmt.d` rule (python3.12 did) restarts `systemd-binfmt`, which unregisters
+  every entry and restores only those with a file, so interop is gone until WSL reboots.
+  Re-sourcing `~/.bashrc` can't reach it. `ensure_wsl_interop` in `lib/pkg.sh` writes
+  `/etc/binfmt.d/WSLInterop.conf` (both `bash/deps.sh` and `nvim/deps.sh` call it), and
+  `make status` reports it under `[wsl] interop`. Check for both `WSLInterop` and
+  `WSLInterop-late`: a systemd WSL registers the latter, so testing one name alone calls
+  a working machine broken.
 - **`.ps1` files must be pure ASCII.** Windows PowerShell 5.1 reads a `.ps1` without a BOM
   as ANSI (cp1252), not UTF-8. An em dash (`E2 80 94`) decodes as three cp1252 characters
   ending in `0x94`, which in cp1252 is `"` — and PowerShell treats that as a **string

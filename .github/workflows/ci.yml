@@ -917,6 +917,44 @@ jobs:
           done
           echo "ok: WSL suppresses wezterm and nothing else"
 
+      # Same blind spot, and this one writes to /etc with sudo. The not-WSL
+      # direction is the one with teeth: a binfmt rule claiming every MZ file for
+      # a nonexistent /init would take PE binaries away from whatever runs them
+      # on that box. And a re-run on a WSL guest that is already fixed must not
+      # ask for a password at all.
+      - name: WSL interop is persisted under WSL with systemd, and nowhere else
+        run: |
+          set -euo pipefail
+          source lib/pkg.sh
+
+          # Record every sudo instead of running it; tee's stdin is what it writes.
+          log=$(mktemp)
+          sudo() { printf '%s\n' "$*" >> "$log"; if [ "$1" = tee ]; then cat >> "$log"; fi; }
+
+          is_wsl() { return 1; }; is_systemd() { return 0; }
+          ensure_wsl_interop
+          [ ! -s "$log" ] || { echo "not-WSL: must not sudo:"; cat "$log"; exit 1; }
+
+          is_wsl() { return 0; }; is_systemd() { return 1; }
+          ensure_wsl_interop
+          [ ! -s "$log" ] || { echo "WSL without systemd: must not sudo:"; cat "$log"; exit 1; }
+
+          is_wsl() { return 0; }; is_systemd() { return 0; }
+          wsl_interop_persisted() { return 0; }; wsl_interop_registered() { return 0; }
+          ensure_wsl_interop
+          [ ! -s "$log" ] || { echo "WSL, already fixed: a re-run must not sudo:"; cat "$log"; exit 1; }
+
+          # Broken guest: the rule is written verbatim, then systemd-binfmt re-reads
+          # it. Registration never appears here, so the call itself reports failure.
+          wsl_interop_persisted() { return 1; }; wsl_interop_registered() { return 1; }
+          ensure_wsl_interop || true
+          fail=0
+          grep -qx "tee $WSL_INTEROP_CONF" "$log" || { echo "did not write $WSL_INTEROP_CONF"; fail=1; }
+          grep -qx ':WSLInterop:M::MZ::/init:PF' "$log" || { echo "wrote the wrong rule"; fail=1; }
+          grep -qx 'systemctl restart systemd-binfmt' "$log" || { echo "did not restart systemd-binfmt"; fail=1; }
+          [ $fail -eq 0 ] || { cat "$log"; exit 1; }
+          echo "ok: interop persisted under WSL+systemd only, and a fixed guest is left alone"
+
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
@@ -943,6 +981,61 @@ jobs:
           grep -qx 'wezterm/fonts' <<<"$links" || {
             echo "[wezterm] no longer links the fonts directory"; bad=1; }
           [ $bad -eq 0 ] && echo "ok: [wezterm] links config, shared body and fonts"
+          exit $bad
+
+      # [uv] is the one section that prefers an official installer to the
+      # distro package, and the preference is fragile in a specific way: it is
+      # not expressible in the manifest. `manual` installs nothing and `||`
+      # chains are tried before any deps.sh runs, so the obvious "fix" —
+      # putting pkg back in the chain, in either position — silently installs
+      # the distro's uv and never reaches ensure_uv. That build has
+      # `uv self update` compiled out, so the regression is invisible until
+      # someone tries to update uv months later and is told they cannot.
+      #
+      # Asserted here rather than in the install jobs because it is a claim
+      # about the declaration, and reading deps.conf costs nothing.
+      - name: '[uv] is installed by its own installer, never the distro''s'
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          bad=0
+
+          # The config half. Both settings in uv.toml came from /etc/uv/uv.toml,
+          # which the RPM owns — so the link is what stops `dnf remove uv` from
+          # silently reverting python-downloads and python-preference.
+          manifest_lines link uv | awk -F'\t' '{print $2}' | grep -qx 'uv/uv.toml' || {
+            echo "[uv] no longer links uv/uv.toml — removing the distro package"
+            echo "     would revert python-downloads and python-preference"; bad=1; }
+
+          # No section may declare uv through pkg, in any position of a chain.
+          while IFS=$'\t' read -r section provider cmd _pkg; do
+            [ "$cmd" = "uv" ] || continue
+            for p in ${provider//||/ }; do
+              if [ "$p" = "pkg" ]; then
+                echo "[$section] declares uv via 'pkg'. That build cannot"
+                echo "     'uv self update'. Let ensure_uv (lib/pkg.sh) choose —"
+                echo "     it already falls back to pkg when astral.sh is down."
+                bad=1
+              fi
+            done
+          done < <(manifest_lines tool)
+
+          # And the helper must still ask the installer FIRST. A revert to
+          # `pkg_install uv || curl` reads as a harmless simplification and
+          # undoes the whole thing.
+          grep -q '^ensure_uv()' lib/pkg.sh || {
+            echo "lib/pkg.sh no longer defines ensure_uv"; bad=1; }
+          grep -q 'ensure_uv ||' lib/pkg.sh || {
+            echo "uv_install no longer bootstraps uv through ensure_uv"; bad=1; }
+          body=$(sed -n '/^ensure_uv()/,/^}/p' lib/pkg.sh)
+          first=$(grep -n -E 'astral\.sh|pkg_install' <<<"$body" | head -1 || true)
+          case "$first" in
+            *astral.sh*) ;;
+            *) echo "ensure_uv reaches pkg_install before the official installer:"
+               echo "     $first"; bad=1 ;;
+          esac
+
+          [ $bad -eq 0 ] && echo "ok: uv comes from Astral's installer, with pkg as the fallback"
           exit $bad
 
   # ── Links only: the locked-down-machine path ───────────────────────────────
@@ -1219,7 +1312,9 @@ jobs:
     steps:
       - name: Bootstrap container prerequisites
         if: matrix.container != ''
-        run: dnf install -y git make sudo findutils
+        # curl is here for [uv]: ensure_uv fetches Astral's installer, and
+        # fedora:latest ships curl-minimal, which is not guaranteed to stay.
+        run: dnf install -y git make sudo findutils curl
 
       - uses: actions/checkout@v7
 
@@ -1245,6 +1340,42 @@ jobs:
           if grep -q MISSING /tmp/check.txt; then
             echo "bash section incomplete"; exit 1
           fi
+
+      # [uv] is installed on every platform in this matrix, and Fedora is the
+      # one that makes it worth doing: dnf HAS a uv package, so if the
+      # preference ever regresses to `pkg` this job gets /usr/bin/uv and fails,
+      # where ubuntu (no package) and macos (a keg that is not on PATH first)
+      # would both still pass by accident.
+      #
+      # The assertion is provenance, not presence. `make check uv` would go
+      # green for the distro build — the tool exists, it just cannot update
+      # itself, which is the entire reason the section exists.
+      - name: Install the uv section
+        run: make install uv
+
+      - name: The installed uv is the self-updatable one
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v uv >/dev/null || { echo "uv was not installed"; exit 1; }
+          resolved=$(readlink -f "$(command -v uv)" 2>/dev/null || command -v uv)
+          echo "uv: $resolved ($(uv --version))"
+
+          if command -v rpm >/dev/null 2>&1 && rpm -qf "$resolved" >/dev/null 2>&1; then
+            echo "uv came from rpm — ensure_uv preferred the distro package"; exit 1
+          fi
+          if command -v dpkg >/dev/null 2>&1 && dpkg -S "$resolved" >/dev/null 2>&1; then
+            echo "uv came from dpkg — ensure_uv preferred the distro package"; exit 1
+          fi
+          case "$resolved" in
+            */Cellar/*) echo "uv came from brew — ensure_uv preferred the keg"; exit 1 ;;
+          esac
+
+          # The config has to be readable where uv looks for it, or the two
+          # settings this section exists to carry are not in effect.
+          test -L "$HOME/.config/uv/uv.toml" || { echo "uv.toml not linked"; exit 1; }
+          grep -q 'python-preference' "$HOME/.config/uv/uv.toml"
+          echo "ok: self-updatable uv, config linked"
 
   # ── the neovim floor holds on the platform that can't meet it ──────────────
   # Ubuntu is the only platform where the distro package cannot satisfy the 0.12
