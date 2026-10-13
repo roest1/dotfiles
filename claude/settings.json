@@ -1,15 +1,23 @@
 {
-  "agentPushNotifEnabled": true,
-  "enabledPlugins": {
-    "lua-lsp@claude-plugins-official": true
+  "permissions": {
+    "deny": [
+      "Read(~/.bash_local)",
+      "Read(~/.bash_password_commands)",
+      "Read(~/.ssh/**)",
+      "Read(**/.ssh/**)",
+      "Read(**/.env*)",
+      "Read(**/*password*)"
+    ],
+    "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "Notification": [
       {
         "hooks": [
           {
-            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'd2FpdGluZw==' >/dev/tty; } 2>/dev/null || true",
-            "type": "command"
+            "type": "command",
+            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'd2FpdGluZw==' >/dev/tty; } 2>/dev/null || true"
           }
         ]
       }
@@ -18,27 +26,37 @@
       {
         "hooks": [
           {
-            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'Y29tcGxldGU=' >/dev/tty; } 2>/dev/null || true",
-            "type": "command"
+            "type": "command",
+            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'Y29tcGxldGU=' >/dev/tty; } 2>/dev/null || true"
           }
         ]
       }
     ]
   },
-  "permissions": {
-    "defaultMode": "auto",
-    "deny": [
-      "Read(~/.bash_local)",
-      "Read(~/.bash_password_commands)",
-      "Read(~/.ssh/**)",
-      "Read(**/.ssh/**)",
-      "Read(**/.env*)",
-      "Read(**/*password*)"
-    ]
+  "enabledPlugins": {
+    "lua-lsp@claude-plugins-official": true
   },
-  "skipAutoPermissionPrompt": true,
+  "modelSettings": {
+    "claude-sonnet-5": {
+      "effortLevel": "high"
+    },
+    "claude-opus-5": {
+      "effortLevel": "medium"
+    },
+    "claude-fable-5-1": {
+      "effortLevel": "xhigh"
+    },
+    "claude-fable-5": {
+      "effortLevel": "medium"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  },
+  "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
-  "tui": "fullscreen"
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true
 }
