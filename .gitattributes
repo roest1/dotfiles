@@ -22,9 +22,10 @@
 *.zip binary
 
 # claude/settings.json is written by Claude Code at runtime, through the symlink
-# declared in deps.conf's [claude] section. model and effortLevel are per-machine
-# and per-conversation preferences, so they are stripped on the way into git by
-# the clean filter in tools/clean-claude-settings.sh.
+# declared in deps.conf's [claude] section. model and modelSettings (/model and
+# /effort) are per-machine and per-conversation preferences, so the clean filter
+# in tools/clean-claude-settings.sh swaps them for claude/model-defaults.json on
+# the way into git. Edit that file to change the committed defaults.
 #
 # The filter itself is registered by claude/deps.sh: filter.* config lives in
 # .git/config and cannot be committed, so this line alone does nothing until

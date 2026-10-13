@@ -93,8 +93,15 @@ provider_of() {
     # uninstall/reinstall a tool that was never manually installed.
     if [[ "$path" == */mise/shims/* ]]; then echo "mise-stale"; return; fi
   fi
+  # Exact fields, not `grep "^${cmd}\b"`: \b matches between `git` and the `-`
+  # of `git-filter-repo`, so any uv tool whose name merely starts with a
+  # declared command claimed it — /usr/bin/git reported as uv. awk compares
+  # literally, so a `+` or `.` in a command name is not a regex either.
   if command -v uv >/dev/null 2>&1; then
-    if uv tool list 2>/dev/null | grep -qE "^${cmd}\b|^- ${cmd}\b"; then echo "uv"; return; fi
+    if uv tool list 2>/dev/null \
+         | awk -v c="$cmd" '$1 == c || $0 == "- " c { found = 1 } END { exit !found }'; then
+      echo "uv"; return
+    fi
   fi
 
   case "$resolved" in
