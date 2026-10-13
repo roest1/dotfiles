@@ -57,6 +57,70 @@ tool_applies_here() {
   esac
 }
 
+# ─── WSL interop across systemd-binfmt restarts ─────────────────────────────
+#
+# A WSL guest runs clip.exe, cmd.exe and explorer.exe through a binfmt_misc
+# entry that WSL writes into /proc at boot, with no binfmt.d file behind it.
+# Under systemd that is fragile. A package upgrade that ships a binfmt.d rule
+# (python3.12 is one) restarts systemd-binfmt; stopping the unit unregisters
+# EVERY entry, and starting it restores only the ones that have a file. Every
+# .exe then fails with "Exec format error" until WSL next boots — which reads
+# as a PATH problem, and re-sourcing ~/.bashrc cannot touch it.
+#
+# The fix is to give the entry a file. /etc/binfmt.d rather than /usr/lib,
+# which belongs to packages. systemd-binfmt unregisters a rule of the same name
+# before registering it, so the file coexisting with WSL's own entry is safe.
+#
+# Registration is checked under both names: a systemd-enabled WSL calls its own
+# entry WSLInterop-late (see os_open in nvim/lua/options.lua), so testing for
+# WSLInterop alone would call a working machine broken.
+WSL_INTEROP_CONF=/etc/binfmt.d/WSLInterop.conf
+WSL_INTEROP_RULE=':WSLInterop:M::MZ::/init:PF'
+
+# Only systemd restarts systemd-binfmt, and only systemd reads binfmt.d — a WSL
+# without it has neither the problem nor a use for the file. A function rather
+# than an inline test so CI can force it, the way it forces is_wsl.
+is_systemd() {
+  [ -d /run/systemd/system ]
+}
+
+wsl_interop_registered() {
+  [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop-late ]
+}
+
+wsl_interop_persisted() {
+  [ "$(cat "$WSL_INTEROP_CONF" 2>/dev/null)" = "$WSL_INTEROP_RULE" ]
+}
+
+# Called from bash/deps.sh and nvim/deps.sh: the shell's clip.exe and nvim's
+# PowerShell image paste both need interop, and either section can be installed
+# alone. A re-run on a fixed guest asks for no password — sudo is only reached
+# when something is actually missing.
+ensure_wsl_interop() {
+  is_wsl     || return 0
+  is_systemd || return 0
+
+  if wsl_interop_persisted; then
+    echo "  ✅ WSL interop (persisted in $WSL_INTEROP_CONF)"
+  else
+    echo "  ➡️  Persisting WSL interop in $WSL_INTEROP_CONF..."
+    printf '%s\n' "$WSL_INTEROP_RULE" | sudo tee "$WSL_INTEROP_CONF" >/dev/null \
+      || { echo "  ⚠️  could not write $WSL_INTEROP_CONF"; return 1; }
+  fi
+
+  # Already broken, which is the state you are most likely running this from.
+  # A restart re-reads binfmt.d, so it picks up the file written above.
+  wsl_interop_registered && return 0
+  echo "  ➡️  Interop is not registered — restarting systemd-binfmt..."
+  sudo systemctl restart systemd-binfmt \
+    || { echo "  ⚠️  systemctl restart systemd-binfmt failed"; return 1; }
+  wsl_interop_registered || {
+    echo "  ❌ interop still not registered. From Windows: wsl --shutdown"
+    return 1
+  }
+  echo "  ✅ WSL interop restored"
+}
+
 # ─── Detect package manager ──────────────────────────────────────────────────
 
 # On macOS, brew IS the system package manager. On Linux it is a supplementary
@@ -250,10 +314,57 @@ cargo_install() {
     || echo "  ⚠️  cargo install $crate failed"
 }
 
+# Make sure `uv` exists, installing it from Astral's installer if it does not.
+# Usage: ensure_uv
+#
+# The sibling of ensure_cargo, lifted out for the same reason: a second caller
+# appeared. uv/deps.sh installs uv as a tool in its own right, uv_install wants
+# it as a means to an end, and neither should hold its own opinion about where
+# uv comes from. One implementation, two callers.
+#
+# THE ORDER HERE IS THE POINT, and it is the reverse of this file's habit. The
+# official installer goes first and `pkg` is the fallback, because the distro
+# package is not the same artefact: it has `uv self update` compiled out, so it
+# can only ever be as current as the distro's next package bump. uv ships
+# weekly. Fedora 44 shipped 0.11.32 against an upstream 0.12.9, and no amount
+# of asking uv to update itself could close that. See [uv] in deps.conf.
+#
+# `pkg` stays as the fallback rather than being deleted, and that is not
+# hedging: a machine that cannot reach astral.sh is better off with a stale uv
+# than with none, and it is the only route left on a box with no network but a
+# populated package cache. Nothing else in this repo needs uv to be current;
+# the reason to prefer the installer is that the tool can then fix itself.
+#
+# Short-circuits on `command -v`, which means it will NOT install over a distro
+# uv that is already present. That is deliberate — two copies on PATH is the
+# problem in docs/decisions/tool-duplication.md, and installing a second one to
+# fix the first makes it worse. uv/deps.sh reports that state instead.
+ensure_uv() {
+  command -v uv >/dev/null 2>&1 && return 0
+
+  echo "  ➡️  Installing uv (official installer)..."
+  curl -LsSf https://astral.sh/uv/install.sh | sh || true
+  ensure_local_bin_on_path
+
+  # Asking whether uv is now runnable, rather than trusting the pipeline's exit
+  # status — `curl | sh` exits with sh's status, so a curl that 404s still
+  # reports success unless the caller set pipefail, and whether it did is not
+  # this function's business. Same reasoning as ensure_cargo.
+  if command -v uv >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "  ↩︎  astral.sh unreachable — falling back to the distro package"
+  echo "      (that build cannot 'uv self update'; re-run this once you have"
+  echo "       a network to get the self-updatable one)"
+  pkg_install "uv" || return 1
+  command -v uv >/dev/null 2>&1
+}
+
 # Install a Python tool with uv. Usage: uv_install <command> [package]
 #
-# Replaces pip_install: uv is packaged by distros (no curl needed), installs
-# tools into isolated environments, and is made by the same people as ruff.
+# Replaces pip_install: uv installs tools into isolated environments and is made
+# by the same people as ruff. Where uv itself comes from is ensure_uv's call.
 uv_install() {
   local cmd="$1"
   local pkg="${2:-$1}"
@@ -263,16 +374,7 @@ uv_install() {
     return 0
   fi
 
-  if ! command -v uv >/dev/null 2>&1; then
-    echo "  ➡️  Installing uv..."
-    pkg_install "uv" || {
-      curl -LsSf https://astral.sh/uv/install.sh | sh
-      ensure_local_bin_on_path
-      export PATH="$HOME/.local/bin:$PATH"
-    }
-  fi
-
-  command -v uv >/dev/null 2>&1 || { echo "  ⚠️  uv unavailable — skipping $pkg"; return 1; }
+  ensure_uv || { echo "  ⚠️  uv unavailable — skipping $pkg"; return 1; }
 
   echo "  ➡️  Installing $pkg via uv..."
   uv tool install "$pkg" 2>/dev/null || { echo "  ⚠️  uv tool install $pkg failed"; return 1; }

@@ -181,7 +181,51 @@ config.keys = {
 -- what still gives it away, and the pin has to win.
 local NVIM_PROC = "nvim"
 
-local function apply_font(window, pane)
+-- ─── Reader mode: side gutters ───────────────────────────────────────────────
+--
+-- The complaint this answers: on a wide display a full-width terminal puts
+-- Claude Code's prose on one very long line, and the eye loses the return sweep
+-- back to the start of the next one. Claude Code itself cannot help — `/tui`
+-- takes `default|fullscreen` and nothing else, there is no width, wrap or margin
+-- key in its settings and no env var for one, and the renderer reads its width
+-- straight off the pty's winsize. So the only lever is to make the pty NARROWER,
+-- and window_padding is the one setting that does that without surrendering half
+-- the window to an empty split.
+--
+-- PERCENTAGES, not a target column count. wezterm sizes the grid as
+-- (pixel width − padding) ÷ cell width, so a percentage narrows proportionally
+-- and never has to know the cell size — which wezterm does not expose, and which
+-- would otherwise have to be back-derived from get_dimensions() and a font size
+-- on every apply. If one percentage stops being right across two displays, THAT
+-- derivation is the fallback, not more levels.
+--
+-- The gutters RIDE THE CLAUDE LANE. They are applied only while the focused
+-- pane is one is_claude_pane() recognises, so a shell or an nvim tab keeps the
+-- full width it wants — a wide `git log`, a side-by-side diff and oil's column
+-- are all worse narrowed, and only Claude's prose is hurt by the long line.
+--
+-- That is a FOLLOW, not a per-pane apply, and the difference shows up in
+-- splits. set_config_overrides is a window-level API and wezterm has no
+-- per-pane padding, so this inherits the base font lane's compromise exactly
+-- (see the block above): tabs are exact, because only one pane in a tab has
+-- focus — but in a Claude/shell split the gutters belong to whichever pane you
+-- focused last, and the whole window reflows when you cross between them.
+-- Reader mode is therefore for a full-window Claude tab; in a split it works,
+-- it just moves under you.
+--
+-- Padding is the more expensive of the two overrides to flip, and it is worth
+-- knowing before this feels like a bug: a font swap re-renders, but a padding
+-- change resizes the PTY. Every program in the window gets a SIGWINCH and
+-- reflows its scrollback. Alt-tabbing between a Claude tab and a shell tab is
+-- now a resize each way. That is the price of the follow, and it is why the
+-- gutters go no wider than they have to.
+local PAD_LEVELS = { 0, 15, 25 }
+
+local function pad_index(window)
+	return tonumber(wezterm.GLOBAL["pad_" .. tostring(window:window_id())]) or 1
+end
+
+local function apply_overrides(window, pane)
 	if window == nil then
 		return
 	end
@@ -192,14 +236,22 @@ local function apply_font(window, pane)
 		proc = pane:get_foreground_process_name() or ""
 	end
 
+	-- Resolved ONCE and reused for both overrides, rather than asked again down
+	-- in the padding block. Two calls could not disagree today, but they are two
+	-- places to keep in step the moment either grows a condition — and the font
+	-- lane and the gutter lane being the same lane is the whole feature.
+	local claude = is_claude_pane(title, proc)
+
 	local want
-	if is_claude_pane(title, proc) then
+	if claude then
 		want = FONTS.claude
 	elseif proc:find(NVIM_PROC, 1, true) ~= nil then
 		want = FONTS["nvim.ui"]
 	else
 		want = FONTS.shell
 	end
+
+	local pad = pad_index(window)
 
 	-- update-status fires about once a second per window, so the cache is what
 	-- keeps this from rebuilding a font and reflowing the window on every tick.
@@ -214,25 +266,96 @@ local function apply_font(window, pane)
 	-- reload re-runs this file, the signature changes, and every window
 	-- re-applies on its next tick instead of matching its own old cache entry.
 	--
+	-- The pad index is in the value for a second reason: it is what makes the
+	-- CTRL+SHIFT+G toggle work at all. The toggle writes the new index and calls
+	-- straight into here, and without the index in the signature this would match
+	-- its own cache entry and return before setting a single override.
+	--
+	-- `claude` is in the value SEPARATELY from `want`, which looks redundant and
+	-- is not. `want` is only a proxy for the lane — it is FONTS.claude on a
+	-- Claude pane — and the proxy collapses the moment two lanes are assigned the
+	-- same font, which `font` lets you do and which costs nothing until now.
+	-- With both lanes on one family, moving focus shell → Claude would leave
+	-- `want` unchanged, match the cache, and return: the font would be right
+	-- (it already was) and the gutters would silently never appear. The bug
+	-- would look like "reader mode stopped working" and point at nothing.
+	--
 	-- Flat string keys, not a nested table: GLOBAL proxies mutation of the
 	-- top-level value only.
-	local key = "font_base_" .. tostring(window:window_id())
-	local val = want .. "@" .. FONTS_SIG
+	local key = "overrides_" .. tostring(window:window_id())
+	local val = want .. "@" .. FONTS_SIG .. "@" .. tostring(pad) .. "@" .. tostring(claude)
 	if wezterm.GLOBAL[key] == val then
 		return
 	end
 	wezterm.GLOBAL[key] = val
 
-	-- Replaces the whole override table, which is correct only because nothing
-	-- else in this config sets one. Add another override and this has to merge.
-	window:set_config_overrides({ font = base_face(want) })
+	-- Built from scratch on every apply rather than merged into whatever is
+	-- already there. set_config_overrides replaces the whole table, so the
+	-- alternative is a read-modify-write of get_config_overrides() — and that
+	-- carries a stale key forward forever the first time one is retired. Every
+	-- override this config sets is decided here, in this function; if a third
+	-- one appears it goes in this table too, not in a second call somewhere else.
+	--
+	-- Level 0 and a non-Claude pane both set no window_padding key AT ALL rather
+	-- than restating wezterm's default, so "off" means the default whatever the
+	-- default becomes.
+	local overrides = { font = base_face(want) }
+	local pct = PAD_LEVELS[pad]
+	if claude and pct > 0 then
+		overrides.window_padding = {
+			left = pct .. "%",
+			right = pct .. "%",
+			top = "0.5cell",
+			bottom = "0.5cell",
+		}
+	end
+	window:set_config_overrides(overrides)
 end
 
-wezterm.on("update-status", apply_font)
+wezterm.on("update-status", apply_overrides)
 
 -- update-status alone would already cover this, but only on its next tick.
 -- Focusing a window and watching the font change a beat later reads as a bug,
 -- so take the event that fires immediately as well.
-wezterm.on("window-focus-changed", apply_font)
+wezterm.on("window-focus-changed", apply_overrides)
+
+-- Appended rather than written into the config.keys literal above, because the
+-- callback closes over apply_overrides and pad_index, both declared below that
+-- point — a forward local would work but would put half this feature 100 lines
+-- from the other half.
+--
+-- CTRL+SHIFT+G ("gutters") is free in wezterm's default key table; the obvious
+-- R and M are not (ReloadConfiguration and Hide).
+--
+-- CYCLE rather than an on/off toggle, so the level that suits a given display
+-- is found by pressing the key rather than by editing this file and reloading.
+table.insert(config.keys, {
+	key = "G",
+	mods = "CTRL|SHIFT",
+	action = wezterm.action_callback(function(window, pane)
+		local next_index = pad_index(window) % #PAD_LEVELS + 1
+		wezterm.GLOBAL["pad_" .. tostring(window:window_id())] = next_index
+		apply_overrides(window, pane)
+
+		-- The level is set whether or not THIS pane is Claude, and the toast says
+		-- which of those just happened. Refusing on a non-Claude pane would be
+		-- the tidier-looking rule and the worse one: the setting is a property of
+		-- the window, so you would be unable to arm it from the shell tab you
+		-- happen to be in, and the key would read as broken. Setting it silently
+		-- is the same key reading as broken for a different reason — nothing
+		-- moves — so the toast carries the missing half.
+		local pct = PAD_LEVELS[next_index]
+		local msg
+		if pct == 0 then
+			msg = "gutters off — full width"
+		else
+			msg = ("gutters %d%% a side — text gets %d%% of the window"):format(pct, 100 - 2 * pct)
+			if not is_claude_pane(pane:get_title() or "", pane:get_foreground_process_name() or "") then
+				msg = msg .. "\n(applies while a Claude pane has focus)"
+			end
+		end
+		window:toast_notification("wezterm reader mode", msg, nil, 2000)
+	end),
+})
 
 return config

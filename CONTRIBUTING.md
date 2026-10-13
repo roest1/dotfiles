@@ -95,6 +95,14 @@ Three rules, each of which exists because breaking it caused a real bug here:
    extracted build is an acceptable source, so `make status` doesn't flag a
    correct state as drift. The real install goes in the section's `deps.sh`.
 
+   `[uv]` is the one place `manual` means "prefer the official installer"
+   rather than "`pkg` couldn't serve this". The distro build has `uv self
+   update` compiled out, so it is pinned to the distro's release cadence
+   against a tool that ships weekly. Note the shape of the fix: the preference
+   lives in `ensure_uv`, not in a `||` chain, because chains are tried before
+   any `deps.sh` runs — `manual||pkg` would install the distro copy first and
+   never reach the installer it is meant to prefer.
+
 Genuinely conditional logic — apt naming `fd` as `fdfind`, dnf needing
 `clang-devel` for bindgen, probing `/proc/version` for WSL — belongs in
 `<section>/deps.sh`, not in the manifest. Don't invent an `if` syntax for a
@@ -142,7 +150,11 @@ Please don't break these. Each is load-bearing:
 - **`make link` requires no sudo and no network.** It's the path for a machine
   where you can't install anything. Keep it symlinks-only.
 - **`[bash]` stays installable without `mise`, `node`, or a curl-piped
-  installer.** It's the section that has to work on a locked-down box.
+  installer.** It's the section that has to work on a locked-down box. This is
+  what moved `uv` out to `[uv]`: it stopped being a `pkg` line, and anything
+  needing curl cannot sit here. Don't move it back — `2parquet`, `2feather`
+  and `2pickle` guard on `command -v uv` precisely so `[bash]` doesn't have to
+  own it.
 - **The bootstrap must work on a bare machine.** Nothing on the critical path may
   assume a runtime that `deps.conf` hasn't installed yet.
 - **The JS language servers must keep their `bun` cmd prefix.** Six servers are
