@@ -955,6 +955,43 @@ jobs:
           [ $fail -eq 0 ] || { cat "$log"; exit 1; }
           echo "ok: interop persisted under WSL+systemd only, and a fixed guest is left alone"
 
+      # `uv tool list` was matched with `^${cmd}\b`, and \b matches before a
+      # hyphen — so git-filter-repo, installed as a uv tool, made /usr/bin/git
+      # report as uv. Wrong provenance reads as drift, and the remedy it
+      # suggests (uninstall, reinstall) is wrong too. Both directions: a prefix
+      # must not claim, and a real uv tool must still be found.
+      - name: A uv tool claims only its own name
+        run: |
+          set -euo pipefail
+          source lib/status.sh
+          bin=$(mktemp -d); printf '#!/bin/sh\n' > "$bin/ruff"; chmod +x "$bin/ruff"
+          export PATH="$bin:$PATH"
+          mise() { return 1; }
+          uv() { printf '%s\n' 'git-filter-repo v2.47.0' '- git-filter-repo' 'ruff v0.14.0' '- ruff'; }
+          got=$(provider_of git)
+          [ "$got" != uv ] || { echo "git reported as uv because git-filter-repo is a uv tool"; exit 1; }
+          got=$(provider_of ruff)
+          [ "$got" = uv ] || { echo "ruff is a uv tool but reported as '$got'"; exit 1; }
+          echo "ok: git is $(provider_of git), ruff is uv"
+
+      # The clean filter is what keeps per-machine model and effort choices out
+      # of git. It stripped model and effortLevel, but /effort now writes
+      # modelSettings.<model>.effortLevel — which went straight through, and two
+      # machines committed conflicting tables to the same file. Everything else
+      # must survive, or the filter is deleting real configuration.
+      - name: The claude settings filter strips preferences and nothing else
+        run: |
+          set -euo pipefail
+          out=$(printf '%s' '{"model":"opus","effortLevel":"high","modelSettings":{"claude-opus-5-5":{"effortLevel":"high"}},"theme":"dark","permissions":{"deny":["Read(~/.ssh/**)"]}}' \
+                | tools/clean-claude-settings.sh)
+          echo "$out"
+          for k in model effortLevel modelSettings; do
+            jq -e "has(\"$k\") | not" <<<"$out" >/dev/null || { echo "filter kept $k"; exit 1; }
+          done
+          jq -e '.theme == "dark" and .permissions.deny == ["Read(~/.ssh/**)"]' <<<"$out" >/dev/null \
+            || { echo "filter removed configuration it should keep"; exit 1; }
+          echo "ok: preferences stripped, configuration kept"
+
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.

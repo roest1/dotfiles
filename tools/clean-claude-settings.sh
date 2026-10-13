@@ -12,6 +12,11 @@
 # effortLevel move freely per machine and per conversation, and git never sees
 # a change.
 #
+# modelSettings is the same preference in its newer shape: /effort now writes
+# `modelSettings.<model>.effortLevel` rather than a top-level effortLevel, so
+# stripping only the old keys let it straight through — two machines then
+# committed conflicting effort tables to the same tracked file.
+#
 # -S sorts keys, which kills the other churn: Claude Code rewrites the file
 # whole, so an unrelated setting change reorders `permissions` and shows up as
 # a diff that means nothing.
@@ -28,7 +33,7 @@
 input="$(cat)"
 
 if command -v jq >/dev/null 2>&1; then
-  if out="$(printf '%s' "$input" | jq -S 'del(.model, .effortLevel)' 2>/dev/null)"; then
+  if out="$(printf '%s' "$input" | jq -S 'del(.model, .effortLevel, .modelSettings)' 2>/dev/null)"; then
     printf '%s\n' "$out"
     exit 0
   fi
