@@ -61,12 +61,14 @@ STATUS_DRIFT_LINKS=0
 STATUS_DRIFT_TOOLS=0
 STATUS_DRIFT_STALE=0
 STATUS_DRIFT_FONTS=0
+STATUS_DRIFT_WSL=0
 
 _drift_link()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
 _drift_tool()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
 _drift_stale() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_STALE=$((STATUS_DRIFT_STALE + 1)); }
 _drift_windows() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WINDOWS=$((STATUS_DRIFT_WINDOWS + 1)); }
 _drift_font()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_FONTS=$((STATUS_DRIFT_FONTS + 1)); }
+_drift_wsl()   { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WSL=$((STATUS_DRIFT_WSL + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
@@ -292,6 +294,31 @@ status_windows() {
   _drift_windows
 }
 
+# ─── WSL interop, seen from the guest ────────────────────────────────────────
+#
+# Two failures, both counted, and they are not the same failure. Unregistered
+# is broken NOW: every .exe exits "Exec format error". Registered but not
+# persisted works now and breaks at the next package upgrade that restarts
+# systemd-binfmt — which is where every systemd WSL guest starts out. The
+# mechanism is in lib/pkg.sh, next to ensure_wsl_interop.
+status_wsl_interop() {
+  is_wsl     || return 0
+  is_systemd || return 0
+
+  echo ""
+  printf "%s[wsl] interop%s\n" "$SG_B" "$SG_OFF"
+
+  if ! wsl_interop_registered; then
+    printf "%s  $MARK_BAD not registered — every .exe fails with 'Exec format error'%s\n" "$SG" "$SG_OFF"
+    _drift_wsl
+  elif ! wsl_interop_persisted; then
+    printf "%s  $MARK_BAD registered, but the next systemd-binfmt restart drops it%s\n" "$SG" "$SG_OFF"
+    _drift_wsl
+  else
+    printf "%s  $MARK_OK registered, and persisted in %s%s\n" "$SG" "$WSL_INTEROP_CONF" "$SG_OFF"
+  fi
+}
+
 # ── Font lanes ───────────────────────────────────────────────────────────────
 #
 # The [wezterm] question the manifest cannot answer: the links can all be right
@@ -421,6 +448,7 @@ status_all() {
   STATUS_DRIFT_STALE=0
   STATUS_DRIFT_WINDOWS=0
   STATUS_DRIFT_FONTS=0
+  STATUS_DRIFT_WSL=0
   echo ""
   printf "%ssync status — deps.conf vs. this machine%s\n" "$SG_B" "$SG_OFF"
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -428,8 +456,9 @@ status_all() {
   status_tools "$@"
   status_fonts "$@"
   status_windows
+  status_wsl_interop
   STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE \
-                   + STATUS_DRIFT_WINDOWS + STATUS_DRIFT_FONTS ))
+                   + STATUS_DRIFT_WINDOWS + STATUS_DRIFT_FONTS + STATUS_DRIFT_WSL ))
 
   echo ""
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -452,6 +481,11 @@ status_all() {
       echo "               make windows"
       echo "             That pulls the host clone and re-runs its installer, which is"
       echo "             not optional when an update added a link or a font."
+    fi
+    if [[ $STATUS_DRIFT_WSL -gt 0 ]]; then
+      echo "  $MARK_BAD wsl ($STATUS_DRIFT_WSL) — Windows interop is not persisted, or is already gone."
+      echo "             Run 'make install bash', which writes $WSL_INTEROP_CONF"
+      echo "             and restarts systemd-binfmt. It asks for sudo."
     fi
     if [[ $STATUS_DRIFT_FONTS -gt 0 ]]; then
       echo "  $MARK_BAD fonts ($STATUS_DRIFT_FONTS) — the font lanes cannot work as configured."
