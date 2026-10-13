@@ -151,6 +151,13 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 | `cargo`  | compiles from source — slow, prefer `mise` |
 | `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
 
+`manual` is usually a concession — `pkg` couldn't serve this one. `[uv]` is the
+exception, and it is worth knowing about because it reads like drift otherwise:
+there `manual` is a *preference*. The distro's uv has `uv self update` compiled
+out, so it can only ever be as current as the next package bump, and uv ships
+weekly. `ensure_uv` in `lib/pkg.sh` curls Astral's installer first and falls back
+to `pkg` only when the network is unreachable.
+
 There is no `winget` provider either, and CI rejects it. Windows packages are
 declared in `$WingetTools` at the top of `windows/install.ps1`.
 
@@ -162,7 +169,9 @@ tool  pkg||cargo  eza     # distro package if it exists, else compile
 ```
 
 `[bash]` is near-pure `pkg`, so a locked-down machine can install the whole shell
-without mise, node, or a curl-piped installer.
+without mise, node, or a curl-piped installer. That invariant is why `uv` has a
+section of its own rather than a line in `[bash]`: the moment it stopped being a
+`pkg` line it stopped being something the shell section may depend on.
 
 ### Drift
 
@@ -335,6 +344,9 @@ for that reason).
 │   ├── bash_github               → ~/.bash_github
 │   ├── bash_local                → ~/.bash_local               (untracked)
 │   └── bash_password_commands    → ~/.bash_password_commands   (untracked)
+├── uv/
+│   ├── uv.toml                         → ~/.config/uv/uv.toml
+│   └── deps.sh                           Astral's installer; flags a distro uv
 ├── git/
 │   ├── gitconfig                       → ~/.gitconfig
 │   ├── README.md                         GitHub tips and tricks

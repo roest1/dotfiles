@@ -34,9 +34,7 @@ return {
         html = { 'prettier' },
         yaml = { 'prettier' },
         css = { 'prettier' },
-        -- python = { 'isort', 'black' },
-        -- black and ruff are similar
-        -- but ruff is significantly faster and handles both linting and formatting in one go
+        -- ruff is significantly faster than black and handles both linting and formatting in one go
         python = { 'ruff' },
       },
       -- Define the unknown formatter here

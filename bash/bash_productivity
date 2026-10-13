@@ -238,6 +238,26 @@ port() {
   lsof -i :"$1" 2>/dev/null || ss -tlnp | grep ":$1"
 }
 
+# killport: kill whatever is LISTENING on a port.
+#
+# fuser rather than lsof, and `-n tcp` rather than a `3000/tcp` argument, for
+# two different reasons. fuser matches the LOCAL port only, where
+# `lsof -i :3000` matches that port at EITHER end — so the lsof spelling also
+# selects every outbound connection to :3000 and, on :443, every browser and
+# chat client you have open, all owned by you and all killable. And the
+# positional form needs the /tcp suffix appended AFTER the port ("Specified
+# filename 3000 does not exist" without it), which an alias cannot do; -n takes
+# it as a flag up front.
+#
+# Linux only: psmisc reads /proc, so there is no fuser on a Mac. Undeclared in
+# deps.conf for that reason — brew would fail the macOS install job — hence the
+# guard, same as the eza and bat aliases above.
+#
+# -TERM, not fuser's default KILL, so servers run their shutdown handlers.
+if command -v fuser &>/dev/null; then
+  alias killport='fuser -k -TERM -n tcp'
+fi
+
 # ─── Misc power tools ────────────────────────────────────────────────────────
 
 # serve: quick HTTP server in current directory
@@ -572,7 +592,8 @@ _sheet_convert() {
         fi
     elif [[ -n "$columnar" ]]; then
         if ! command -v uv &>/dev/null; then
-            echo "$cmd: needs uv — see https://docs.astral.sh/uv/" >&2
+            echo "$cmd: needs uv — run: make install uv" >&2
+            echo "      (deps.conf [uv]; https://docs.astral.sh/uv/)" >&2
             return 127
         fi
         script="$(_dotfiles_dir)/bash/tabular.py"
@@ -870,6 +891,7 @@ h() {
 
   Utilities
     port <num>         What's running on this port?
+    killport <num>     Kill the process listening on this port
     serve [port]       HTTP server in current dir (default: 8000)
     loop <cmd>         Repeat command every 2s (like watch)
 
@@ -1318,6 +1340,28 @@ port — check what's using a port
 
   Tries lsof first (works on macOS + Linux), falls back to
   ss -tlnp on Linux. Shows PID, process name, and state.
+HELP
+      ;;
+    killport)
+      cat <<'HELP'
+killport - kill the process listening on a port
+
+  killport 3000     Stop whatever is serving on :3000
+  killport 8080
+
+  Sends TERM, so the server runs its shutdown handlers. Nothing
+  survives that? fuser -k -KILL -n tcp 3000
+
+  Only LISTENING sockets, never outbound connections -- `killport 443`
+  will not touch your browser. (`lsof -i :443` would: it matches the
+  port at either end. That is why this is fuser and not lsof.)
+
+  Ports below 1024 usually belong to root, and the restriction is on
+  bind(), not on kill -- so killport reports nothing and exits 1
+  rather than failing loudly. Confirm with `port <num>`, then:
+    sudo fuser -k -TERM -n tcp <num>
+
+  Linux only (fuser is psmisc, which reads /proc).
 HELP
       ;;
     serve)
