@@ -52,6 +52,10 @@ than silently installing nothing. A file with *everything* commented out refuses
 than falling through to "no arguments means all", which is the one way this could have
 quietly done the opposite of what it was told.
 
+`make status` reads the same file, because an opt-out is not drift — and it *names* the
+sections it skipped rather than dropping them silently, since a section added to
+`deps.conf` after the file was seeded is missing from it by accident, not by choice.
+
 see `make help`
 
 `make check` asks "does this command exist." `make status` asks "is this machine
