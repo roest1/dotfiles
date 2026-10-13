@@ -57,6 +57,70 @@ tool_applies_here() {
   esac
 }
 
+# ─── WSL interop across systemd-binfmt restarts ─────────────────────────────
+#
+# A WSL guest runs clip.exe, cmd.exe and explorer.exe through a binfmt_misc
+# entry that WSL writes into /proc at boot, with no binfmt.d file behind it.
+# Under systemd that is fragile. A package upgrade that ships a binfmt.d rule
+# (python3.12 is one) restarts systemd-binfmt; stopping the unit unregisters
+# EVERY entry, and starting it restores only the ones that have a file. Every
+# .exe then fails with "Exec format error" until WSL next boots — which reads
+# as a PATH problem, and re-sourcing ~/.bashrc cannot touch it.
+#
+# The fix is to give the entry a file. /etc/binfmt.d rather than /usr/lib,
+# which belongs to packages. systemd-binfmt unregisters a rule of the same name
+# before registering it, so the file coexisting with WSL's own entry is safe.
+#
+# Registration is checked under both names: a systemd-enabled WSL calls its own
+# entry WSLInterop-late (see os_open in nvim/lua/options.lua), so testing for
+# WSLInterop alone would call a working machine broken.
+WSL_INTEROP_CONF=/etc/binfmt.d/WSLInterop.conf
+WSL_INTEROP_RULE=':WSLInterop:M::MZ::/init:PF'
+
+# Only systemd restarts systemd-binfmt, and only systemd reads binfmt.d — a WSL
+# without it has neither the problem nor a use for the file. A function rather
+# than an inline test so CI can force it, the way it forces is_wsl.
+is_systemd() {
+  [ -d /run/systemd/system ]
+}
+
+wsl_interop_registered() {
+  [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop-late ]
+}
+
+wsl_interop_persisted() {
+  [ "$(cat "$WSL_INTEROP_CONF" 2>/dev/null)" = "$WSL_INTEROP_RULE" ]
+}
+
+# Called from bash/deps.sh and nvim/deps.sh: the shell's clip.exe and nvim's
+# PowerShell image paste both need interop, and either section can be installed
+# alone. A re-run on a fixed guest asks for no password — sudo is only reached
+# when something is actually missing.
+ensure_wsl_interop() {
+  is_wsl     || return 0
+  is_systemd || return 0
+
+  if wsl_interop_persisted; then
+    echo "  ✅ WSL interop (persisted in $WSL_INTEROP_CONF)"
+  else
+    echo "  ➡️  Persisting WSL interop in $WSL_INTEROP_CONF..."
+    printf '%s\n' "$WSL_INTEROP_RULE" | sudo tee "$WSL_INTEROP_CONF" >/dev/null \
+      || { echo "  ⚠️  could not write $WSL_INTEROP_CONF"; return 1; }
+  fi
+
+  # Already broken, which is the state you are most likely running this from.
+  # A restart re-reads binfmt.d, so it picks up the file written above.
+  wsl_interop_registered && return 0
+  echo "  ➡️  Interop is not registered — restarting systemd-binfmt..."
+  sudo systemctl restart systemd-binfmt \
+    || { echo "  ⚠️  systemctl restart systemd-binfmt failed"; return 1; }
+  wsl_interop_registered || {
+    echo "  ❌ interop still not registered. From Windows: wsl --shutdown"
+    return 1
+  }
+  echo "  ✅ WSL interop restored"
+}
+
 # ─── Detect package manager ──────────────────────────────────────────────────
 
 # On macOS, brew IS the system package manager. On Linux it is a supplementary

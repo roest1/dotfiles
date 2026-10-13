@@ -49,6 +49,11 @@ if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 
+# WSL: clip.exe, and every other .exe, stops running when a package upgrade
+# restarts systemd-binfmt. See ensure_wsl_interop in lib/pkg.sh. Never fatal —
+# a guest without sudo still gets the rest of this file.
+ensure_wsl_interop || true
+
 # ── fzf version floor ────────────────────────────────────────────────────────
 #
 # Same shape as the neovim floor in nvim/deps.sh, for the same reason. github

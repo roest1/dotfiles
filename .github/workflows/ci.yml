@@ -917,6 +917,44 @@ jobs:
           done
           echo "ok: WSL suppresses wezterm and nothing else"
 
+      # Same blind spot, and this one writes to /etc with sudo. The not-WSL
+      # direction is the one with teeth: a binfmt rule claiming every MZ file for
+      # a nonexistent /init would take PE binaries away from whatever runs them
+      # on that box. And a re-run on a WSL guest that is already fixed must not
+      # ask for a password at all.
+      - name: WSL interop is persisted under WSL with systemd, and nowhere else
+        run: |
+          set -euo pipefail
+          source lib/pkg.sh
+
+          # Record every sudo instead of running it; tee's stdin is what it writes.
+          log=$(mktemp)
+          sudo() { printf '%s\n' "$*" >> "$log"; if [ "$1" = tee ]; then cat >> "$log"; fi; }
+
+          is_wsl() { return 1; }; is_systemd() { return 0; }
+          ensure_wsl_interop
+          [ ! -s "$log" ] || { echo "not-WSL: must not sudo:"; cat "$log"; exit 1; }
+
+          is_wsl() { return 0; }; is_systemd() { return 1; }
+          ensure_wsl_interop
+          [ ! -s "$log" ] || { echo "WSL without systemd: must not sudo:"; cat "$log"; exit 1; }
+
+          is_wsl() { return 0; }; is_systemd() { return 0; }
+          wsl_interop_persisted() { return 0; }; wsl_interop_registered() { return 0; }
+          ensure_wsl_interop
+          [ ! -s "$log" ] || { echo "WSL, already fixed: a re-run must not sudo:"; cat "$log"; exit 1; }
+
+          # Broken guest: the rule is written verbatim, then systemd-binfmt re-reads
+          # it. Registration never appears here, so the call itself reports failure.
+          wsl_interop_persisted() { return 1; }; wsl_interop_registered() { return 1; }
+          ensure_wsl_interop || true
+          fail=0
+          grep -qx "tee $WSL_INTEROP_CONF" "$log" || { echo "did not write $WSL_INTEROP_CONF"; fail=1; }
+          grep -qx ':WSLInterop:M::MZ::/init:PF' "$log" || { echo "wrote the wrong rule"; fail=1; }
+          grep -qx 'systemctl restart systemd-binfmt' "$log" || { echo "did not restart systemd-binfmt"; fail=1; }
+          [ $fail -eq 0 ] || { cat "$log"; exit 1; }
+          echo "ok: interop persisted under WSL+systemd only, and a fixed guest is left alone"
+
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.

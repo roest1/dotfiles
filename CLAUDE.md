@@ -414,6 +414,16 @@ you write code here. Reasoning, revisit conditions and current status:
   `wezterm.exe` load a config over `\\wsl.localhost\...`; the maintainer has said the WSL
   filesystem isn't visible to the host that way. Hence a second clone on `C:` and a
   PowerShell installer, rather than teaching `install.sh` to reach across.
+- **`Exec format error` from `clip.exe` is a lost binfmt entry, not a PATH problem.** A
+  WSL guest runs `.exe` files through a `binfmt_misc` entry WSL writes into `/proc` at
+  boot, with no `binfmt.d` file behind it. With `systemd=true`, any package upgrade that
+  ships a `binfmt.d` rule (python3.12 did) restarts `systemd-binfmt`, which unregisters
+  every entry and restores only those with a file, so interop is gone until WSL reboots.
+  Re-sourcing `~/.bashrc` can't reach it. `ensure_wsl_interop` in `lib/pkg.sh` writes
+  `/etc/binfmt.d/WSLInterop.conf` (both `bash/deps.sh` and `nvim/deps.sh` call it), and
+  `make status` reports it under `[wsl] interop`. Check for both `WSLInterop` and
+  `WSLInterop-late`: a systemd WSL registers the latter, so testing one name alone calls
+  a working machine broken.
 - **`.ps1` files must be pure ASCII.** Windows PowerShell 5.1 reads a `.ps1` without a BOM
   as ANSI (cp1252), not UTF-8. An em dash (`E2 80 94`) decodes as three cp1252 characters
   ending in `0x94`, which in cp1252 is `"` — and PowerShell treats that as a **string
