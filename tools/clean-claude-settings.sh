@@ -8,9 +8,28 @@
 #
 # This is the `clean` half of a clean/smudge pair: git runs it on the way IN
 # (add, diff, status), so the version git compares and stores has the volatile
-# keys removed. The file on disk keeps them. The result is that model and
-# effortLevel move freely per machine and per conversation, and git never sees
-# a change.
+# keys REPLACED. The file on disk keeps whatever this machine chose. The result
+# is that model and effort move freely per machine and per conversation, and
+# git never sees a change.
+#
+# Replaced rather than deleted, so the committed file still SHOWS how these
+# are set. The values come from claude/model-defaults.json — edit that file,
+# not settings.json, to change what a fresh checkout starts with. A filter that
+# only deleted keys could never commit them at all.
+#
+# The shape matters as much as the values. /effort writes
+# `modelSettings.<model>.effortLevel`; the older top-level `effortLevel` is
+# dropped outright. Stripping only the old keys once let modelSettings straight
+# through, and two machines committed conflicting effort tables.
+#
+# A checkout that changes settings.json writes the defaults back to disk, which
+# resets this machine's choice once. That is the identity smudge doing its job
+# (see claude/deps.sh): the stored file is what lands.
+#
+# `git status` can still list the file as modified while `git diff` is empty.
+# That is git, not this filter: status trusts a SIZE mismatch against the index
+# without re-filtering, and a local choice changes the size. `git add
+# claude/settings.json` records the new size and stages nothing.
 #
 # -S sorts keys, which kills the other churn: Claude Code rewrites the file
 # whole, so an unrelated setting change reorders `permissions` and shows up as
@@ -25,10 +44,19 @@
 # and cannot be committed, which is why it is part of the install rather than
 # something .gitattributes can do alone.
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULTS="$HERE/../claude/model-defaults.json"
+
 input="$(cat)"
 
-if command -v jq >/dev/null 2>&1; then
-  if out="$(printf '%s' "$input" | jq -S 'del(.model, .effortLevel)' 2>/dev/null)"; then
+# A missing or unparsable defaults file fails jq, and so falls through to the
+# pass-through below, the same as a missing jq.
+if command -v jq >/dev/null 2>&1 && [ -r "$DEFAULTS" ]; then
+  if out="$(printf '%s' "$input" \
+              | jq -S --slurpfile d "$DEFAULTS" \
+                  'del(.model, .effortLevel, .modelSettings)
+                   + ($d[0] | with_entries(select(.key == "model" or .key == "modelSettings")))' \
+              2>/dev/null)"; then
     printf '%s\n' "$out"
     exit 0
   fi
