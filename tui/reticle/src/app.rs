@@ -18,6 +18,7 @@
 //! nothing. A TUI that spins at 60fps to show a static list is a laptop fan.
 
 use std::io::{self, Write};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyEventKind};
@@ -44,20 +45,37 @@ fn left_width(cols: u16) -> u16 {
 const PALETTE_WANTED: &[u8] = &[75, 110, 108, 114, 210, 221, 244, 250];
 
 pub fn run(root: Box<dyn Screen>) -> io::Result<()> {
+    run_stack(vec![root])
+}
+
+/// Start with screens ALREADY pushed, topmost last.
+///
+/// So a command can open where you are standing without that becoming a mode.
+/// `github` run inside a repo seeds `[root, org, repo]` and shows the repo; `q`
+/// then walks up to the org and the root and quits at it, which is what this
+/// function already did for screens pushed by hand. The alternative -- making
+/// the repo the root when the cwd is one -- leaves the org and the rest of the
+/// account unreachable without leaving the program.
+///
+/// Screens below the top are NOT asked for rows or a pane until they are
+/// reached, so a seeded path costs nothing for the levels skipped past. That is
+/// load-bearing rather than incidental: a screen that fetched on construction
+/// would make the seeded case slower than the unseeded one.
+pub fn run_stack(screens: Vec<Box<dyn Screen>>) -> io::Result<()> {
     let mut term = Terminal::take()?;
     // After raw mode, before anything is drawn: the replies are only readable
     // once the terminal has stopped line-buffering, and they would otherwise
     // land in the middle of the first frame.
     crate::set_term_info(crate::probe::probe(PALETTE_WANTED));
-    let res = event_loop(root);
+    let res = event_loop(screens, &mut term);
     term.restore()?;
     res
 }
 
 /// One entry per screen on the stack. The cursor, the scroll offset and the
 /// reticle travel WITH the screen, so coming back lands you on the row you
-/// left rather than at the top — the same property the fzf implementation's nesting gets
-/// from running one inside the other.
+/// left rather than at the top — the same property the fzf implementation got
+/// from running one fzf inside another.
 struct Frame {
     screen: Box<dyn Screen>,
     sel: usize,
@@ -65,17 +83,63 @@ struct Frame {
     reticle: Reticle,
 }
 
-fn event_loop(root: Box<dyn Screen>) -> io::Result<()> {
+/// Run `argv` with the terminal handed back, then take it again.
+///
+/// The child's status is deliberately ignored: a failed `make check` is
+/// information, not an error for this process, and the user has just watched
+/// the output scroll past. What matters is that the terminal comes back even
+/// if the child dies badly -- hence resume() on every path.
+fn detach(term: &mut Terminal, out: &mut impl Write, argv: &[String]) -> io::Result<()> {
+    let Some((program, args)) = argv.split_first() else {
+        return Ok(());
+    };
+    term.suspend()?;
+    let status = Command::new(program).args(args).status();
+    // A beat to read the last line before the alternate screen swallows it.
+    let _ = writeln!(out);
+    let _ = match &status {
+        Ok(s) if s.success() => writeln!(out, "  done — any key to go back"),
+        Ok(s) => writeln!(
+            out,
+            "  exited {} — any key to go back",
+            s.code().unwrap_or(-1)
+        ),
+        Err(e) => writeln!(out, "  could not run {program}: {e} — any key to go back"),
+    };
+    let _ = out.flush();
+    // Read on the RESTORED terminal, so this is a line-buffered wait rather
+    // than a raw keypress. Resuming first would swap the screen out from under
+    // the output the user is being asked to read.
+    let mut sink = String::new();
+    let _ = io::stdin().read_line(&mut sink);
+    term.resume()
+}
+
+fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<()> {
     let mut out = io::stdout();
     let mut keys = Keymap::default();
-    let mut stack = vec![Frame {
-        screen: root,
-        sel: 0,
-        top: 0,
-        reticle: Reticle::new(0),
-    }];
-    stack[0].screen.focus(0);
-    let mut rows = stack[0].screen.rows();
+    let mut stack: Vec<Frame> = screens
+        .into_iter()
+        .map(|screen| Frame {
+            screen,
+            sel: 0,
+            top: 0,
+            reticle: Reticle::new(0),
+        })
+        .collect();
+    // An empty stack would index out of bounds on the first frame rather than
+    // showing nothing, so the one caller that can produce it gets a root.
+    if stack.is_empty() {
+        return Ok(());
+    }
+    // Only the TOP screen is focused and asked for rows. The ones underneath
+    // are untouched until popped to, which is what keeps a seeded path free.
+    let top = stack.len() - 1;
+    let mut rows = stack[top].screen.rows();
+    let sel = start_sel(stack[top].screen.as_ref(), &rows);
+    stack[top].sel = sel;
+    stack[top].reticle = Reticle::new(sel);
+    stack[top].screen.focus(sel);
     let mut last = Instant::now();
     let mut pane_dirty = true;
     let mut busy = false;
@@ -175,6 +239,12 @@ fn event_loop(root: Box<dyn Screen>) -> io::Result<()> {
                         Flow::Quit => return Ok(()),
                         Flow::Pop => popped = depth > 1,
                         Flow::Push(next) => pushed = Some(next),
+                        Flow::Detach(argv) => {
+                            detach(term, &mut out, &argv)?;
+                            rows = frame.screen.rows();
+                            frame.sel = frame.sel.min(rows.len().saturating_sub(1));
+                            pane_dirty = true;
+                        }
                         Flow::Dirty => {
                             rows = frame.screen.rows();
                             frame.sel = frame.sel.min(rows.len().saturating_sub(1));
@@ -352,6 +422,21 @@ fn draw_rows(
 }
 
 const SPREAD_ROOM: u16 = 5;
+
+/// Where a screen opens: what it asked for, clamped to what it drew.
+///
+/// Both guards are load-bearing. A screen computes its answer from its own row
+/// walk, so an out-of-range one is a bug in that walk rather than a reason to
+/// put the cursor past the end; and a spacer is a legal index that navigation
+/// otherwise never lands on, so landing there once at startup would be the one
+/// place a blank row can hold the cursor.
+fn start_sel(screen: &dyn Screen, rows: &[Row]) -> usize {
+    if rows.is_empty() {
+        return 0;
+    }
+    let want = screen.initial_sel().min(rows.len() - 1);
+    first_selectable(rows, want, 1)
+}
 
 /// The nearest selectable row at or after `from`, searching in `dir`. Falls
 /// back to `from` so a list that is entirely spacers cannot hang the caller.

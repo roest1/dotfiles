@@ -40,7 +40,7 @@ fi
 
 # An array rather than a literal list: `github` and the make-it console are
 # the next two, and this is the line they get added to.
-crates=(font)
+crates=(font dots)
 failed=0
 for crate in "${crates[@]}"; do
   if cargo install --locked --path "$HERE/$crate" >/dev/null 2>&1; then

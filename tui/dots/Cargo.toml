@@ -1,0 +1,20 @@
+[package]
+name = "dots"
+description = "The dotfiles console — every target and section, navigable."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "dots"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dots"
+path = "src/main.rs"
+
+[dependencies]
+reticle = { path = "../reticle" }
+font = { path = "../font" }
+libc = "0.2"
