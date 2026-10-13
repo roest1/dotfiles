@@ -28,7 +28,7 @@ git -C "$REPO" config filter.claude-settings.clean "$REPO/tools/clean-claude-set
 
 # No smudge. The identity default is what we want: git writes the stored file
 # back verbatim, so a checkout that genuinely changes settings.json still lands.
-echo "  ✅ git clean filter registered — model and effort settings are now local-only"
+echo "  ✅ git clean filter registered — model and effort stay local; git sees claude/model-defaults.json"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "  ⚠️  jq is missing, so the filter passes through unchanged for now."

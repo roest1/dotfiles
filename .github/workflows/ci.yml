@@ -974,23 +974,35 @@ jobs:
           [ "$got" = uv ] || { echo "ruff is a uv tool but reported as '$got'"; exit 1; }
           echo "ok: git is $(provider_of git), ruff is uv"
 
-      # The clean filter is what keeps per-machine model and effort choices out
-      # of git. It stripped model and effortLevel, but /effort now writes
-      # modelSettings.<model>.effortLevel — which went straight through, and two
-      # machines committed conflicting tables to the same file. Everything else
-      # must survive, or the filter is deleting real configuration.
-      - name: The claude settings filter strips preferences and nothing else
+      # The clean filter keeps per-machine model and effort choices out of git
+      # by swapping them for claude/model-defaults.json. It once stripped only
+      # model and effortLevel, while /effort writes modelSettings — which went
+      # straight through, and two machines committed conflicting tables. So:
+      # whatever a machine set, git sees the defaults; the legacy top-level
+      # effortLevel is gone; every other key survives untouched.
+      #
+      # And the committed settings.json must already BE that output, or the
+      # defaults file and the file it describes have drifted apart — which is
+      # also what an edit to the defaults looks like before it is staged.
+      - name: The claude settings filter swaps preferences for the defaults
         run: |
           set -euo pipefail
-          out=$(printf '%s' '{"model":"opus","effortLevel":"high","modelSettings":{"claude-opus-5-5":{"effortLevel":"high"}},"theme":"dark","permissions":{"deny":["Read(~/.ssh/**)"]}}' \
+          want=$(jq -S '{model, modelSettings}' claude/model-defaults.json)
+          out=$(printf '%s' '{"model":"sonnet","effortLevel":"low","modelSettings":{"claude-opus-5-5":{"effortLevel":"low"},"x":{}},"theme":"dark","permissions":{"deny":["Read(~/.ssh/**)"]}}' \
                 | tools/clean-claude-settings.sh)
           echo "$out"
-          for k in model effortLevel modelSettings; do
-            jq -e "has(\"$k\") | not" <<<"$out" >/dev/null || { echo "filter kept $k"; exit 1; }
-          done
+          [ "$(jq -S '{model, modelSettings}' <<<"$out")" = "$want" ] \
+            || { echo "filter let this machine's model/effort through"; exit 1; }
+          jq -e 'has("effortLevel") | not' <<<"$out" >/dev/null \
+            || { echo "filter kept the legacy top-level effortLevel"; exit 1; }
           jq -e '.theme == "dark" and .permissions.deny == ["Read(~/.ssh/**)"]' <<<"$out" >/dev/null \
-            || { echo "filter removed configuration it should keep"; exit 1; }
-          echo "ok: preferences stripped, configuration kept"
+            || { echo "filter changed configuration it should keep"; exit 1; }
+
+          committed=$(git show HEAD:claude/settings.json)
+          [ "$(tools/clean-claude-settings.sh <<<"$committed")" = "$(jq -S . <<<"$committed")" ] || {
+            echo "claude/settings.json is not what the filter produces —"
+            echo "re-stage it: git add --renormalize claude/settings.json"; exit 1; }
+          echo "ok: defaults committed, local preferences never reach git"
 
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
