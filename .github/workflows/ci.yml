@@ -1223,6 +1223,17 @@ jobs:
 
       - uses: actions/checkout@v7
 
+      # The runner image ships apt lists from the day it was built, and the
+      # mirror drops superseded .debs as security updates land. Once one of a
+      # package's dependencies has been superseded, `apt install` resolves the
+      # old version from the stale list, 404s fetching it, and the tool reads
+      # MISSING — bat and eza both, through libgit2, from 2026-10-05 until this.
+      # pkg_install does not refresh the lists itself, and a CI-only step is
+      # the narrower fix: on a real machine `apt update` is the owner's call.
+      - name: Refresh apt lists
+        if: matrix.name == 'ubuntu / apt'
+        run: sudo apt-get update -qq
+
       - name: Install the bash section
         run: make install bash
 
@@ -1674,8 +1685,17 @@ jobs:
       # comment saying why, not deleting this step. An accepted risk should be
       # written down in the same place the repo writes down its other accepted
       # costs.
+      #
+      # GHSA-vfj7-8cjw-p6xm (braces <=3.0.3) is the first one. There is no
+      # fixed braces to override to — 3.0.3 is the latest release — and the
+      # chain above it is pinned at its own latest: bash-language-server 5.8.1 >
+      # fast-glob 3.3.3 > micromatch 4.0.8 > braces ^3.0.3. The bug is stack
+      # exhaustion on a deeply nested glob PATTERN, and the patterns
+      # bash-language-server expands are its own globPattern setting, written
+      # by whoever configures the editor. Drop the ignore once braces ships a
+      # fix; `bun audit` without it will say so.
       - name: No known advisories in the language server tree
-        run: bun audit --cwd nvim/lsp-servers
+        run: bun audit --cwd nvim/lsp-servers --ignore=GHSA-vfj7-8cjw-p6xm
 
       # yarn.lock is a GENERATED artifact whose only job is to be readable by
       # GitHub's dependency graph, which has no bun.lock parser. bun.lock stays
