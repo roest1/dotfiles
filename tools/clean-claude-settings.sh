@@ -27,9 +27,16 @@
 # (see claude/deps.sh): the stored file is what lands.
 #
 # `git status` can still list the file as modified while `git diff` is empty.
-# That is git, not this filter: status trusts a SIZE mismatch against the index
-# without re-filtering, and a local choice changes the size. `git add
-# claude/settings.json` records the new size and stages nothing.
+# That is git, not this filter: ie_modified() short-circuits on a SIZE mismatch
+# against the index and answers "modified" without re-reading the file, so the
+# filter never runs. A local choice changes the size, so it fires on every
+# /model and /effort.
+#
+# tools/refresh-claude-settings.sh clears it, called from the SessionStart and
+# SessionEnd hooks this file carries. It is `git add` -- which re-records the
+# stat and stages nothing -- but only after proving the filtered worktree
+# equals the index blob, so a REAL settings change is left visible. Read that
+# file before reaching for --assume-unchanged, which hides both kinds.
 #
 # -S sorts keys, which kills the other churn: Claude Code rewrites the file
 # whole, so an unrelated setting change reorders `permissions` and shows up as

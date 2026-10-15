@@ -14,6 +14,26 @@
         ]
       }
     ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "s=$(readlink \"$HOME/.claude/settings.json\" 2>/dev/null) && \"${s%/*}/../tools/refresh-claude-settings.sh\" >/dev/null 2>&1 || true",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "s=$(readlink \"$HOME/.claude/settings.json\" 2>/dev/null) && \"${s%/*}/../tools/refresh-claude-settings.sh\" >/dev/null 2>&1 || true",
+            "type": "command"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

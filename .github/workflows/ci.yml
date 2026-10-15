@@ -1047,6 +1047,64 @@ jobs:
             echo "re-stage it: git add --renormalize claude/settings.json"; exit 1; }
           echo "ok: defaults committed, local preferences never reach git"
 
+      # The filter makes the worktree file and its blob different SIZES, and
+      # git's ie_modified() short-circuits on a size mismatch: it answers
+      # "modified" without re-reading the file, so the filter never runs and
+      # `git status` reports a change `git diff` then shows as empty. No git
+      # config reaches that -- core.checkStat=minimal keeps size, and
+      # --assume-unchanged would hide real edits to the same file.
+      #
+      # tools/refresh-claude-settings.sh re-records the stat with `git add`,
+      # but only after proving the filtered worktree equals the index blob.
+      # BOTH directions are asserted, because the dangerous failure is the
+      # second one: a script that cleared the flag unconditionally would hide
+      # a genuine settings change behind a cosmetic fix, and look identical
+      # from the outside while doing it.
+      - name: The settings refresh clears only the FALSE modified flag
+        run: |
+          set -euo pipefail
+          # Hooks fire on ~/.claude/settings.json being a symlink into a clone,
+          # which is what `make link` would do; this job never ran it.
+          mkdir -p "$HOME/.claude"
+          ln -sfn "$PWD/claude/settings.json" "$HOME/.claude/settings.json"
+          git add claude/settings.json          # baseline: stat recorded
+
+          # 1. A model change is volatile: different size, identical after
+          #    filtering. The flag must clear, and nothing may be staged.
+          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
+          [ -n "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: a size change did not go stat-dirty — premise gone"; exit 1; }
+          tools/refresh-claude-settings.sh
+          [ -z "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: refresh left the false modified flag in place"; exit 1; }
+          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
+            || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
+
+          # 2. A theme change is real. It must survive.
+          jq '.theme = "light"' claude/settings.json > t && mv t claude/settings.json
+          tools/refresh-claude-settings.sh
+          [ -n "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: refresh hid a real settings change"; exit 1; }
+          git checkout -- claude/settings.json
+          echo "ok: false flag cleared, real change left visible"
+
+      # The hooks that call it. Named rather than counted, for the reason the
+      # wezterm link check gives: a count tells you the number is wrong and
+      # nothing else. SessionEnd does the work, right after the only writer
+      # stops. SessionStart is the backstop for a session that was killed, so
+      # dropping it would leave the flag set until the next clean exit --
+      # which is silent, and looks exactly like the bug being fixed here.
+      - name: Both refresh hooks are declared
+        run: |
+          set -euo pipefail
+          for ev in SessionStart SessionEnd; do
+            jq -e --arg ev "$ev" \
+              '.hooks[$ev][0].hooks[0].command | test("refresh-claude-settings")' \
+              claude/settings.json >/dev/null \
+              || { echo "FAIL: $ev no longer calls tools/refresh-claude-settings.sh"; exit 1; }
+          done
+          echo "ok: SessionStart and SessionEnd both refresh the stat"
+
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
