@@ -173,6 +173,21 @@ jobs:
           fi
           echo "ok: nothing matching is tracked"
 
+      # The content half of the guard above. That one asks whether a FILE
+      # should be here; this asks whether a LINE should be, which became a
+      # separate question when claude/user-memory.md arrived: it is linked to
+      # ~/.claude/CLAUDE.md, so Claude Code writes to it unprompted whenever a
+      # memory is added with `#`, from any repo, in any session. It is the only
+      # tracked file here that changes without someone opening an editor, and
+      # this repo is public.
+      #
+      # Sweeps every tracked file rather than only the diff: a credential
+      # introduced on a branch that CI never ran is still published the moment
+      # it lands on main. The same script backs .githooks/pre-commit, which
+      # feeds it just the staged paths.
+      - name: No credential-shaped content, no home paths in linked files
+        run: tools/check-content.sh
+
       # Runs here rather than on the Windows runner so it fails in seconds,
       # but the reason is pure Windows PowerShell 5.1.
       - name: PowerShell sources are ASCII-only
@@ -1300,6 +1315,7 @@ jobs:
           test -L "$HOME/.config/nvim"
           test -L "$HOME/.config/wezterm/wezterm.lua"
           test -L "$HOME/.claude/settings.json"
+          test -L "$HOME/.claude/CLAUDE.md"
 
       # The [claude] hooks and wezterm's format-tab-title are two halves of one
       # feature — the hooks publish claude_state as an OSC user var, the tab bar
@@ -1335,6 +1351,28 @@ jobs:
             echo "      move it to claude/settings.json (see [claude] in deps.conf)"
             exit 1
           fi
+
+      # Same hazard, one scope over. The user memory file is linked to
+      # ~/.claude/CLAUDE.md, and Claude Code also reads a CLAUDE.md found in a
+      # SUBDIRECTORY as context for files in that subtree -- which this repo
+      # relies on for nvim/CLAUDE.md and tui/CLAUDE.md. So naming the repo copy
+      # claude/CLAUDE.md would load the user prompt a second time, as directory
+      # memory, whenever anyone edited claude/settings.json.
+      #
+      # Checked case-insensitively because the macOS leg of this matrix runs on
+      # APFS, where `claude/claude.md` IS `claude/CLAUDE.md` to the lookup. A
+      # case-sensitive test would pass on Linux and let the collision ship.
+      - name: The user memory file is not also directory memory
+        run: |
+          if find claude -maxdepth 1 -iname 'claude.md' | grep -q .; then
+            echo "FAIL: a CLAUDE.md under claude/ double-loads as directory memory"
+            echo "      keep it at claude/user-memory.md (see [claude] in deps.conf)"
+            exit 1
+          fi
+          test -f claude/user-memory.md \
+            || { echo "FAIL: claude/user-memory.md is missing"; exit 1; }
+          cmp -s claude/user-memory.md "$HOME/.claude/CLAUDE.md" \
+            || { echo "FAIL: ~/.claude/CLAUDE.md is not this repo's file"; exit 1; }
 
       - name: Idempotent — second run changes nothing
         run: |
