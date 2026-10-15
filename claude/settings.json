@@ -1,5 +1,8 @@
 {
   "agentPushNotifEnabled": true,
+  "attribution": {
+    "commit": ""
+  },
   "enabledPlugins": {
     "lua-lsp@claude-plugins-official": true
   },
@@ -45,6 +48,7 @@
       }
     ]
   },
+  "includeCoAuthoredBy": false,
   "model": "opus",
   "modelSettings": {
     "claude-fable-5-1": {
