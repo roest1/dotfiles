@@ -11,6 +11,7 @@ dotfiles-commands-glow	dotfiles-commands.txt	/*dotfiles-commands-glow*
 dotfiles-commands-lazy	dotfiles-commands.txt	/*dotfiles-commands-lazy*
 dotfiles-commands-lsp	dotfiles-commands.txt	/*dotfiles-commands-lsp*
 dotfiles-commands-pasteimage	dotfiles-commands.txt	/*dotfiles-commands-pasteimage*
+dotfiles-commands-render	dotfiles-commands.txt	/*dotfiles-commands-render*
 dotfiles-commands-reset	dotfiles-commands.txt	/*dotfiles-commands-reset*
 dotfiles-commands-roslyn	dotfiles-commands.txt	/*dotfiles-commands-roslyn*
 dotfiles-commands-servers	dotfiles-commands.txt	/*dotfiles-commands-servers*
