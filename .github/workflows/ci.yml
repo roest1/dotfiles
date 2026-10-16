@@ -173,6 +173,21 @@ jobs:
           fi
           echo "ok: nothing matching is tracked"
 
+      # The content half of the guard above. That one asks whether a FILE
+      # should be here; this asks whether a LINE should be, which became a
+      # separate question when claude/user-memory.md arrived: it is linked to
+      # ~/.claude/CLAUDE.md, so Claude Code writes to it unprompted whenever a
+      # memory is added with `#`, from any repo, in any session. It is the only
+      # tracked file here that changes without someone opening an editor, and
+      # this repo is public.
+      #
+      # Sweeps every tracked file rather than only the diff: a credential
+      # introduced on a branch that CI never ran is still published the moment
+      # it lands on main. The same script backs .githooks/pre-commit, which
+      # feeds it just the staged paths.
+      - name: No credential-shaped content, no home paths in linked files
+        run: tools/check-content.sh
+
       # Runs here rather than on the Windows runner so it fails in seconds,
       # but the reason is pure Windows PowerShell 5.1.
       - name: PowerShell sources are ASCII-only
@@ -1032,6 +1047,78 @@ jobs:
             echo "re-stage it: git add --renormalize claude/settings.json"; exit 1; }
           echo "ok: defaults committed, local preferences never reach git"
 
+      # The filter makes the worktree file and its blob different SIZES, and
+      # git's ie_modified() short-circuits on a size mismatch: it answers
+      # "modified" without re-reading the file, so the filter never runs and
+      # `git status` reports a change `git diff` then shows as empty. No git
+      # config reaches that -- core.checkStat=minimal keeps size, and
+      # --assume-unchanged would hide real edits to the same file.
+      #
+      # tools/refresh-claude-settings.sh re-records the stat with `git add`,
+      # but only after proving the filtered worktree equals the index blob.
+      # BOTH directions are asserted, because the dangerous failure is the
+      # second one: a script that cleared the flag unconditionally would hide
+      # a genuine settings change behind a cosmetic fix, and look identical
+      # from the outside while doing it.
+      - name: The settings refresh clears only the FALSE modified flag
+        run: |
+          set -euo pipefail
+          # Hooks fire on ~/.claude/settings.json being a symlink into a clone,
+          # which is what `make link` would do; this job never ran it.
+          mkdir -p "$HOME/.claude"
+          ln -sfn "$PWD/claude/settings.json" "$HOME/.claude/settings.json"
+          git add claude/settings.json          # baseline: stat recorded
+
+          # 0. No filter registered -- a clone that was only linked, never
+          #    `make install claude`ed. The script's proof runs the filter by
+          #    hand, but `git add` would not, so it would stage this machine's
+          #    model. It must do nothing at all.
+          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
+          tools/refresh-claude-settings.sh
+          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
+            || { echo "FAIL: refresh staged the raw file with no filter registered"; exit 1; }
+          git checkout -- claude/settings.json
+
+          # From here on, the filter as claude/deps.sh registers it.
+          git config filter.claude-settings.clean "$PWD/tools/clean-claude-settings.sh"
+          git add claude/settings.json
+
+          # 1. A model change is volatile: different size, identical after
+          #    filtering. The flag must clear, and nothing may be staged.
+          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
+          [ -n "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: a size change did not go stat-dirty — premise gone"; exit 1; }
+          tools/refresh-claude-settings.sh
+          [ -z "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: refresh left the false modified flag in place"; exit 1; }
+          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
+            || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
+
+          # 2. A theme change is real. It must survive.
+          jq '.theme = "light"' claude/settings.json > t && mv t claude/settings.json
+          tools/refresh-claude-settings.sh
+          [ -n "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: refresh hid a real settings change"; exit 1; }
+          git checkout -- claude/settings.json
+          echo "ok: false flag cleared, real change left visible"
+
+      # The hooks that call it. Named rather than counted, for the reason the
+      # wezterm link check gives: a count tells you the number is wrong and
+      # nothing else. SessionEnd does the work, right after the only writer
+      # stops. SessionStart is the backstop for a session that was killed, so
+      # dropping it would leave the flag set until the next clean exit --
+      # which is silent, and looks exactly like the bug being fixed here.
+      - name: Both refresh hooks are declared
+        run: |
+          set -euo pipefail
+          for ev in SessionStart SessionEnd; do
+            jq -e --arg ev "$ev" \
+              '.hooks[$ev][0].hooks[0].command | test("refresh-claude-settings")' \
+              claude/settings.json >/dev/null \
+              || { echo "FAIL: $ev no longer calls tools/refresh-claude-settings.sh"; exit 1; }
+          done
+          echo "ok: SessionStart and SessionEnd both refresh the stat"
+
       # The links are NOT part of that skip, and the reason is easy to lose:
       # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
       # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
@@ -1300,6 +1387,7 @@ jobs:
           test -L "$HOME/.config/nvim"
           test -L "$HOME/.config/wezterm/wezterm.lua"
           test -L "$HOME/.claude/settings.json"
+          test -L "$HOME/.claude/CLAUDE.md"
 
       # The [claude] hooks and wezterm's format-tab-title are two halves of one
       # feature — the hooks publish claude_state as an OSC user var, the tab bar
@@ -1335,6 +1423,28 @@ jobs:
             echo "      move it to claude/settings.json (see [claude] in deps.conf)"
             exit 1
           fi
+
+      # Same hazard, one scope over. The user memory file is linked to
+      # ~/.claude/CLAUDE.md, and Claude Code also reads a CLAUDE.md found in a
+      # SUBDIRECTORY as context for files in that subtree -- which this repo
+      # relies on for nvim/CLAUDE.md and tui/CLAUDE.md. So naming the repo copy
+      # claude/CLAUDE.md would load the user prompt a second time, as directory
+      # memory, whenever anyone edited claude/settings.json.
+      #
+      # Checked case-insensitively because the macOS leg of this matrix runs on
+      # APFS, where `claude/claude.md` IS `claude/CLAUDE.md` to the lookup. A
+      # case-sensitive test would pass on Linux and let the collision ship.
+      - name: The user memory file is not also directory memory
+        run: |
+          if find claude -maxdepth 1 -iname 'claude.md' | grep -q .; then
+            echo "FAIL: a CLAUDE.md under claude/ double-loads as directory memory"
+            echo "      keep it at claude/user-memory.md (see [claude] in deps.conf)"
+            exit 1
+          fi
+          test -f claude/user-memory.md \
+            || { echo "FAIL: claude/user-memory.md is missing"; exit 1; }
+          cmp -s claude/user-memory.md "$HOME/.claude/CLAUDE.md" \
+            || { echo "FAIL: ~/.claude/CLAUDE.md is not this repo's file"; exit 1; }
 
       - name: Idempotent — second run changes nothing
         run: |

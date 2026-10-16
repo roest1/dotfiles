@@ -1,0 +1,47 @@
+# Credential-shaped strings that must never appear INSIDE a tracked file.
+#
+# The sibling file, secret-patterns, is about PATHS -- whole files that must
+# not be tracked at all. This one is about content, and it exists because of
+# claude/user-memory.md: that file is rewritten by Claude Code itself (a `#`
+# memory-add, from any repo, during any session), so it is the one tracked
+# file in here that changes without anyone opening an editor. See
+# tools/check-content.sh for what this can and cannot prove.
+#
+# One extended-regex per line, matched against file contents. Blank lines and
+# #-comments ignored. Read by BOTH .githooks/pre-commit and the CI sweep via
+# tools/check-content.sh, so the local guard and the remote one cannot drift.
+#
+# Keep these SHAPE-based and anchored on a vendor prefix plus a length floor.
+# A pattern loose enough to catch "a secret someone described in prose" is
+# loose enough to fire on prose, and a guard that cries wolf gets bypassed
+# with --no-verify, which is strictly worse than not having it.
+
+# Anthropic
+sk-ant-[A-Za-z0-9_-]{16,}
+
+# OpenAI project keys (the only modern shape worth matching; a bare `sk-`
+# plus hex is indistinguishable from a hash and fired on lockfiles)
+sk-proj-[A-Za-z0-9_-]{16,}
+
+# GitHub: classic PATs/OAuth tokens are the prefix plus exactly 36, and
+# fine-grained ones are github_pat_ plus a much longer body.
+gh[pousr]_[A-Za-z0-9]{36}
+github_pat_[A-Za-z0-9_]{22,}
+
+# GitLab
+glpat-[A-Za-z0-9_-]{16,}
+
+# AWS access key id
+AKIA[0-9A-Z]{16}
+
+# Slack
+xox[abprs]-[A-Za-z0-9-]{10,}
+
+# Private keys of any flavor, in their armored form
+-----BEGIN [A-Z ]*PRIVATE KEY-----
+
+# An assignment whose value is long and random-looking. The length floor and
+# the quoted/bare value shape are what keep this off ordinary prose: a
+# sentence saying "put your token in ~/.netrc" has no `=` and no 24-char
+# payload, while `ANTHROPIC_API_KEY=<the real thing>` has both.
+(api[_-]?key|secret|passwd|password|token)[[:space:]]*[:=][[:space:]]*["']?[A-Za-z0-9/+_-]{24,}

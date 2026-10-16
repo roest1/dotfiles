@@ -19,7 +19,23 @@ set -euo pipefail
 # Patterns live in .githooks/secret-patterns, shared with the CI step
 # that checks the same thing, so the two cannot drift apart.
 #
-# 2. Run shellcheck over the shell files being committed.
+# 2. Refuse to commit credential-shaped CONTENT, and absolute home
+#    paths in files that get linked into $HOME.
+#
+# The path guard above asks "is this a file that must never be here".
+# This asks "is this a line that must never be here", which is a
+# different question and became worth asking when claude/user-memory.md
+# arrived: it is linked to ~/.claude/CLAUDE.md, so Claude Code writes
+# to it by itself whenever you add a memory with `#`, from any repo.
+# It is the one tracked file that can change without anyone opening an
+# editor, and this repo is public.
+#
+# Shared with CI through tools/check-content.sh, same as the two
+# guards either side of it. Its header says what it can and cannot
+# prove -- it is a backstop for strings, not a substitute for reading
+# the diff.
+#
+# 3. Run shellcheck over the shell files being committed.
 #
 # That one is a CONVENIENCE, not a gate, and the difference is worth
 # keeping straight. The secret guard belongs here because a published
@@ -67,6 +83,15 @@ staged=$(git diff --cached --name-only --diff-filter=AM || true)
 # other's findings behind two round trips.
 fail=0
 
+# Built as an array rather than split on whitespace, so a path with a space
+# in it stays one path. Built HERE rather than at its first use, because two
+# of the three checks below need it and `set -u` makes an array that only
+# exists inside one branch an error in the other.
+staged_files=()
+while IFS= read -r f; do
+  [[ -n "$f" ]] && staged_files+=("$f")
+done <<< "$staged"
+
 # ─── 1. Secrets and machine-local files ────────────────────────────
 if [[ -n "$patterns" ]]; then
   bad=$(printf '%s\n' "$staged" | grep -E "$patterns" || true)
@@ -81,7 +106,18 @@ if [[ -n "$patterns" ]]; then
   fi
 fi
 
-# ─── 2. shellcheck ─────────────────────────────────────────────────
+# ─── 2. Credential-shaped content, and home paths in linked files ──
+#
+# Fed only the staged paths, so a commit is judged on what it touches.
+# The sweep with no arguments (every tracked file) is CI's job.
+if (( ${#staged_files[@]} )); then
+  if ! out=$("$ROOT/tools/check-content.sh" "${staged_files[@]}" 2>&1); then
+    echo "$out"
+    fail=1
+  fi
+fi
+
+# ─── 3. shellcheck ─────────────────────────────────────────────────
 #
 # Skipped rather than failed when shellcheck is absent: this half is a
 # convenience, and a machine that has not run `make install bash` should
@@ -99,13 +135,6 @@ fi
 # rather than as prose, and fails with SC1072/SC1073. This hook's very
 # first run caught exactly that, in this comment block.)
 if command -v shellcheck >/dev/null 2>&1; then
-  # Built as an array rather than split on whitespace, so a path with a
-  # space in it stays one path.
-  staged_files=()
-  while IFS= read -r f; do
-    [[ -n "$f" ]] && staged_files+=("$f")
-  done <<< "$staged"
-
   if (( ${#staged_files[@]} )); then
     # lint.sh filters the list down to the shell sources itself and exits
     # 0 when there are none, so every commit can hand it everything.
