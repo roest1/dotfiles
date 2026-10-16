@@ -1069,6 +1069,20 @@ jobs:
           ln -sfn "$PWD/claude/settings.json" "$HOME/.claude/settings.json"
           git add claude/settings.json          # baseline: stat recorded
 
+          # 0. No filter registered -- a clone that was only linked, never
+          #    `make install claude`ed. The script's proof runs the filter by
+          #    hand, but `git add` would not, so it would stage this machine's
+          #    model. It must do nothing at all.
+          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
+          tools/refresh-claude-settings.sh
+          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
+            || { echo "FAIL: refresh staged the raw file with no filter registered"; exit 1; }
+          git checkout -- claude/settings.json
+
+          # From here on, the filter as claude/deps.sh registers it.
+          git config filter.claude-settings.clean "$PWD/tools/clean-claude-settings.sh"
+          git add claude/settings.json
+
           # 1. A model change is volatile: different size, identical after
           #    filtering. The flag must clear, and nothing may be staged.
           jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json

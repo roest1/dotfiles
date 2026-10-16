@@ -68,6 +68,13 @@ rel=$(git -C "$repo" ls-files --full-name -- "$target" 2>/dev/null) || exit 0
 filter="$repo/tools/clean-claude-settings.sh"
 [ -x "$filter" ] || exit 0
 
+# The proof below runs the filter by hand, but the `git add` it licenses runs
+# whatever filter GIT has -- and filter.* lives in .git/config, written by
+# claude/deps.sh. A clone that was only `make link`ed, or not installed yet,
+# has none, so the add would store the raw file: this machine's /model,
+# staged, by the hook whose job is to keep it out. No filter, no add.
+git -C "$repo" config --get filter.claude-settings.clean >/dev/null 2>&1 || exit 0
+
 # A conflicted or otherwise missing stage-0 entry makes this fail, which is
 # the correct time to do nothing.
 indexed=$(git -C "$repo" cat-file -p ":$rel" 2>/dev/null) || exit 0
