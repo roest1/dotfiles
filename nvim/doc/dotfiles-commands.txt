@@ -197,6 +197,22 @@ Behavior:~
 Location: lua/keymaps.lua
 
 ==============================================================================
+:RENDER                                                    *dotfiles-commands-render*
+
+Toggle in-buffer markdown rendering for the current buffer.
+
+Usage:~
+    :Render
+
+Behavior:~
+    - Off by default; markdown files open as raw source
+    - While on, normal mode shows the rendered view and insert mode shows raw
+      source, so motions land on text you can see the cursor over
+    - Running it again turns rendering back off for the buffer
+
+Location: lua/external/plugins/render-markdown.lua
+
+==============================================================================
 :GLOW                                                        *dotfiles-commands-glow*
 
 Render Markdown preview in terminal.

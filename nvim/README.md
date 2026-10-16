@@ -57,8 +57,8 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │           ├── harpoon.lua         Working file set
 │           ├── lint.lua            Async linting (nvim-lint)
 │           ├── lsp.lua             Language server setup (no Mason)
-│           ├── markview.lua        In-buffer markdown rendering
 │           ├── mini.lua            Surround + autopairs
+│           ├── render-markdown.lua In-buffer markdown rendering (:Render)
 │           ├── oil.lua             File browser
 │           ├── roslyn.lua          C# language server
 │           ├── telescope.lua       Fuzzy finder
