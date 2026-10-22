@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
  * Proves each language server completes a real LSP `initialize` handshake when
- * launched by bun — the exact invocation lsp.lua uses.
+ * launched the way lsp_servers.lua launches it: through bun, or for tsc, as
+ * the native binary with no runtime at all.
  *
  *   bun nvim/lsp-servers/verify.ts
  *
@@ -23,12 +24,26 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const BIN = join(dirname(fileURLToPath(import.meta.url)), "node_modules", ".bin");
+const MODULES = join(dirname(fileURLToPath(import.meta.url)), "node_modules");
+const BIN = join(MODULES, ".bin");
+
+// TypeScript 7's language server is a native executable that the `typescript`
+// package carries in a per-platform optional dependency. lsp_servers.lua runs
+// it directly, with no runtime, so this does too: `direct` means spawn the
+// path itself rather than `bun <path>`. The name mapping is the one
+// typescript/lib/getExePath.js uses, and the one lsp_servers.lua re-derives.
+const TSC = join(
+  MODULES,
+  "@typescript",
+  `typescript-${process.platform}-${process.arch}`,
+  "lib",
+  process.platform === "win32" ? "tsc.exe" : "tsc",
+);
 
 // Args are NOT uniform — bash-language-server rejects --stdio and wants `start`.
 // Verified individually; don't assume a new server follows the majority.
-const SERVERS: Array<{ cmd: string; args: string[] }> = [
-  { cmd: "typescript-language-server", args: ["--stdio"] },
+const SERVERS: Array<{ cmd: string; args: string[]; direct?: boolean }> = [
+  { cmd: TSC, args: ["--lsp", "--stdio"], direct: true },
   { cmd: "yaml-language-server", args: ["--stdio"] },
   { cmd: "vscode-json-language-server", args: ["--stdio"] },
   { cmd: "vscode-css-language-server", args: ["--stdio"] },
@@ -38,11 +53,10 @@ const SERVERS: Array<{ cmd: string; args: string[] }> = [
 
 const TIMEOUT_MS = 20_000;
 
-function handshake(cmd: string, args: string[]): Promise<boolean> {
+function handshake(cmd: string, args: string[], direct = false): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn("bun", [join(BIN, cmd), ...args], {
-      stdio: ["pipe", "pipe", "ignore"],
-    });
+    const [exe, argv] = direct ? [cmd, args] : ["bun", [join(BIN, cmd), ...args]];
+    const child = spawn(exe, argv, { stdio: ["pipe", "pipe", "ignore"] });
 
     let out = "";
     let settled = false;
@@ -79,15 +93,16 @@ console.log(`node on PATH: ${hasNode ? "yes" : "no"}   npm on PATH: ${hasNpm ? "
 console.log("");
 
 let failed = 0;
-for (const { cmd, args } of SERVERS) {
-  const ok = await handshake(cmd, args);
-  console.log(`  ${ok ? "pass" : "FAIL"}  ${cmd.padEnd(30)} ${args.join(" ")}`);
+for (const { cmd, args, direct } of SERVERS) {
+  const ok = await handshake(cmd, args, direct);
+  const name = direct ? `${cmd.split("/").at(-1)} (native)` : cmd;
+  console.log(`  ${ok ? "pass" : "FAIL"}  ${name.padEnd(30)} ${args.join(" ")}`);
   if (!ok) failed++;
 }
 
 console.log("");
 if (failed === 0) {
-  console.log(`ALL PASS — ${SERVERS.length} servers completed an LSP handshake under bun`);
+  console.log(`ALL PASS — ${SERVERS.length} servers completed an LSP handshake, none needing node`);
 } else {
   console.log(`${failed}/${SERVERS.length} FAILED`);
   process.exit(1);

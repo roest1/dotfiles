@@ -281,8 +281,9 @@ Native binaries — clangd, lua-language-server, lemminx:~
     Declared in ../deps.conf under [nvim].
     Install:  make install nvim     (from the dotfiles root)
 
-JavaScript-based — ts_ls, bashls, yamlls, jsonls, cssls, html — and prettier:~
-    Declared in nvim/lsp-servers/package.json, run as `bun <path>`.
+npm-published — tsc, bashls, yamlls, jsonls, cssls, html — and prettier:~
+    Declared in nvim/lsp-servers/package.json, run as `bun <path>`; tsc
+    is TypeScript 7's native binary and runs directly, with no runtime.
     Install:  bun install --cwd nvim/lsp-servers
     Update:   make -C nvim servers  (applies a 7-day release cooldown and
                                      regenerates yarn.lock)

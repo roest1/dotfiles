@@ -1,7 +1,8 @@
 # JavaScript language servers
 
-The six JS-based language servers this config uses, installed with **bun** and
-run with **bun**. No node, no npm, anywhere in the chain.
+The npm-published language servers this config uses, installed with **bun**.
+Five are JavaScript and run with **bun**; TypeScript's is a native binary that
+runs with nothing. No node, no npm, anywhere in the chain.
 
 ```sh
 bun install --cwd nvim/lsp-servers    # what deps.conf's [nvim] post step runs
@@ -37,7 +38,7 @@ this surfaces as "formatting silently does nothing" with no clue where to look.
 
 | Package                        | Provides                                        |
 | ------------------------------ | ----------------------------------------------- |
-| `typescript-language-server`   | `ts_ls` (+ `typescript`, its peer)              |
+| `typescript`                   | `tsc` — TypeScript 7's native `tsc --lsp`       |
 | `bash-language-server`         | `bashls`                                        |
 | `yaml-language-server`         | `yamlls`                                        |
 | `vscode-langservers-extracted` | `jsonls`, `cssls`, `html`                       |
@@ -53,15 +54,24 @@ The arguments are not uniform, so each was verified rather than assumed:
 
 | Server                              | Args      |
 | ----------------------------------- | --------- |
-| `typescript-language-server`        | `--stdio` |
+| **`tsc`** (native, not via bun)     | `--lsp --stdio` |
 | `yaml-language-server`              | `--stdio` |
 | `vscode-json-language-server`       | `--stdio` |
 | `vscode-css-language-server`        | `--stdio` |
 | `vscode-html-language-server`       | `--stdio` |
 | **`bash-language-server`**          | **`start`** — rejects `--stdio` |
 
-All six were confirmed to complete a real LSP `initialize` handshake under bun
-with `node` and `npm` absent from `$PATH`.
+All six were confirmed to complete a real LSP `initialize` handshake with
+`node` and `npm` absent from `$PATH`.
+
+`tsc` is the exception to `bun <path>`. TypeScript 7 is the Go port: the
+`typescript` package's `bin/tsc` is a node script that only finds and execs a
+statically linked executable from a per-platform optional dependency,
+`@typescript/typescript-<os>-<arch>/lib/tsc`. `lsp_servers.lua` resolves that
+path itself and runs the executable directly — 3 ms / 14 MB at startup against
+21 ms / 42 MB through the shim. Its os/arch mapping is a hand copy of
+`typescript/lib/getExePath.js`, pinned per platform in
+`tests/lsp_servers_spec.lua`.
 
 ## Supply chain
 
@@ -119,8 +129,14 @@ does), so it's pinned and reviewable like everything else.
 
 ## Notes
 
-- `typescript` is a direct dependency because `typescript-language-server` needs
-  a `tsserver` to drive; pinning it here keeps that explicit rather than
-  inherited.
+- `typescript-language-server` is gone. It drives `lib/tsserver.js`, which
+  TypeScript 7 does not ship, and TypeScript 7's own server replaced it. The
+  cost is the compiler API: `require('typescript')` is `{ version,
+  versionMajorMinor }` under 7, and 7.1's API is new rather than restored, so
+  anything built on Volar (Vue, Svelte, Astro, MDX) needs a TypeScript 6 of its
+  own if one is ever added here.
+- This `tsc` checks every project, whatever `typescript` the project pins. Keep
+  it on the same release as the projects you edit, or the editor and CI can
+  disagree about what is an error.
 - Native-binary servers — `clangd`, `lua_ls`, `lemminx` — are **not** here.
   They aren't JavaScript and come from `deps.conf` via `pkg` / `mise`.

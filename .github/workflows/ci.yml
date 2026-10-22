@@ -2178,7 +2178,7 @@ jobs:
             print('mason loaded: ' .. tostring(package.loaded['mason'] ~= nil))
           " -c "qa!" 2>&1 | tee /tmp/nvim.txt
           grep -q "mason loaded: false" /tmp/nvim.txt
-          for s in clangd lua_ls lemminx ts_ls cssls html jsonls yamlls bashls; do
+          for s in clangd lua_ls lemminx tsc cssls html jsonls yamlls bashls; do
             grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
           done
 
