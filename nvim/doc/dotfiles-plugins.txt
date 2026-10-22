@@ -175,7 +175,7 @@ Location: lua/external/plugins/lsp.lua
 
 Configured servers:
     lua_ls          Lua
-    ts_ls           TypeScript/JavaScript
+    tsc             TypeScript/JavaScript (TypeScript 7, native)
     clangd          C/C++
     cssls           CSS
     html            HTML

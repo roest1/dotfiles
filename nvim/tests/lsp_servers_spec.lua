@@ -24,10 +24,11 @@ local S = require 'external.lsp_servers'
 
 print 'lsp_servers'
 
-local defs = S.build '/fake/bin'
+local linux = { sysname = 'Linux', machine = 'x86_64' }
+local defs = S.build('/fake/bin', '/fake/modules', linux)
 
 -- ── every server is defined ────────────────────────────────────────────────
-for _, name in ipairs { 'clangd', 'lua_ls', 'lemminx', 'ts_ls', 'cssls', 'html', 'jsonls', 'yamlls', 'bashls' } do
+for _, name in ipairs { 'clangd', 'lua_ls', 'lemminx', 'tsc', 'cssls', 'html', 'jsonls', 'yamlls', 'bashls' } do
   check('defines ' .. name, defs[name] ~= nil)
 end
 
@@ -50,7 +51,28 @@ end
 -- bash-language-server rejects --stdio. This assertion exists because it is the
 -- single easiest thing to "fix" into consistency and thereby break.
 check('bashls uses `start`, not --stdio', defs.bashls.cmd[3] == 'start')
-check('ts_ls uses --stdio', defs.ts_ls.cmd[3] == '--stdio')
+
+-- ── tsc runs as the native binary, with no runtime ─────────────────────────
+-- The whole point of running it directly: a `bun` here would bring back the
+-- 21 ms / 42 MB node-shim startup, and lspconfig's default `cmd` would look
+-- for a `tsc` on $PATH that this setup never installs.
+check('tsc is not run through bun', defs.tsc.cmd[1] ~= 'bun')
+check('tsc points at the linux-x64 package', defs.tsc.cmd[1] == '/fake/modules/@typescript/typescript-linux-x64/lib/tsc')
+check('tsc serves LSP over stdio', vim.deep_equal({ unpack(defs.tsc.cmd, 2) }, { '--lsp', '--stdio' }))
+check('tsc replaces lspconfig root_dir', type(defs.tsc.root_dir) == 'function')
+check('ts_ls is gone (no tsserver in TypeScript 7)', defs.ts_ls == nil)
+
+-- The platform mapping is hand-rolled from typescript/lib/getExePath.js, so
+-- each name it can produce is pinned here rather than trusted.
+local function exe(sysname, machine)
+  return S.tsc_exe('/m', { sysname = sysname, machine = machine })
+end
+check('darwin arm64', exe('Darwin', 'arm64') == '/m/@typescript/typescript-darwin-arm64/lib/tsc')
+check('darwin x64', exe('Darwin', 'x86_64') == '/m/@typescript/typescript-darwin-x64/lib/tsc')
+check('linux arm64', exe('Linux', 'aarch64') == '/m/@typescript/typescript-linux-arm64/lib/tsc')
+check('windows x64 is tsc.exe', exe('Windows_NT', 'AMD64') == '/m/@typescript/typescript-win32-x64/lib/tsc.exe')
+check('unknown platform gives no path', exe('Plan9', 'mips') == nil)
+check('unknown platform drops tsc rather than guess', S.build('/fake/bin', '/m', { sysname = 'Plan9', machine = 'mips' }).tsc == nil)
 check('no JS server is left on --version', (function()
   for name, _ in pairs(S.js_servers) do
     for _, a in ipairs(defs[name].cmd) do

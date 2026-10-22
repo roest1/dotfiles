@@ -67,7 +67,7 @@ the session. `font` (in bash) picks which family the lane maps to.
 
 - Leader key MUST be set before any plugins load (done in `init.lua` before any `require`)
 - Plugin files return a table (or list of tables) consumable by lazy.nvim
-- LSP servers are defined in `lua/external/lsp_servers.lua` (a plain table, kept out of the plugin spec so `nvim/tests/lsp_servers_spec.lua` can assert on it under `--clean`) and wired up in `lua/external/plugins/lsp.lua`. There is no Mason: native servers are declared in `../deps.conf`, JS ones in `lsp-servers/package.json` and run as `bun <path>` via explicit `cmd` overrides
+- LSP servers are defined in `lua/external/lsp_servers.lua` (a plain table, kept out of the plugin spec so `nvim/tests/lsp_servers_spec.lua` can assert on it under `--clean`) and wired up in `lua/external/plugins/lsp.lua`. There is no Mason: native servers are declared in `../deps.conf`, JS ones in `lsp-servers/package.json` and run as `bun <path>` via explicit `cmd` overrides. TypeScript's `tsc` (TS 7, native) also comes from `lsp-servers/package.json` but runs as the platform binary directly, with no runtime
 - Formatters are configured in `lua/external/plugins/formatter.lua` (conform.nvim) by filetype
 - Linters are configured in `lua/external/plugins/lint.lua` (nvim-lint) by filetype
 - Completion is handled by `blink.cmp` (`lua/external/plugins/blink-cmp.lua`), which also provides LSP capabilities
@@ -164,7 +164,7 @@ Check your actual file editing patterns:
 git log --name-only --pretty=format: | sort | uniq | grep -oE '\.\w+$' | sort | uniq -c | sort -rn
 ```
 
-**Action:** Remove servers/formatters/linters for filetypes you don't edit. Keep LSP servers general (lua_ls, typescript-language-server) unless you have a specific reason (e.g., a project-specific configuration).
+**Action:** Remove servers/formatters/linters for filetypes you don't edit. Keep LSP servers general (lua_ls, tsc) unless you have a specific reason (e.g., a project-specific configuration).
 
 ### Doc Tag Regeneration
 

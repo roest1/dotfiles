@@ -30,6 +30,10 @@ return {
         javascript = { 'prettier' },
         javascriptreact = { 'prettier' },
         json = { 'prettier' },
+        -- tsconfig*.json and friends open as jsonc, not json. Without this entry
+        -- they fell through to jsonls via `lsp_format = 'fallback'`, which
+        -- reindents to shiftwidth (4) and explodes every array onto its own line.
+        jsonc = { 'prettier' },
         markdown = { 'prettier' },
         html = { 'prettier' },
         yaml = { 'prettier' },

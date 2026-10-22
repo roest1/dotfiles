@@ -1995,11 +1995,42 @@ jobs:
       # setup-bun rather than `curl https://bun.com/install | bash`. This job's
       # whole purpose is objecting to unreviewed code entering the build, so
       # piping an unpinned remote script into bash to bootstrap it was the one
-      # inconsistency worth removing. The action is pinned and watched by the
-      # github-actions ecosystem in dependabot.yml; the curl script is neither.
+      # inconsistency worth removing. The action itself is pinned and watched by
+      # the github-actions ecosystem in dependabot.yml; the curl script is
+      # neither.
+      #
+      # bun's VERSION comes from mise.toml, which tools/gen-mise.sh generates
+      # from deps.conf — so CI runs the bun this repo declares, not whatever is
+      # current today. `bun-version: latest` is not a neutral default here: the
+      # `bun ./bun.lockb --hash:` header that `bun install --yarn` writes into
+      # yarn.lock is written differently by different bun versions (1.3.14
+      # zeroes it, 1.4.4 fills it in), so a runner ahead of the pin failed the
+      # "yarn.lock matches bun.lock" step below over a header, with the package
+      # entries identical. Hardcoding a number here instead would be a third
+      # copy of a version deps.conf owns.
+      #
+      # Dependabot cannot do this job in either direction: the github-actions
+      # ecosystem bumps action REFS, never `with:` inputs, and mise is not an
+      # ecosystem it parses. Upgrading bun is a manifest edit — bump mise.toml,
+      # `make mise-lock`, `make servers` to regenerate both lockfiles.
+      - id: bun
+        run: |
+          set -euo pipefail
+          # Fail rather than default. An empty `bun-version` is not an error to
+          # setup-bun — it installs latest — so a bun that stopped being a mise
+          # tool in deps.conf would put this job back on an undeclared runtime
+          # without a single red tick.
+          v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
+          if [ -z "$v" ]; then
+            echo "mise.toml declares no bun version; deps.conf must keep bun" \
+                 "on the mise lane, or this job needs another pin." >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: ${{ steps.bun.outputs.version }}
 
       # --frozen-lockfile so the audit describes the committed tree rather than
       # whatever resolves today. An audit of a lockfile CI just rewrote is an
@@ -2080,13 +2111,43 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Pinned and Dependabot-watched, rather than piping an unpinned installer
-      # script into bash. Note this puts bun somewhere other than ~/.bun/bin, so
-      # the handshake step below resolves it with `command -v` rather than
-      # assuming a path.
+      # The ACTION is pinned and Dependabot-watched, rather than piping an
+      # unpinned installer script into bash. Note this puts bun somewhere other
+      # than ~/.bun/bin, so the handshake step below resolves it with
+      # `command -v` rather than assuming a path.
+      #
+      # bun's VERSION comes from mise.toml, which tools/gen-mise.sh generates
+      # from deps.conf — so CI runs the bun this repo declares, not whatever is
+      # current today. `bun-version: latest` is not a neutral default here: the
+      # `bun ./bun.lockb --hash:` header that `bun install --yarn` writes into
+      # yarn.lock is written differently by different bun versions (1.3.14
+      # zeroes it, 1.4.4 fills it in), so a runner ahead of the pin failed the
+      # "yarn.lock matches bun.lock" step below over a header, with the package
+      # entries identical. Hardcoding a number here instead would be a third
+      # copy of a version deps.conf owns.
+      #
+      # Dependabot cannot do this job in either direction: the github-actions
+      # ecosystem bumps action REFS, never `with:` inputs, and mise is not an
+      # ecosystem it parses. Upgrading bun is a manifest edit — bump mise.toml,
+      # `make mise-lock`, `make servers` to regenerate both lockfiles.
+      - id: bun
+        run: |
+          set -euo pipefail
+          # Fail rather than default. An empty `bun-version` is not an error to
+          # setup-bun — it installs latest — so a bun that stopped being a mise
+          # tool in deps.conf would put this job back on an undeclared runtime
+          # without a single red tick.
+          v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
+          if [ -z "$v" ]; then
+            echo "mise.toml declares no bun version; deps.conf must keep bun" \
+                 "on the mise lane, or this job needs another pin." >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: ${{ steps.bun.outputs.version }}
 
       - name: deps.conf declares no node, npm or pip
         run: |
@@ -2178,7 +2239,7 @@ jobs:
             print('mason loaded: ' .. tostring(package.loaded['mason'] ~= nil))
           " -c "qa!" 2>&1 | tee /tmp/nvim.txt
           grep -q "mason loaded: false" /tmp/nvim.txt
-          for s in clangd lua_ls lemminx ts_ls cssls html jsonls yamlls bashls; do
+          for s in clangd lua_ls lemminx tsc cssls html jsonls yamlls bashls; do
             grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
           done
 
