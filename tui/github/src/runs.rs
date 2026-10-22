@@ -693,7 +693,7 @@ impl Screen for Actions {
             (Scope::Branch(_), _) => "b all branches".into(),
             _ => "b all branches".into(),
         };
-        format!("enter jobs & steps \u{b7} o browser \u{b7} r refresh \u{b7} {scope}\ne rerun \u{b7} x cancel \u{b7} L whole log \u{b7} q back")
+        format!("enter jobs & steps \u{b7} o browser \u{b7} r refresh \u{b7} {scope}\ne rerun \u{b7} x cancel \u{b7} L whole log")
     }
 }
 

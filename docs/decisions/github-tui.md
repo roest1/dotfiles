@@ -280,6 +280,69 @@ unvalidated behaviour preserves it bug-for-bug and lets it set the shape of
 the screen. Use them on github.com first, then build the screen the use
 produced. Same for **issues**, which nothing here has yet.
 
+## The user and org levels (done 2026-10-22)
+
+Decided from Riley's `GITHUB_TUI.md` plus what the account actually permits,
+measured before any of it was written. Three things the doc said changed.
+
+**One root, not two.** The doc opened "at the repo level, and if not in a git
+repo, at the user level". That is two roots, and two roots cannot connect — with
+the repo as the root there is nothing above it to walk up to, so the "I want my
+settings even when I opened this in a repo" the doc also asks for is
+unreachable. Inverted: the user level is always the root, and standing in a repo
+seeds the SELECTION. `q` now walks a workflow run → repo list → account. No new
+mechanism; `app::run_stack` already did this.
+
+**Tabs, because the design is a header strip over a sidebar and a pane, and
+because `font`'s sidebar is the reference.** `reticle::Host` owns one `Screen`
+per tab and forwards to the active one, which is what let `Actions` become a tab
+without being touched. Tabs are siblings, the stack is depth, and a level earns
+a strip only once it has two real screens — so the repo level is still a direct
+push to Actions, with one of six screens ported. The bash hub was a list of five
+rows, so the strip is a change from what exists rather than a continuation of
+it; it is worth the framework row because the design asks for six repo screens
+and popping through a hub to go sideways is two keystrokes for "along".
+
+**No Enterprise level.** Measured: every org is free or team plan, and the token
+lacks `read:enterprise`, so `viewer.enterprises` is refused outright. Cut rather
+than stubbed. Orgs, by contrast, are fully reachable with the `read:org` this
+token already has — members, teams and repos — so that is where the level went.
+
+### Scopes, read off the wire
+
+The doc wanted user settings: keys, credentials, integrations. Almost none of it
+is reachable, and the reason is worth writing down because it is not obvious.
+
+Every reply carries `X-Oauth-Scopes` and `X-Accepted-Oauth-Scopes`, on failures
+as well as successes. The second is what the endpoint would have accepted — so a
+denial names its own fix, and there is no endpoint-to-scope table in this repo to
+go stale. The token's own scopes come from whatever request happened to run, so
+learning them costs nothing.
+
+Two things that had to be got right rather than merely working:
+
+- **A 404 is not an empty list.** `GET /user/keys` without the scope answers 404,
+  not 403. Rendered literally it says "you have no SSH keys" to someone with two.
+  `Got::Denied` exists to stop that being possible.
+- **Suggest the narrowest accepted scope.** `read:public_key`, not the
+  `admin:public_key` that `gh`'s own message offers — gh cannot know the caller
+  only reads, and this does. Creating keys is a later feature and asks for
+  `write:` when it exists.
+
+Enter on the denied row runs `gh auth refresh` through `Flow::Detach`, which is
+the mechanism's natural end: the screen names what is missing and fixes it in
+place. Tokens and 2FA have no API at any scope, so the Account tab says so in a
+sentence rather than showing an empty list — absent information and absent data
+are different claims.
+
+### A framework bug the text-only screens had been living with
+
+`draw_pane` reserved the inline-image region unconditionally, so a pane with no
+image had its text pushed to the BOTTOM of the screen under a rule separating
+nothing from nothing. Invisible while the only screen was `font`'s specimen;
+wrong for `dots` and for every `github` pane including the Actions body shipped
+in the previous commit. The image path's arithmetic is unchanged.
+
 ## Still open
 
 - **Filtering, and it is now the blocker rather than a nicety.** fzf gives
@@ -290,6 +353,20 @@ produced. Same for **issues**, which nothing here has yet.
   are where "type to filter" was load-bearing, so this lands before them. A
   modal state in `nav` is a change to the one file screens are told not to
   touch.
+- **The multi-select dropdown**, which is the clearest spec in
+  `GITHUB_TUI.md`: enter opens, me preselected at the top, enter toggles, left
+  returns to the title row, enter collapses with the selections intact. It is a
+  WIDGET, shared by Issues' and PRs' `Created by` / `Assigned to` / `Labels`
+  and "so on where prevalent" — so it belongs in `reticle` once, not per
+  screen. It also overloads `h`/`l`/`enter`, which currently mean close/open
+  and activate, so it needs a modal state in `nav` for the same reason
+  filtering does. Doing both at once is probably one change.
+- **Inline row buttons.** The design draws `[PR]`, a trash can and a
+  three-dots menu on a branch row. Those are mouse idioms; in a keyboard TUI
+  they are keys on the selected row with the footer naming them, which is what
+  the bash version already did (`ctrl-k` checkout, `ctrl-x` delete). Same
+  functions, different expression — worth settling explicitly rather than
+  letting the drawing imply a widget.
 - **Text input, and a shared confirm.** `_gh_input` has no reticle equivalent;
   secret-set, env-create and pr-create need one. The Actions screen settled the
   confirm half for itself — `e` and `x` ask in the status line, `y` is the only

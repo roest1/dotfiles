@@ -39,18 +39,22 @@ fn main() -> std::io::Result<()> {
         _ => {
             let dir = index::root_dir();
             let root = Root::rooted(dir.clone());
-            // Standing in a repo seeds the selection rather than switching
-            // screens: the repo's own screens do not exist yet, and when they
-            // do this becomes the stack `[root, repo]` via app::run_stack --
-            // which is why the root is built the same way either way.
+            // Standing in a repo seeds the SELECTION, not the root. There is
+            // one root -- the user level -- and being in a repo opens its
+            // Repos tab on that repo, so `q` walks up from a workflow run to
+            // the repo list to the account rather than quitting out of
+            // context. Two roots could not connect, which is the whole reason
+            // this is built this way.
             let here = std::env::current_dir()
                 .ok()
                 .and_then(|cwd| index::current(&cwd, &dir));
-            let screen = match &here {
+            let root = match &here {
                 Some(repo) => root.focused_on(repo),
                 None => root,
             };
-            app::run_stack(vec![Box::new(screen)])?
+            let fetch = std::sync::Arc::new(github::gh::Fetcher::new(""));
+            let user = github::user::screen(fetch, root, &github::user::login());
+            app::run_stack(vec![Box::new(user)])?
         }
     }
     Ok(())

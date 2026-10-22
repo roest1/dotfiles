@@ -11,6 +11,7 @@
 //! and no binary, which is the machine `make it` exists for.
 
 pub mod app;
+pub mod host;
 pub mod image;
 pub mod nav;
 pub mod probe;
@@ -36,5 +37,6 @@ pub(crate) fn set_term_info(info: probe::TermInfo) {
     let _ = TERM_INFO.set(info);
 }
 
+pub use host::Host;
 pub use nav::Action;
-pub use screen::{Flow, Image, Pane, Row, Screen, Tick};
+pub use screen::{Flow, Image, Pane, Row, Screen, Tabs, Tick};

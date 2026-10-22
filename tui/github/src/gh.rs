@@ -42,6 +42,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::model::{Job, JobList, Run, RunList};
+use crate::scopes::{self, Denied, Granted};
 
 /// How long a cached artifact stays useful. Two weeks is long enough to cover
 /// "what broke when I was away" and short enough that the directory does not
@@ -57,28 +58,88 @@ pub fn cache_dir() -> PathBuf {
     base.join("dotfiles-github")
 }
 
-/// One `gh api` call. Errors come back as the first line of stderr, which is
-/// where `gh` puts the thing worth reading -- `gh: Not Found (HTTP 404)` rather
-/// than a stack of request detail.
-fn api(args: &[String]) -> Result<Vec<u8>, String> {
+/// What one `gh api -i` call came back with.
+struct Reply {
+    ok: bool,
+    headers: String,
+    body: Vec<u8>,
+    /// First non-empty line of stderr, where `gh` puts the thing worth reading
+    /// -- `gh: Not Found (HTTP 404)` rather than a stack of request detail.
+    err: String,
+}
+
+impl Reply {
+    fn granted(&self) -> Option<Granted> {
+        scopes::header(&self.headers, "X-OAuth-Scopes").map(Granted::parse)
+    }
+
+    /// The scopes this endpoint said it would accept, any one of which is
+    /// enough. Empty when it named none.
+    fn accepted(&self) -> Vec<String> {
+        scopes::header(&self.headers, "X-Accepted-OAuth-Scopes")
+            .map(scopes::header_list)
+            .unwrap_or_default()
+    }
+
+    /// Was this refused for want of a scope?
+    ///
+    /// Asked of the response itself, so there is no table of endpoint-to-scope
+    /// to keep current -- and so a 404 that is really a permissions refusal
+    /// stops being rendered as "you have none of these". See `scopes`.
+    fn denied(&self) -> Option<Denied> {
+        if self.ok {
+            return None;
+        }
+        Denied::from(&self.accepted(), &self.granted().unwrap_or_default())
+    }
+}
+
+/// Split `gh api -i` output into headers and body at the blank line.
+///
+/// CRLF first, since that is what HTTP sends and what `gh` relays; bare LF as a
+/// fallback. Byte-wise rather than on a `String`, because a job log is not
+/// necessarily UTF-8 and must survive the split intact.
+fn split_reply(raw: &[u8]) -> (String, Vec<u8>) {
+    for sep in [b"\r\n\r\n".as_slice(), b"\n\n".as_slice()] {
+        if let Some(i) = raw.windows(sep.len()).position(|w| w == sep) {
+            return (
+                String::from_utf8_lossy(&raw[..i]).into_owned(),
+                raw[i + sep.len()..].to_vec(),
+            );
+        }
+    }
+    (String::new(), raw.to_vec())
+}
+
+/// One `gh api -i` call.
+///
+/// `-i` on every call, not just the ones expected to fail. The headers are what
+/// carry the token's scopes and the endpoint's requirements, and a failure is
+/// exactly when they matter -- asking for them only after a refusal would mean
+/// a second round trip to explain the first one.
+fn api(args: &[String]) -> Result<Reply, String> {
     let out = Command::new("gh")
         .arg("api")
+        .arg("-i")
         .args(args)
         .output()
         .map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => "gh is not installed".to_string(),
             _ => format!("could not run gh: {e}"),
         })?;
-    if out.status.success() {
-        return Ok(out.stdout);
-    }
-    let msg = String::from_utf8_lossy(&out.stderr);
-    Err(msg
+    let (headers, body) = split_reply(&out.stdout);
+    let err = String::from_utf8_lossy(&out.stderr)
         .lines()
         .find(|l| !l.trim().is_empty())
         .unwrap_or("gh api failed")
         .trim()
-        .to_string())
+        .to_string();
+    Ok(Reply {
+        ok: out.status.success(),
+        headers,
+        body,
+        err,
+    })
 }
 
 /// What a screen can ask for.
@@ -105,6 +166,15 @@ pub enum Req {
     },
     /// One completed job's log, whole.
     Log { job: u64 },
+    /// Any read-only endpoint whose result the caller parses itself.
+    ///
+    /// One variant rather than nine. The user and org screens are a dozen flat
+    /// lists -- orgs, members, teams, keys, emails -- and a `Req` per endpoint
+    /// would be a dozen near-identical arms whose only difference is a path and
+    /// a type the SCREEN already knows. The Actions requests keep their own
+    /// variants because they carry cache policy and an attempt number, which is
+    /// real behaviour rather than a path.
+    Json { path: String },
 }
 
 impl Req {
@@ -113,11 +183,19 @@ impl Req {
             Req::Runs { query } => format!("runs?{query}"),
             Req::Jobs { run, attempt, .. } => format!("jobs:{run}:{attempt}"),
             Req::Log { job } => format!("log:{job}"),
+            Req::Json { path } => format!("json:{path}"),
         }
     }
 
     /// Where this answer lives between sessions, if it is allowed to.
     fn cache_path(&self, repo: &str) -> Option<PathBuf> {
+        // The user-level fetcher is not repo-scoped and caches nothing, so an
+        // empty slug must not resolve to the cache root -- writing `job-7.log`
+        // beside the per-repo directories would be a file nothing ever reads
+        // and prune would then try to delete those directories as files.
+        if repo.is_empty() {
+            return None;
+        }
         let dir = cache_dir().join(repo);
         match self {
             Req::Jobs {
@@ -128,6 +206,9 @@ impl Req {
             // Only ever requested for a completed job, so it is already
             // immutable by the time we are here -- `Job::has_log` is the guard.
             Req::Log { job } => Some(dir.join(format!("job-{job}.log"))),
+            // Not cached: every one of these is a question about now. An org's
+            // membership and a token's scopes are exactly the things that must
+            // not be answered from last week.
             _ => None,
         }
     }
@@ -139,6 +220,15 @@ pub enum Got {
     Runs(Arc<Vec<Run>>),
     Jobs(Arc<Vec<Job>>),
     Log(Arc<String>),
+    Json(Arc<serde_json::Value>),
+    /// Refused for want of a scope, with the command that fixes it.
+    ///
+    /// Kept apart from `Failed` because the two want different words on screen
+    /// and different actions from the reader: one is "your token cannot see
+    /// this, here is the one line that changes that", the other is "something
+    /// went wrong". Collapsing them is how `GET /user/keys` ends up rendered as
+    /// "no SSH keys" on an account that has two.
+    Denied(Denied),
     Failed(String),
 }
 
@@ -151,6 +241,9 @@ pub struct Fetcher {
     /// Bumped by a worker whenever anything lands, so a screen can notice in
     /// one atomic read instead of walking the map every frame.
     epoch: Arc<AtomicU64>,
+    /// The scopes the last response said this token has. Learned from the
+    /// headers of whatever call happened to run, never probed for.
+    granted: Arc<Mutex<Granted>>,
 }
 
 fn parse(req: &Req, bytes: Vec<u8>) -> Got {
@@ -167,10 +260,14 @@ fn parse(req: &Req, bytes: Vec<u8>) -> Got {
         // test printing raw output can put anything in it. Lossy rather than
         // an error: the surrounding lines are still what you came to read.
         Req::Log { .. } => Got::Log(Arc::new(String::from_utf8_lossy(&bytes).into_owned())),
+        Req::Json { path } => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+            Ok(v) => Got::Json(Arc::new(v)),
+            Err(e) => Got::Failed(format!("unreadable response from {path}: {e}")),
+        },
     }
 }
 
-fn fetch(repo: &str, req: &Req) -> Got {
+fn fetch(repo: &str, req: &Req, seen: &Mutex<Granted>) -> Got {
     let args: Vec<String> = match req {
         Req::Runs { query } => vec![format!("repos/{repo}/actions/runs?{query}")],
         Req::Jobs { run, .. } => vec![format!("repos/{repo}/actions/runs/{run}/jobs?per_page=100")],
@@ -178,28 +275,41 @@ fn fetch(repo: &str, req: &Req) -> Got {
             "--allow-escape-sequences".into(),
             format!("repos/{repo}/actions/jobs/{job}/logs"),
         ],
+        Req::Json { path } => vec![path.clone()],
     };
-    match api(&args) {
-        Ok(bytes) => {
-            // Written only after it parses. A truncated or error-page body
-            // cached as if it were an answer is a failure that survives
-            // restarts, which is the worst kind this file can produce.
-            let got = parse(req, bytes.clone());
-            if !matches!(got, Got::Failed(_)) {
-                if let Some(path) = req.cache_path(repo) {
-                    if let Some(dir) = path.parent() {
-                        let _ = std::fs::create_dir_all(dir);
-                    }
-                    let tmp = path.with_extension("part");
-                    if std::fs::write(&tmp, &bytes).is_ok() {
-                        let _ = std::fs::rename(&tmp, &path);
-                    }
-                }
-            }
-            got
+    let reply = match api(&args) {
+        Ok(r) => r,
+        Err(e) => return Got::Failed(e),
+    };
+    // The token's scopes ride along on EVERY response, so they cost no call of
+    // their own -- there is no startup probe here and does not need to be one.
+    if let Some(g) = reply.granted() {
+        if let Ok(mut slot) = seen.lock() {
+            *slot = g;
         }
-        Err(e) => Got::Failed(e),
     }
+    if let Some(d) = reply.denied() {
+        return Got::Denied(d);
+    }
+    if !reply.ok {
+        return Got::Failed(reply.err);
+    }
+    // Written only after it parses. A truncated or error-page body cached as if
+    // it were an answer is a failure that survives restarts, which is the worst
+    // kind this file can produce.
+    let got = parse(req, reply.body.clone());
+    if !matches!(got, Got::Failed(_)) {
+        if let Some(path) = req.cache_path(repo) {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let tmp = path.with_extension("part");
+            if std::fs::write(&tmp, &reply.body).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+        }
+    }
+    got
 }
 
 impl Fetcher {
@@ -211,11 +321,13 @@ impl Fetcher {
         let (tx, rx) = mpsc::channel::<Req>();
         let state: Shared = Arc::new(Mutex::new(HashMap::new()));
         let epoch = Arc::new(AtomicU64::new(0));
+        let granted: Arc<Mutex<Granted>> = Arc::new(Mutex::new(Granted::default()));
         let rx = Arc::new(Mutex::new(rx));
         for _ in 0..4 {
             let rx = Arc::clone(&rx);
             let state = Arc::clone(&state);
             let epoch = Arc::clone(&epoch);
+            let granted = Arc::clone(&granted);
             let repo = repo.to_string();
             thread::spawn(move || loop {
                 // The lock is held only for the recv, never across the fetch,
@@ -230,7 +342,7 @@ impl Fetcher {
                         Err(_) => return,
                     }
                 };
-                let got = fetch(&repo, &req);
+                let got = fetch(&repo, &req, &granted);
                 if let Ok(mut g) = state.lock() {
                     g.insert(req.key(), got);
                 }
@@ -243,7 +355,18 @@ impl Fetcher {
             tx,
             state,
             epoch,
+            granted,
         }
+    }
+
+    /// What this token may do, as of the last response that carried the header.
+    ///
+    /// Empty until the first call lands, so a screen asking about scopes has to
+    /// treat "not known yet" as distinct from "none" -- rendering the second
+    /// for the first would tell you your token has no permissions while the
+    /// request proving otherwise is still in flight.
+    pub fn granted(&self) -> Granted {
+        self.granted.lock().map(|g| g.clone()).unwrap_or_default()
     }
 
     pub fn epoch(&self) -> u64 {
@@ -355,6 +478,9 @@ impl Fetcher {
 /// Best-effort throughout: a cache that cannot be pruned is a disk-space
 /// question, and failing to open a screen over it would be the wrong trade.
 fn prune(repo: &str) {
+    if repo.is_empty() {
+        return;
+    }
     let dir = cache_dir().join(repo);
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return;

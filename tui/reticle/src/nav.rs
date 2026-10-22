@@ -22,6 +22,14 @@ pub enum Action {
     PageDown,
     PageUp,
     Activate,
+    /// Move to the next/previous sibling in a `Tabs` strip.
+    ///
+    /// `Tab` and shift-`Tab`, which were both unbound and are what a header
+    /// strip trains your fingers to reach for. NOT `h`/`l`: those close and
+    /// open a tree, and a screen with both a strip and a tree needs them to
+    /// keep meaning that.
+    NextTab,
+    PrevTab,
     Help,
     Quit,
     /// Anything a screen wants to bind for itself. Kept as a single variant so
@@ -62,6 +70,8 @@ impl Keymap {
                 return None;
             }
             (KeyCode::Enter, _) => Action::Activate,
+            (KeyCode::Tab, _) => Action::NextTab,
+            (KeyCode::BackTab, _) => Action::PrevTab,
             (KeyCode::Char('?'), false) => Action::Help,
             (KeyCode::Char('q'), false) | (KeyCode::Esc, _) => Action::Quit,
             (KeyCode::Char(c), false) => Action::Key(c),

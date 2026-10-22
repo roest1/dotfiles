@@ -69,6 +69,26 @@ impl Row {
     }
 }
 
+/// A header strip of sibling screens, drawn above BOTH columns.
+///
+/// Peers, not a stack: six things about one repo are not six levels deep, and
+/// making them a stack meant popping to the hub to get from Issues to PRs. A
+/// screen that returns this is a HOST -- it owns one child per tab and
+/// delegates to the active one, so each tab stays its own `Screen` impl and
+/// `Actions` did not have to know it had become a tab.
+///
+/// `None` (the default) keeps the plain bold title, which is what `font` and
+/// `dots` draw. The strip costs one extra header row, so a screen that has no
+/// siblings does not pay for it.
+pub struct Tabs {
+    /// Dim text before the strip: whose tabs these are. The strip replaces the
+    /// title row, so without it a screen loses the one place it said which
+    /// repo or org you are looking at.
+    pub label: Option<String>,
+    pub names: Vec<String>,
+    pub active: usize,
+}
+
 /// The right-hand pane. An image is a first-class member because the font
 /// browser's whole point is showing type, and a picture of type is not
 /// expressible as lines — see the note on redraw cost in `app`.
@@ -132,6 +152,16 @@ pub enum Flow {
     /// Close this screen and go back. `q` does it for you at any depth below
     /// the root, so a screen rarely needs to return this itself.
     Pop,
+    /// Like `Dirty`, but the cursor's place is no longer meaningful — ask
+    /// `initial_sel` again.
+    ///
+    /// For a tab switch, which is the one thing that replaces every row at
+    /// once. `Dirty` only clamps the selection, so switching from a 40-row tab
+    /// to a 3-row one would leave the cursor at the bottom of a tab you are no
+    /// longer looking at. Reusing `initial_sel` rather than inventing a
+    /// "go to row N" flow is what lets a host remember each tab's own cursor
+    /// and hand it back on return, without `app` learning what a tab is.
+    Retarget,
     /// Hand the terminal back, run this command line to completion on the
     /// user's REAL tty, then take the terminal again and redraw.
     ///
@@ -167,6 +197,12 @@ pub trait Screen {
     /// from `pane` because prefetching must happen even for rows you skim past
     /// without stopping on.
     fn focus(&mut self, _sel: usize) {}
+
+    /// The header strip, if this screen has siblings. Default: none, and the
+    /// title is drawn plain.
+    fn tabs(&self) -> Option<Tabs> {
+        None
+    }
 
     /// Which row to open on. Default: the first.
     ///

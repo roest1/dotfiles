@@ -424,7 +424,7 @@ impl Screen for Steps {
             At::Step(_, _) => "L this step's log in a pager",
             At::Nothing => "j/k move",
         };
-        format!("{what} \u{b7} o browser \u{b7} r refresh \u{b7} q back")
+        format!("{what} \u{b7} o browser \u{b7} r refresh")
     }
 }
 

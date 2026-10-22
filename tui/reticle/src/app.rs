@@ -26,7 +26,7 @@ use crossterm::{cursor, queue, style, terminal};
 
 use crate::nav::{Action, Keymap};
 use crate::reticle::Reticle;
-use crate::screen::{Flow, Pane, Row, Screen, Tick};
+use crate::screen::{Flow, Pane, Row, Screen, Tabs, Tick};
 use crate::term::Terminal;
 
 const FRAME: Duration = Duration::from_millis(16);
@@ -149,7 +149,10 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         let frame = stack.last_mut().expect("stack is never empty");
         let (cols, screen_rows) = Terminal::size()?;
         let left = left_width(cols);
-        let list_h = screen_rows.saturating_sub(3) as usize;
+        let tabs = frame.screen.tabs();
+        let foot = frame.screen.footer();
+        let geo = layout(screen_rows, tabs.is_some(), footer_lines(&foot));
+        let list_h = geo.list_h;
 
         // Keep the selection on screen, with the one-row margin nvim keeps.
         if frame.sel < frame.top {
@@ -160,22 +163,33 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
 
         if pane_dirty {
             let pw = cols.saturating_sub(left + 1);
-            let ph = screen_rows.saturating_sub(2);
+            let ph = screen_rows.saturating_sub(geo.header_h + geo.footer_h);
             let pane = frame.screen.pane(frame.sel, pw, ph);
-            draw_frame(&mut out, frame.screen.as_mut(), screen_rows, left)?;
-            draw_pane(&mut out, &pane, left + 1, 1, pw, ph)?;
+            draw_frame(
+                &mut out,
+                frame.screen.as_mut(),
+                tabs.as_ref(),
+                cols,
+                screen_rows,
+                left,
+                &geo,
+            )?;
+            draw_pane(&mut out, &pane, left + 1, geo.header_h, pw, ph)?;
             pane_dirty = false;
         }
         draw_rows(
             &mut out,
             &rows,
-            frame.top,
-            list_h,
-            &frame.reticle,
-            frame.sel,
+            &View {
+                top: frame.top,
+                sel: frame.sel,
+                reticle: &frame.reticle,
+            },
             left,
+            geo.header_h,
+            list_h,
         )?;
-        draw_footer(&mut out, frame.screen.as_mut(), cols, screen_rows, depth)?;
+        draw_footer(&mut out, &foot, cols, screen_rows, depth, geo.footer_h)?;
         out.flush()?;
 
         let mut wake: Option<Duration> = None;
@@ -248,6 +262,18 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                             frame.sel = frame.sel.min(rows.len().saturating_sub(1));
                             pane_dirty = true;
                         }
+                        // Every row was replaced, so clamping the old index
+                        // would land the cursor somewhere arbitrary. The
+                        // screen is asked where to open, exactly as it is on
+                        // a push.
+                        Flow::Retarget => {
+                            rows = frame.screen.rows();
+                            frame.sel = start_sel(frame.screen.as_ref(), &rows);
+                            frame.top = 0;
+                            frame.reticle = Reticle::new(frame.sel);
+                            frame.screen.focus(frame.sel);
+                            pane_dirty = true;
+                        }
                         Flow::Continue => {}
                     },
                 }
@@ -295,17 +321,38 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
 fn draw_frame(
     out: &mut impl Write,
     screen: &mut dyn Screen,
+    tabs: Option<&Tabs>,
+    cols: u16,
     rows: u16,
     left: u16,
+    geo: &Layout,
 ) -> io::Result<()> {
     queue!(
         out,
         terminal::Clear(terminal::ClearType::All),
         cursor::MoveTo(0, 0)
     )?;
-    let title = screen.title();
-    queue!(out, style::Print(format!("\x1b[1m{title}\x1b[0m")))?;
-    for r in 1..rows.saturating_sub(1) {
+    match tabs {
+        None => {
+            let title = screen.title();
+            queue!(out, style::Print(format!("\x1b[1m{title}\x1b[0m")))?;
+        }
+        Some(t) => {
+            queue!(out, style::Print(tab_strip(t, cols)))?;
+            // The rule spans the FULL width, above both columns -- the strip
+            // belongs to the screen, not to the list, so the divider starts
+            // under it rather than beside it.
+            queue!(
+                out,
+                cursor::MoveTo(0, 1),
+                style::Print(format!(
+                    "\x1b[38;5;240m{}\x1b[0m",
+                    "\u{2500}".repeat(cols as usize)
+                ))
+            )?;
+        }
+    }
+    for r in geo.header_h..rows.saturating_sub(geo.footer_h) {
         queue!(
             out,
             cursor::MoveTo(left, r),
@@ -315,27 +362,81 @@ fn draw_frame(
     Ok(())
 }
 
+/// `[ Repos ] · Orgs · Profile · Keys`
+///
+/// The active one is bracketed and bright; the rest are dim. Brackets rather
+/// than a reverse-video block for the same reason the reticle uses them: this
+/// repo's one visual idiom for "here" is a pair of brackets, and a second one
+/// would be a second thing to learn.
+///
+/// Truncated from the RIGHT when it does not fit, so the leftmost tabs -- the
+/// ones a screen puts first because they matter most -- survive a narrow
+/// terminal.
+fn tab_strip(tabs: &Tabs, cols: u16) -> String {
+    let mut out = String::from(" ");
+    let mut width = 1usize;
+    if let Some(label) = &tabs.label {
+        out.push_str(&format!("\x1b[38;5;245m{label}\x1b[0m"));
+        width += label.chars().count();
+    }
+    for (i, name) in tabs.names.iter().enumerate() {
+        // Width is counted from the PLAIN text, because the SGR codes are
+        // zero-width on screen and characters in the string -- the same
+        // arithmetic `lib/sgr.sh` and the row renderer both have to do.
+        let sep = if i == 0 && tabs.label.is_none() {
+            ""
+        } else {
+            "  "
+        };
+        let plain = sep.len() + name.chars().count() + if i == tabs.active { 4 } else { 0 };
+        if width + plain + 1 > cols as usize {
+            out.push_str("\x1b[38;5;240m\u{2026}\x1b[0m");
+            break;
+        }
+        out.push_str(sep);
+        if i == tabs.active {
+            out.push_str(&format!(
+                "\x1b[38;5;211m[\x1b[1;38;5;255m {name} \x1b[0m\x1b[38;5;211m]\x1b[0m"
+            ));
+        } else {
+            out.push_str(&format!("\x1b[38;5;244m{name}\x1b[0m"));
+        }
+        width += plain;
+    }
+    out
+}
+
 /// One row: reticle room, then marker, label, detail — and the badge pinned to
 /// the right edge with everything before it truncated to fit.
 ///
 /// Right-aligning is not cosmetic. Trailing the badge after a variable-length
 /// family name put "GOOD" at a different column on every line and pushed the
 /// longest ones straight across the divider into the pane.
+/// Where the list is looking: the scroll offset, the cursor, and the reticle
+/// chasing it. Bundled because they always travel together and are always the
+/// same three -- `draw_rows` took eight arguments once the header origin became
+/// variable, which is a signal rather than a lint.
+struct View<'a> {
+    top: usize,
+    sel: usize,
+    reticle: &'a Reticle,
+}
+
 fn draw_rows(
     out: &mut impl Write,
     rows: &[Row],
-    top: usize,
-    height: usize,
-    reticle: &Reticle,
-    sel: usize,
+    view: &View,
     left: u16,
+    y0: u16,
+    height: usize,
 ) -> io::Result<()> {
+    let View { top, sel, reticle } = *view;
     let spread = reticle.spread();
     let ret_row = reticle.row();
     let blank = " ".repeat(left as usize);
 
     for i in 0..height {
-        let y = (i + 1) as u16;
+        let y = y0 + i as u16;
         queue!(out, cursor::MoveTo(0, y), style::Print(&blank))?;
         let Some(row) = rows.get(top + i) else {
             continue;
@@ -428,6 +529,45 @@ fn draw_rows(
 
 const SPREAD_ROOM: u16 = 5;
 
+/// Where the four regions sit, given what this screen asked for.
+///
+/// Both halves are variable now and both used to be assumed. A screen with a
+/// `Tabs` strip needs TWO header rows (the strip and the rule under it) where a
+/// plain title needs one; and a footer may be several lines, because a screen
+/// with eight keys cannot name them on one 80-column row.
+///
+/// The footer one was a bug, not a feature request. `draw_footer` printed the
+/// footer string at `rows - 1`, so a `\n` in it moved the cursor off the bottom
+/// of the screen and SCROLLED the alternate screen by a line — every frame.
+/// Absolute `MoveTo` on the next frame papered over most of it, which is why it
+/// showed up as the pane's divider column appearing on the title row rather
+/// than as anything that looked like scrolling.
+///
+/// A plain screen with a one-line footer gets exactly the geometry it had
+/// before, which is what keeps `font` and `dots` pixel-identical.
+struct Layout {
+    header_h: u16,
+    footer_h: u16,
+    list_h: usize,
+}
+
+fn layout(screen_rows: u16, tabbed: bool, footer_lines: u16) -> Layout {
+    let header_h = if tabbed { 2 } else { 1 };
+    let footer_h = footer_lines.max(1);
+    Layout {
+        header_h,
+        footer_h,
+        // The spare row is the blank line between the last row and the footer,
+        // which the original `rows - 3` also left.
+        list_h: screen_rows.saturating_sub(header_h + footer_h + 1).max(1) as usize,
+    }
+}
+
+/// Lines a footer string occupies.
+fn footer_lines(footer: &str) -> u16 {
+    footer.lines().count().max(1) as u16
+}
+
 /// How long to wait for the next keystroke. Three clocks, most urgent first.
 ///
 /// `frame` covers both the reticle animating and work in flight: each wants to
@@ -501,31 +641,43 @@ fn draw_pane(
     width: u16,
     height: u16,
 ) -> io::Result<()> {
+    let has_image = pane.image.as_ref().filter(|_| crate::image::supported());
     let text_h = (pane.lines.len() as u16 + 1).min(height);
-    let img_h = height.saturating_sub(text_h);
+    // No picture, no picture region. Reserving it regardless pushed every
+    // TEXT-ONLY pane to the bottom of the screen, under a rule that separated
+    // nothing from nothing -- invisible while the only screen here had an
+    // image to put up there, and wrong for every screen since.
+    let img_h = match has_image {
+        Some(_) => height.saturating_sub(text_h),
+        None => 0,
+    };
 
-    if let Some(img) = pane.image.as_ref().filter(|_| crate::image::supported()) {
+    if let Some(img) = has_image {
         if img_h >= 3 {
             queue!(out, cursor::MoveTo(x, y))?;
             out.write_all(&crate::image::inline(&img.png, img_h.min(img.rows)))?;
         }
     }
 
+    // The rule is a SEPARATOR: it exists to divide the picture from the numbers
+    // under it, so it appears only when there is a picture.
+    let ruled = img_h >= 3;
+    let text_y = if ruled { y + img_h + 1 } else { y + img_h };
+
     let blank = " ".repeat(width as usize);
-    let top = y + img_h;
-    for r in 0..text_h {
-        queue!(out, cursor::MoveTo(x, top + r), style::Print(&blank))?;
+    for r in text_y..(y + height) {
+        queue!(out, cursor::MoveTo(x, r), style::Print(&blank))?;
     }
-    if img_h >= 3 {
+    if ruled {
         let rule = "\u{2500}".repeat(width as usize);
         queue!(
             out,
-            cursor::MoveTo(x, top),
+            cursor::MoveTo(x, y + img_h),
             style::Print(format!("\x1b[38;5;240m{rule}\x1b[0m"))
         )?;
     }
     for (i, line) in pane.lines.iter().enumerate() {
-        let row = top + 1 + i as u16;
+        let row = text_y + i as u16;
         if row >= y + height {
             break;
         }
@@ -538,31 +690,48 @@ fn draw_pane(
     Ok(())
 }
 
+/// The footer, one terminal row per line of it.
+///
+/// Each line is positioned with its own absolute `MoveTo` and the newlines are
+/// never written. Printing the string as-is at `rows - 1` let a `\n` walk the
+/// cursor off the bottom and scroll the whole alternate screen, once per frame.
 fn draw_footer(
     out: &mut impl Write,
-    screen: &mut dyn Screen,
+    footer: &str,
     cols: u16,
     rows: u16,
     depth: usize,
+    footer_h: u16,
 ) -> io::Result<()> {
-    let y = rows.saturating_sub(1);
-    queue!(
-        out,
-        cursor::MoveTo(0, y),
-        style::Print(" ".repeat(cols as usize)),
-        cursor::MoveTo(1, y),
-        // The screen says what its own keys do; the stack says what `q`
-        // does, which the screen cannot know.
-        style::Print(format!(
-            "\x1b[38;5;244m{}{}\x1b[0m",
-            screen.footer(),
-            if depth > 1 {
-                " \u{b7} q back"
+    // The screen says what its own keys do; the stack says what `q` does,
+    // which the screen cannot know. It goes on the LAST line, so it is in the
+    // same place whether the footer is one line or three.
+    let back = if depth > 1 { "q back" } else { "q quit" };
+    let lines: Vec<&str> = footer.lines().collect();
+    let top = rows.saturating_sub(footer_h);
+    for i in 0..footer_h {
+        let y = top + i;
+        let mut text = lines.get(i as usize).copied().unwrap_or("").to_string();
+        if i + 1 == footer_h {
+            if text.is_empty() {
+                text = back.to_string();
             } else {
-                " \u{b7} q quit"
+                text.push_str(" \u{b7} ");
+                text.push_str(back);
             }
-        ))
-    )
+        }
+        queue!(
+            out,
+            cursor::MoveTo(0, y),
+            style::Print(" ".repeat(cols as usize)),
+            cursor::MoveTo(1, y),
+            style::Print(format!(
+                "\x1b[38;5;244m{}\x1b[0m",
+                truncate(&text, cols - 2)
+            ))
+        )?;
+    }
+    Ok(())
 }
 
 /// Truncates on CHARACTERS, not bytes -- the labels here are font family names
@@ -577,8 +746,53 @@ fn truncate(s: &str, width: u16) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{first_selectable, left_width, poll_timeout, seek, Duration, FRAME};
+    use super::{
+        first_selectable, footer_lines, layout, left_width, poll_timeout, seek, Duration, FRAME,
+    };
     use crate::screen::Row;
+
+    /// A plain screen with a one-line footer must get the geometry it had
+    /// before any of this was variable -- `font` and `dots` are that screen,
+    /// and the numbers here are the ones the loop used to hard-code.
+    #[test]
+    fn a_plain_screen_keeps_the_layout_it_always_had() {
+        let g = layout(48, false, 1);
+        assert_eq!(g.header_h, 1);
+        assert_eq!(g.footer_h, 1);
+        assert_eq!(g.list_h, 45); // the old `rows - 3`
+    }
+
+    /// A strip costs one row, and only a screen that has one pays for it.
+    #[test]
+    fn a_tab_strip_costs_exactly_one_row() {
+        assert_eq!(layout(48, true, 1).header_h, 2);
+        assert_eq!(layout(48, true, 1).list_h, 44);
+    }
+
+    /// The bug this helper exists for. A multi-line footer used to be printed
+    /// as one string at `rows - 1`, so its newlines scrolled the alternate
+    /// screen once per frame; the visible symptom was the pane's divider
+    /// column turning up on the title row. Now the rows are RESERVED.
+    #[test]
+    fn a_multi_line_footer_takes_rows_from_the_list_instead_of_scrolling() {
+        assert_eq!(footer_lines("one line"), 1);
+        assert_eq!(footer_lines("first\nsecond"), 2);
+        // An empty footer is still one row, not zero.
+        assert_eq!(footer_lines(""), 1);
+        let g = layout(48, false, 2);
+        assert_eq!(g.footer_h, 2);
+        assert_eq!(g.list_h, 44);
+        // Header, list, slack and footer account for every row.
+        assert_eq!(g.header_h as usize + g.list_h + 1 + g.footer_h as usize, 48);
+    }
+
+    /// A terminal too short for the chrome must still leave a usable row
+    /// rather than wrapping to zero and drawing nothing.
+    #[test]
+    fn a_tiny_terminal_still_gets_one_row() {
+        assert_eq!(layout(3, true, 2).list_h, 1);
+        assert_eq!(layout(1, true, 3).list_h, 1);
+    }
 
     /// The three clocks, and which one outranks which. A screen polling a
     /// workflow run asks for seconds; the reticle asks for a frame; an idle

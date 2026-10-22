@@ -41,17 +41,21 @@ pins that.
 
 - `reticle/` — the framework. `term` (raw mode, alt screen, restore-on-panic),
   `nav` (the keymap), `reticle` (the animated brackets), `screen` (what a
-  screen provides), `app` (the loop), `image` (inline images).
+  screen provides), `host` (a screen that is several screens — the tab strip's
+  other half), `app` (the loop), `image` (inline images).
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
   only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
-- `github/` — the port, root-first and then Actions. `index` (every clone under
-  `~/github`, read from disk), `root` (the repo tree), `runs` (the Actions
-  screen), `steps` (one run as a tree), `gh` (the threaded `gh api` caller and
-  the cross-session cache), `model` (the API's types and the one place that
-  says what a status MEANS), `render` (the pane bodies), `logs` (step slicing
-  and log colouring), `time` (ISO 8601 without a date crate), `paint` (the
-  palette), plus the lib/bin pair. **Not installed yet** — see below.
+- `github/` — the port. `user` (the user level — the root, and its Account and
+  Keys tabs), `orgs` (the org list and one org's three tabs), `index` (every
+  clone under `~/github`, read from disk), `root` (the repo tree — the user
+  level's Repos tab), `runs` (the Actions screen), `steps` (one run as a tree),
+  `gh` (the threaded `gh api` caller and the cross-session cache), `scopes`
+  (what the token may do, asked of the token), `model` (the API's types and the
+  one place that says what a status MEANS), `render` (the pane bodies), `logs`
+  (step slicing and log colouring), `time` (ISO 8601 without a date crate),
+  `paint` (the palette), plus the lib/bin pair. **Not installed yet** — see
+  below.
 - `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
   and the crate-root re-exports), `picker` (the lane tree — the root screen),
   `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
@@ -218,6 +222,85 @@ pins that.
   target. `console::tests::walk_agrees` asserts every selectable index resolves
   to the row actually drawn at it, in all three shapes (following, pinned,
   section open). Do not add a conditional row without extending it.
+
+- **There is ONE root, and it is the user level — including inside a repo.**
+  This is the whole answer to "I want my settings even when I opened this in a
+  repo", and it is a rejection of the obvious design. Opening at the repo level
+  when you are in a repo and the user level when you are not gives you TWO
+  roots, and two roots cannot connect: with the repo as the root there is
+  nothing above it to walk up to.
+
+  So standing in a repo seeds the SELECTION, not the root. `github` in a repo
+  opens the user level on its Repos tab with that repo selected; `q` walks up
+  from a workflow run to the repo list to the account and quits there. Do not
+  add a "jump to settings" key — the stack already expresses it, and a jump
+  would be a second spelling of one thing.
+
+- **Tabs are for siblings; the stack is for drilling in.** `reticle::Host` owns
+  one `Screen` per tab and forwards to the active one, so a screen does not
+  know it became a tab — `Actions` was written before tabs existed and is a tab
+  now, unchanged. `Tab`/shift-`Tab` move along; `Flow::Push` from inside a tab
+  opens over the WHOLE host and `q` returns to the tab you left.
+
+  Six things about one repo are not six levels deep. A stack would make Issues
+  → PRs a pop and a push through a hub that exists only to be passed through.
+
+  **A one-tab strip is a title that cost a row**, so a level gets a `Host` only
+  once it has two real screens. The user level has four and an org has three;
+  the REPO level has one ported of six designed, so enter on a repo still
+  pushes `Actions` directly. It becomes a `Host` in the commit that adds the
+  second repo screen, and nothing else changes.
+
+- **`Host` remembers each tab's cursor, and `Flow::Retarget` is how.** A tab
+  switch replaces every row, so `app` cannot carry the selection across —
+  clamping a 40-row position into a 3-row tab lands somewhere arbitrary.
+  `Retarget` makes `app` re-ask `initial_sel`, which the host answers with the
+  mark it saved on the way out. `app` never learns what a tab is.
+
+- **The pane does not reserve an image region it has no image for.** It used
+  to, unconditionally, which pushed every TEXT-ONLY pane to the bottom of the
+  screen under a rule that separated nothing from nothing. Invisible while the
+  only screen here was `font`'s specimen; wrong for `dots`, wrong for all of
+  `github`. The rule is a SEPARATOR and appears only when there is something to
+  separate. The image path's arithmetic is unchanged.
+
+- **Scopes are read off the response, never tabulated.** Every GitHub reply
+  carries `X-Oauth-Scopes` (what the token has) and `X-Accepted-Oauth-Scopes`
+  (what the endpoint would accept, any one of them) — on FAILED replies too.
+  So a denial names its own fix and there is no endpoint-to-scope table to
+  drift. `gh api -i` on every call is what makes that free; the token's own
+  scopes are learned from whatever request happened to run, so there is no
+  startup probe and must not become one.
+
+  **A 404 has to be translated.** `GET /user/keys` without the scope answers
+  **404, not 403** — rendered literally that is "you have no SSH keys" on an
+  account with two. `Got::Denied` is kept apart from `Got::Failed` for exactly
+  this: one is "your token cannot see this, here is the line that changes
+  that", the other is "something went wrong".
+
+  **It suggests the NARROWEST accepted scope.** Offered
+  `admin:public_key, read:public_key, write:public_key`, it says
+  `read:public_key`. `gh`'s own message suggests `admin:` because it cannot
+  know what the caller intends; this screen only reads. Writing keys asks for
+  `write:` when it exists.
+
+  Enter on the denied row RUNS the fix via `Flow::Detach` — `gh auth refresh`
+  is interactive and needs the real tty, and it is self-confirming because gh
+  says what it is about to do and waits. The screen then re-asks on the next
+  tick, via a flag rather than before the detach: the detach is what changes
+  the token, so a request fired beforehand races it and comes back denied,
+  which looks exactly like the authorisation having failed.
+
+- **Tokens and 2FA are said out loud, not shown as empty lists.** Neither has
+  an API at any scope. A blank list reads as "none" and would be wrong, so the
+  Account tab names them as unreachable instead. Absent information and absent
+  data are different claims.
+
+- **There is no Enterprise level, and that was measured rather than assumed.**
+  Every org on this account is free or team plan and the token has no
+  `read:enterprise`, so GraphQL refuses `viewer.enterprises` outright. A screen
+  for something that cannot exist is maintenance for nothing. If one ever
+  appears it is a level above `orgs` and the seeded stack already takes it.
 
 - **`github` builds but does not install, and that is the whole plan.** A bash
   function beats PATH and `github()` is still defined in `bash_github_tui`, so

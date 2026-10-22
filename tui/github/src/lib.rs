@@ -24,12 +24,15 @@ pub mod gh;
 pub mod index;
 pub mod logs;
 pub mod model;
+pub mod orgs;
 pub mod paint;
 pub mod render;
 pub mod root;
 pub mod runs;
+pub mod scopes;
 pub mod steps;
 pub mod time;
+pub mod user;
 
 pub use root::Root;
 pub use runs::Actions;
