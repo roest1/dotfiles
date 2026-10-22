@@ -45,9 +45,13 @@ pins that.
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
   only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
-- `github/` — the port, root-first. `index` (every clone under `~/github`, read
-  from disk), `root` (the repo tree), plus the lib/bin pair. **Not installed
-  yet** — see below.
+- `github/` — the port, root-first and then Actions. `index` (every clone under
+  `~/github`, read from disk), `root` (the repo tree), `runs` (the Actions
+  screen), `steps` (one run as a tree), `gh` (the threaded `gh api` caller and
+  the cross-session cache), `model` (the API's types and the one place that
+  says what a status MEANS), `render` (the pane bodies), `logs` (step slicing
+  and log colouring), `time` (ISO 8601 without a date crate), `paint` (the
+  palette), plus the lib/bin pair. **Not installed yet** — see below.
 - `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
   and the crate-root re-exports), `picker` (the lane tree — the root screen),
   `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
@@ -217,12 +221,22 @@ pins that.
 
 - **`github` builds but does not install, and that is the whole plan.** A bash
   function beats PATH and `github()` is still defined in `bash_github_tui`, so
-  a `github` binary installed now could not win anyway — CI asserts the rule.
-  It is therefore absent from `deps.conf` and `tui/deps.sh` until the commit
-  that deletes the bash function adds it to both. Develop with `cargo run -p
-  github`. Do NOT wire up a half-ported `github` that dispatches to both
-  halves; replacing that file as a unit is exactly what the CI rule "only
-  bash_github_tui may invoke fzf" was built to allow.
+  a `github` binary installed now could not win anyway. It is therefore absent
+  from `deps.conf` and `tui/deps.sh` until the commit that deletes the bash
+  function adds it to both. Develop with `cargo run -p github`. Do NOT wire up
+  a half-ported `github` that dispatches to both halves; replacing that file as
+  a unit is exactly what the CI rule "only bash_github_tui may invoke fzf" was
+  built to allow.
+
+  **The `No bash function shadows a tui binary` CI row is RED for the duration
+  of the port, and that is the forcing function it was written to be.** It
+  derives the binary names from `tui/Cargo.toml`'s `members`, so adding
+  `tui/github/` to the workspace — which building and testing it requires —
+  starts it covering `github` while `github()` still exists. Its own comment
+  predicted this: *"fails until the bash function is gone, which is exactly the
+  handover it should force."* Do not narrow it to the installed set to get a
+  green tick; the red row is the deadline. It goes green in the commit that
+  deletes the bash function.
 
 - **`index` groups by PATH and identifies by REMOTE, because on the real tree
   neither can do both.** Measured before the reader was written:
@@ -254,6 +268,113 @@ pins that.
   the row walk to know. `app` clamps the answer to the rows actually drawn and
   skips a spacer, so a stale one cannot park the cursor in a blank row, which
   is the one place navigation otherwise never lands.
+
+  **`app` asks PUSHED screens too, and that was a bug for one commit.** The
+  push path hard-coded `sel: 0`, which was invisible for as long as nothing
+  overrode `initial_sel` and then silently wrong for the first screen that did:
+  drilling into a failed run opened on the run's first job instead of on the
+  step that failed. Both paths go through `start_sel` now.
+
+- **`Tick::Wake(Duration)` is the third clock, and it exists because `Busy` is
+  a FRAME clock.** `Busy` means "look again next frame", which is right for
+  work that lands in milliseconds — the font browser rasterising a specimen —
+  and wrong for a network round trip. A nine-minute workflow run reported as
+  `Busy` would spin the process at 60fps for nine minutes to notice an event
+  that can only arrive on a five-second boundary: the laptop fan `app`'s
+  blocking poll exists to avoid, reintroduced by the one screen that most needs
+  to stay quiet while it waits.
+
+  So the SCREEN picks the clock, because the screen is what knows which kind of
+  work it started. `Wake` is a floor on how long `app` may sleep, never a
+  ceiling on how often it may draw — an animating reticle still outranks it, or
+  a refresh would make the brackets stutter. `app::tests::a_slow_clock_does_not_become_a_frame_loop`
+  pins all three orderings, and the measured result is the point: the Actions
+  screen emits **zero bytes** over twenty idle seconds on a repo whose runs have
+  all finished.
+
+- **The Actions screen runs TWO clocks, and both stop by themselves.** The list
+  is re-asked every 15s, the selected run's jobs every 5s — each only while the
+  thing it is watching is unfinished, and each re-armed from what ARRIVED
+  rather than on a fixed timer. A list of completed runs schedules nothing, so
+  there is no stop button to find and no timer left running behind a cursor
+  that has moved on. The jobs clock follows the CURSOR, which is the half most
+  easily got wrong: visiting five runs during a build must not leave five
+  timers behind.
+
+- **Only what cannot change is cached across sessions.** A completed run's jobs
+  and a completed job's log are immutable, so they live in
+  `~/.cache/dotfiles-github/<owner>/<name>` and last week's failure opens
+  instantly in a shell that has never seen it. A run LIST is a question about
+  now and a live run's jobs are the thing being watched change, so neither
+  touches the disk.
+
+  **The cache key carries the ATTEMPT**, not just the run id. A rerun is the
+  same id with entirely new jobs, so a key on id alone serves the previous
+  attempt forever — which is why the bash implementation had to delete cache
+  files on rerun. Putting the attempt in the key retired the deletion.
+
+  **Whether an answer may be cached is the caller's claim, from the list it is
+  already showing** (`Req::Jobs { persist }`), which saves the second `gh api`
+  call the bash version made to ask a run its own status. That staleness is
+  safe in only one direction and it is the one that matters: a 15-second-old
+  list can say "running" about a run that just finished, and we merely decline
+  to cache. It can never say "completed" about a run still going, because
+  completed is terminal.
+
+- **The pane DOES NOT SCROLL, and a log is the one thing whose end matters.**
+  `draw_pane` cuts whatever does not fit and says nothing, so a four-hundred
+  line body in a forty-row pane loses its own tail — which for a failed run is
+  the summary and, worse, the error. This is easy to forget because every
+  previous log view in this repo could scroll: fzf's preview took the mouse and
+  a pager scrolls by definition, so "print it all" was always available before.
+  It is not here.
+
+  So `render::tail_budget` divides the room among the failed steps and each gets
+  a TAIL, with a marker naming how much it hid and which key pages the rest.
+  What survives a pane too small for everything is the STRUCTURE — the step
+  names and the summary — because those answer "is it green" and "which step",
+  and a tail of four lines answers neither.
+  `render::tests::a_body_never_outgrows_the_pane_it_was_given` asserts the fit
+  at five pane heights; the first draft showed the runner installing chromium
+  and hid the assertion that failed.
+
+- **The step-log slicing is ported line for line, and its tests came first.**
+  GitHub serves no per-step logs — the archive is one file per job, which is
+  why `gh run view --log` prints `UNKNOWN STEP` — so a step's output is
+  reconstructed: a timestamp window, then the step's own `##[group]Run` line as
+  an anchor, then a cut at the last `##[error]`. The anchor PREFERS a group
+  whose text is the step's name, which is what makes unnamed `uses:` steps work
+  and what stops a window that opened a second early from returning the
+  previous step's output.
+
+  Tests before implementation here alone, and the reason is the failure mode
+  rather than the difficulty: a slice off by one boundary returns plausible log
+  output for the wrong step, and nothing about the result looks wrong. It
+  compares timestamps as STRINGS, as the awk original does — fixed-width ISO
+  8601 sorts lexicographically, so parsing them into instants would be slower
+  and no more correct.
+
+- **Status words, not emoji, in a `Row::badge`.** The badge is right-aligned
+  into a fixed grid and an emoji is double-width in some terminals and single
+  in others, so a column of them lines up nowhere reliably. `ok`/`fail`/`run`
+  with a colour index does. The PANE is free prose and keeps the glyphs.
+
+- **One `Verdict`, derived in one place.** `status` and `conclusion` together
+  have more states than anyone needs to reason about, and reasoning about them
+  per call site is what let the bash renderers drift on which field decided a
+  job's colour. Both unknown-state directions fail safe deliberately: a
+  conclusion GitHub adds later reads as `Other` rather than as a failure, and a
+  STATUS it adds later reads as running rather than as finished — because a run
+  wrongly called finished stops being polled, which is the error that does not
+  correct itself.
+
+- **`github`'s confirm is screen-local and safe by construction, not by
+  bookkeeping.** `e` and `x` cost runner minutes or kill a build, so they ask;
+  the only key that acts is `y`, and any other key the screen sees — plus any
+  cursor movement, via `focus` — withdraws. That is deliberately weaker than a
+  real dialog: a shared confirm WITH text entry is still the right home, since
+  `pr-create`, `secret-set` and every delete need one, and that is a `reticle`
+  change rather than five screen-local copies of this.
 
 - **`dots` is not a make target, deliberately.** `make font` does not exist
   either. The console was called `make it` on `feat/make-console`, and keeping

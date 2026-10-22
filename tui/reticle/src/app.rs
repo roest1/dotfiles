@@ -178,9 +178,11 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         draw_footer(&mut out, frame.screen.as_mut(), cols, screen_rows, depth)?;
         out.flush()?;
 
+        let mut wake: Option<Duration> = None;
         match frame.screen.tick() {
             Tick::Idle => {}
             Tick::Busy => busy = true,
+            Tick::Wake(d) => wake = Some(d),
             Tick::Changed => {
                 busy = true;
                 pane_dirty = true;
@@ -188,11 +190,7 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                 continue;
             }
         }
-        let timeout = if frame.reticle.moving() || busy {
-            FRAME
-        } else {
-            Duration::from_secs(3600)
-        };
+        let timeout = poll_timeout(frame.reticle.moving() || busy, wake);
         busy = false;
 
         let mut pushed: Option<Box<dyn Screen>> = None;
@@ -268,13 +266,20 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         last = now;
 
         if let Some(mut next) = pushed {
-            next.focus(0);
             rows = next.rows();
+            // A pushed screen gets asked where to open, exactly as the one the
+            // program started on does. It used to be hard-coded to row 0, which
+            // was invisible for as long as nothing overrode `initial_sel` --
+            // and then silently wrong for the first screen that did: `github`
+            // drilling into a failed run opened on the run's first job instead
+            // of on the step that failed.
+            let sel = start_sel(next.as_ref(), &rows);
+            next.focus(sel);
             stack.push(Frame {
                 screen: next,
-                sel: 0,
+                sel,
                 top: 0,
-                reticle: Reticle::new(0),
+                reticle: Reticle::new(sel),
             });
             pane_dirty = true;
         } else if popped {
@@ -423,6 +428,23 @@ fn draw_rows(
 
 const SPREAD_ROOM: u16 = 5;
 
+/// How long to wait for the next keystroke. Three clocks, most urgent first.
+///
+/// `frame` covers both the reticle animating and work in flight: each wants to
+/// be looked at again as soon as possible. A `Tick::Wake` is the slow clock —
+/// honoured as asked, floored at one frame so a screen cannot ask for a busy
+/// loop by requesting zero. With neither, the poll blocks for an hour, which is
+/// what keeps an idle TUI off the CPU entirely.
+fn poll_timeout(frame: bool, wake: Option<Duration>) -> Duration {
+    if frame {
+        FRAME
+    } else if let Some(d) = wake {
+        d.max(FRAME)
+    } else {
+        Duration::from_secs(3600)
+    }
+}
+
 /// Where a screen opens: what it asked for, clamped to what it drew.
 ///
 /// Both guards are load-bearing. A screen computes its answer from its own row
@@ -555,8 +577,27 @@ fn truncate(s: &str, width: u16) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{first_selectable, left_width, seek};
+    use super::{first_selectable, left_width, poll_timeout, seek, Duration, FRAME};
     use crate::screen::Row;
+
+    /// The three clocks, and which one outranks which. A screen polling a
+    /// workflow run asks for seconds; the reticle asks for a frame; an idle
+    /// screen asks for nothing and must not be woken for free.
+    ///
+    /// The third case is the one that matters: `Tick::Wake` is a floor on how
+    /// long we may SLEEP, never a ceiling on how often we may draw, or a live
+    /// run would make the reticle stutter every time it refreshed.
+    #[test]
+    fn a_slow_clock_does_not_become_a_frame_loop() {
+        assert_eq!(poll_timeout(false, None), Duration::from_secs(3600));
+        assert_eq!(
+            poll_timeout(false, Some(Duration::from_secs(5))),
+            Duration::from_secs(5)
+        );
+        assert_eq!(poll_timeout(true, Some(Duration::from_secs(5))), FRAME);
+        // Asking for zero gets a frame, not a spin.
+        assert_eq!(poll_timeout(false, Some(Duration::ZERO)), FRAME);
+    }
 
     fn list() -> Vec<Row> {
         vec![

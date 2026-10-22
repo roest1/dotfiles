@@ -220,6 +220,27 @@ impl Root {
         }
     }
 
+    /// Open the Actions screen for this repo.
+    ///
+    /// Refused rather than attempted for a clone with no GitHub remote: the
+    /// Actions API has nothing to say about a local-only repo, and an empty
+    /// screen with an auth error in it is a worse answer than a sentence in the
+    /// pane saying why there is nothing to show.
+    fn open_actions(&mut self, i: usize) -> Flow {
+        match crate::Actions::open(&self.repos[i]) {
+            Some(screen) => Flow::Push(Box::new(screen)),
+            None => {
+                self.status = match &self.repos[i].remote {
+                    Remote::Elsewhere(host) => {
+                        format!("origin is on {host} — GitHub Actions does not apply")
+                    }
+                    _ => "no github remote — nothing to ask about".into(),
+                };
+                Flow::Dirty
+            }
+        }
+    }
+
     fn open_in_browser(&mut self, i: usize) -> Flow {
         let Remote::GitHub { owner, name } = &self.repos[i].remote else {
             self.status = "no github remote — nothing to open".into();
@@ -361,12 +382,16 @@ impl Screen for Root {
                 self.open[l] = false;
                 Flow::Dirty
             }
-            // Interim. The repo's own screens are the next increment, and this
-            // is what enter becomes when they exist -- `o` keeps opening the
-            // browser after that, the way ctrl-o does in the fzf screens.
-            (Action::Activate, At::Repo(i)) | (Action::Key('o'), At::Repo(i)) => {
-                self.open_in_browser(i)
-            }
+            // The repo's screens. Actions is the one that exists, so enter
+            // goes straight to it rather than through a hub of one row -- when
+            // PRs and Branches land, this becomes the repo screen with Actions
+            // as its first row, and `app::run_stack` already takes the deeper
+            // seeded stack that implies.
+            (Action::Activate | Action::Open, At::Repo(i)) => self.open_actions(i),
+            // `o` keeps opening the browser, the way ctrl-o does in every fzf
+            // screen -- the key that leaves the terminal is the same key
+            // everywhere.
+            (Action::Key('o'), At::Repo(i)) => self.open_in_browser(i),
             _ => Flow::Continue,
         }
     }
@@ -374,7 +399,8 @@ impl Screen for Root {
     fn footer(&self) -> String {
         match self.at(self.focus_sel) {
             At::Lane(_) => "enter open/close".into(),
-            At::Repo(_) => "enter open on github.com".into(),
+            At::Repo(i) if self.repos[i].is_github() => "enter actions \u{b7} o browser".into(),
+            At::Repo(_) => "o browser \u{b7} nothing on github to ask about".into(),
             At::Nothing => "j/k move · h/l close/open".into(),
         }
     }

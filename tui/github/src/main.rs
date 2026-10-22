@@ -21,11 +21,20 @@ fn main() -> std::io::Result<()> {
             println!("opens on that one, with the list still underneath — so q walks");
             println!("up rather than quitting out of context.");
             println!();
-            println!("Reads the disk, not the API: it opens instantly and works");
-            println!("offline. Set GITHUB_DIR if your clones live elsewhere.");
+            println!("The repo list reads the disk, not the API: it opens instantly");
+            println!("and works offline. Set GITHUB_DIR if your clones live");
+            println!("elsewhere.");
+            println!();
+            println!("Enter on a repo opens its workflow runs, with the failing");
+            println!("step's log already in the pane. A run still going refreshes");
+            println!("itself until it stops, and completed runs are cached, so");
+            println!("last week's failure opens instantly in a new shell.");
             println!();
             println!("  j/k move · h/l close/open · gg/G ends");
-            println!("  ctrl-d/u page · enter open · q quit");
+            println!("  ctrl-d/u page · enter open · q back, and out at the top");
+            println!();
+            println!("  on the runs list: o browser · r refresh · b branch scope");
+            println!("                    e rerun · x cancel · L whole log");
         }
         _ => {
             let dir = index::root_dir();

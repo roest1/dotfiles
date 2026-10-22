@@ -11,6 +11,7 @@
 //! its state, which is the bug class that made the old fzf screens stale.
 
 use crate::nav::Action;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct Row {
@@ -89,14 +90,32 @@ pub struct Image {
 /// thread. `github` will need exactly this for its `gh` calls; the font browser
 /// needs it for HTTP.
 ///
-/// The three states exist because "keep waking me" and "something changed" are
-/// different questions, and collapsing them re-renders an image on every frame
-/// of a download.
+/// The states exist because "keep waking me", "wake me later" and "something
+/// changed" are different questions, and collapsing them re-renders an image on
+/// every frame of a download.
 pub enum Tick {
     /// Nothing outstanding — block on input and cost nothing.
     Idle,
-    /// Work in flight, but nothing new to show. Wake again; do not redraw.
+    /// Work in flight, but nothing new to show. Wake again on the NEXT FRAME;
+    /// do not redraw. For work measured in milliseconds, where polling at 60fps
+    /// for its duration is the price of noticing the moment it lands.
     Busy,
+    /// Nothing in flight, but ask again after this long.
+    ///
+    /// For a screen watching something that changes on ITS own clock rather
+    /// than on ours — `github` re-asking a live workflow run every five
+    /// seconds. `Busy` is the wrong answer there and not by a little: it sets
+    /// the poll timeout to one frame, so a run that takes nine minutes would
+    /// spin this process at 60fps for nine minutes to notice an event that can
+    /// only arrive on a five-second boundary. That is the laptop fan this
+    /// loop's blocking poll exists to avoid, reintroduced by the one kind of
+    /// screen that most needs to stay quiet while it waits.
+    ///
+    /// It does NOT keep the reticle moving and does not mark the pane dirty —
+    /// it only shortens the wait for the next input poll. So a screen that asks
+    /// for a wake and then has nothing to say costs one timeout and one row
+    /// redraw, not a frame loop.
+    Wake(Duration),
     /// New state arrived. Wake and redraw the pane.
     Changed,
 }

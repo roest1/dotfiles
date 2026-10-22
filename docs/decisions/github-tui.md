@@ -185,6 +185,56 @@ filtering, which defers the one open framework question. Then Actions, which
 is the only screen exercising live refresh, cross-session caching and the step
 slicing at once; if that survives, the rest is mechanical.
 
+### What Actions actually cost (done 2026-10-22)
+
+It survived, and the verdict stands: the remaining screens are lists with
+previews over data this now knows how to fetch. What it cost that the plan did
+not price:
+
+**One framework addition, `Tick::Wake(Duration)`.** The plan assumed `Tick`
+already covered live refresh — the enum's own header says `github` would need
+"exactly this". It did not. `Busy` is a FRAME clock: it sets the poll timeout
+to 16ms, which is right for the font browser rasterising a specimen and absurd
+for a workflow run, where it would spin at 60fps for nine minutes to notice an
+event that can only land on a five-second boundary. The screen is what knows
+which kind of work it started, so the screen now picks the clock. Measured
+after: zero bytes over twenty idle seconds, and entering the screen cost 76KB
+instead of 285KB.
+
+**One framework bug, found by being the first caller.** `app`'s push path
+hard-coded `sel: 0` and never asked `Screen::initial_sel`. Invisible while
+nothing overrode it; silently wrong the moment something did — drilling into a
+failed run opened on the run's first job rather than on the step that failed.
+
+**One thing the plan got backwards.** It assumed the port would carry the
+fzf preview's "print it all" habit forward. It cannot: `reticle`'s pane does
+not scroll, where fzf's preview took the mouse and a pager scrolls by
+definition. A 400-line job log in a 40-row pane showed the runner installing
+chromium and cut the assertion that failed, with nothing about the result
+looking wrong. Every body is now budgeted against the pane height, structure
+first and logs tailed, with `L` as the route to the whole thing. This is the
+one place the Rust screen deliberately shows LESS than the bash one did.
+
+**One API call deleted rather than ported.** The bash run body fetched the run
+AND its jobs, because it needed the run's own status to decide whether the
+rendered body was cacheable. The list already knows that, so the caller now
+asserts it (`Req::Jobs { persist }`). The staleness is safe in one direction
+only, and it is the right one: a 15-second-old list can say "running" about a
+run that just finished and we merely decline to cache, but it can never say
+"completed" about a run still going, because completed is terminal.
+
+**The cache got simpler than the original.** Keying on `(run, attempt)` instead
+of `run` retired the cache eviction that `_ghw_rerun` had to do by hand: a
+rerun is now simply a key nothing has answered yet. And what is cached is the
+JSON rather than the rendered body — rendering was a jq spawn in bash and is
+microseconds here, so the cached artifact is data instead of presentation.
+
+What the step slicing cost: nothing. It ported line for line, tests first as
+planned, and worked against the real tree on the first run — it correctly cut
+a `test` step out of a job log whose window also held an `apt-get` transcript,
+anchored on the step's own `##[group]Run` line, and ended on the last
+`##[error]`.
+
 **The bash file is replaced as a unit, not incrementally.** It stays complete
 and untouched until the Rust side covers what is actually used, then it is
 deleted in one commit. A `github` dispatching to both halves is the drift this
@@ -199,6 +249,15 @@ nothing and costs an auth implementation.
 binary cannot be installed while `github()` is defined here — CI asserts it.
 The crate builds under `cargo run` and is absent from `deps.conf` and
 `tui/deps.sh` until the commit that deletes the bash function adds it to both.
+
+That CI row — `No bash function shadows a tui binary` — therefore **fails for
+the whole duration of the port**, from the commit that added `tui/github/` to
+the workspace until the one that deletes `github()`. It derives its binary list
+from `tui/Cargo.toml`'s `members`, and its own comment chose this: *"fails until
+the bash function is gone, which is exactly the handover it should force."* The
+row is a deadline, not a defect. Do not narrow it to the installed set to get a
+green tick — that would turn the forcing function back into the silence it was
+written to replace.
 
 ### What the port deletes rather than translates
 
@@ -223,15 +282,26 @@ produced. Same for **issues**, which nothing here has yet.
 
 ## Still open
 
-- **Filtering.** fzf gives fuzzy-filter-as-you-type for free; `reticle::nav`
-  maps every bare char to `Action::Key(c)`, which is what makes single-key
-  actions work, so there is no text-entry mode to add it to. Needed by the
-  long lists, not by the root screen. A modal state in `nav` is a change to
-  the one file screens are told not to touch.
-- **Text input and confirm.** `_gh_input` and `_gh_confirm` have no reticle
-  equivalent; secret-set, env-create, pr-create and every delete need them.
-  Framework-level and shared, so they land in `reticle` before the screens
-  that need them.
+- **Filtering, and it is now the blocker rather than a nicety.** fzf gives
+  fuzzy-filter-as-you-type for free; `reticle::nav` maps every bare char to
+  `Action::Key(c)`, which is what makes single-key actions work, so there is no
+  text-entry mode to add it to. The root screen did not need it and the Actions
+  screen only wants it — 40 runs fit on a screen. The PR and Branches screens
+  are where "type to filter" was load-bearing, so this lands before them. A
+  modal state in `nav` is a change to the one file screens are told not to
+  touch.
+- **Text input, and a shared confirm.** `_gh_input` has no reticle equivalent;
+  secret-set, env-create and pr-create need one. The Actions screen settled the
+  confirm half for itself — `e` and `x` ask in the status line, `y` is the only
+  key that acts, and any other key or any cursor movement withdraws — which is
+  safe by construction and deliberately weaker than a dialog. It is one
+  screen's worth, not the answer: a shared confirm WITH text entry still
+  belongs in `reticle` before five screens each grow their own.
+- **A scrolling pane.** Everything the Actions screen shows is budgeted to fit
+  because `draw_pane` cuts silently, and `L` pages what did not. That is a
+  good answer for a log and a thin one for a long PR description. Worth doing
+  as a `reticle` feature when a screen needs the middle of something rather
+  than its end.
 - **Mouse.** fzf can bind mouse events. It cuts against the keyboard
   contract, so it should be a deliberate decision rather than accretion.
 - **Demos.** `vhs` is the modern single-binary option; worth a recording now
