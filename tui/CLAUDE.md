@@ -225,6 +225,18 @@ pins that.
   to the row actually drawn at it, in all three shapes (following, pinned,
   section open). Do not add a conditional row without extending it.
 
+- **A placeholder row is a ROW, and `at()` has to count it.** The Environments
+  screen draws "no environments yet" when the list is empty, so the rows below
+  it sit where a single environment would have put them — and reading the
+  position off `envs.len()` alone put `+ new environment` one row too high, on
+  exactly the repo where creating one is the only thing the screen can do.
+  `enter` on it did nothing.
+
+  Same class as the `dots` console's conditional rows, and the same answer: the
+  `At` walk and `rows()` are two readings of one list, so every screen with
+  either gets a test asserting they agree — including in the empty shape, which
+  is the one the first version of both got wrong.
+
 - **`/` narrows the list, and no screen knows.** `app` filters the rows a
   screen returned and hands it `vis[sel]` — its OWN index — at the one boundary
   where the translation happens. So Actions, Branches, Orgs, Keys and the
@@ -392,11 +404,23 @@ pins that.
   commit and the main list drew straight over the sidebar.
 
 - **Forward EVERYTHING from `Host` that a screen says about itself.** This has
-  now been got wrong twice in the same way — `split()`, then `sidebar()` — and
-  neither looked like a forwarding bug: the first showed up as a table with no
-  names in it, the second as an empty left column.
+  now been got wrong THREE times in the same way — `split()`, then
+  `sidebar()`, then `answered()` — and none of them looked like a forwarding
+  bug from the symptom: a table with no names in it, an empty left column, and
+  a question that opened a field, took the text, and did nothing with it.
+
+  The rule is now stated on the trait itself, in `screen.rs`: **a method with a
+  default body is a method `Host` has to forward.** The default is exactly what
+  makes these quiet — a host answering for it compiles and runs. The required
+  methods are safe, because a host missing one would not build.
   `host::tests::everything_comes_from_the_active_tab` covers the whole set
-  rather than the method that broke.
+  rather than the method that broke, and adding a defaulted method to `Screen`
+  means adding a line to it in the same change.
+
+  The third one took a while to see because `Menu` had been the only thing that
+  asked, and a `Menu` is PUSHED rather than hosted — so `Flow::Ask` worked
+  everywhere it had been used, right up to the first hosted screen that asked
+  for itself.
 
 - **`Screen::split()` picks the layout, per screen.** `ListPane` (the default),
   `Full`, or `Sidebar`. The shapes genuinely differ: a workflow run is a short list with a
@@ -466,6 +490,68 @@ pins that.
   the pane IS the confirmation; a destructive item is marked in the row, the
   pane and the footer, and adds no prompt of its own, because the tool already
   asks or already reports and two confirms is one too many.
+
+- **A long command WRAPS in the menu pane; it does not get truncated.**
+  `argv.join(" ")` was fine while every item was `gh pr merge 86 --repo x`. An
+  environment PUT carries the whole environment and comes to three hundred
+  characters, which the pane cut off — and a confirm you cannot read all of is
+  not a confirm, since showing the command IS the confirmation here.
+  `menu::wrap_argv` breaks it at argument boundaries and keeps a flag with the
+  value after it, because `-F` on one line and `reviewers[][id]=7` on the next
+  reads as two things.
+
+- **Every environment change sends the WHOLE environment.** `PUT
+  /repos/{owner}/{repo}/environments/{name}` is "create or update", and the
+  documentation does not say what happens to a parameter you leave out
+  (checked, not assumed). The bash version sent `{wait_timer: n}` alone, so IF
+  omission clears, setting a wait timer silently dropped the required reviewers
+  — and nobody would find out until a deploy that should have waited for an
+  approval did not.
+
+  Sending everything makes the question moot: whatever the semantics, the
+  environment afterwards is what the pane showed plus the one change. It costs
+  nothing, because `gh api`'s field syntax carries all of it with no shell and
+  no temp file: `-F 'reviewers[][type]=User' -F 'reviewers[][id]=123'` builds
+  an array of objects, one per pair, in order; `-F 'reviewers[]'` sends an
+  empty array; `-F key[sub]=value` nests; `-F x=null` sends a real null. All
+  four were verified against `gh api --verbose` against a path that could not
+  create anything, before any of the screen was written.
+
+- **Required reviewers get a PICKER because the API takes an id.** No amount of
+  typing produces a numeric user id, and the collaborators endpoint hands back
+  logins with theirs — so a list to tick is both nicer than a field and the
+  only shape that can work. It also matches the semantics: the field is a SET
+  the PUT replaces wholesale, so it opens pre-ticked with whoever is required
+  now, and whoever is required is a candidate whether or not they are a
+  collaborator. A team never will be, and an outside reviewer would otherwise
+  vanish from the list that replaces them.
+
+  When the collaborators call fails — it needs push, which you do not have on
+  someone else's repo — the error is said out loud EVEN THOUGH there are rows,
+  because the rows are then only the already-required ones. A short list that
+  looks like the whole list is the one way this screen could mislead.
+
+- **A secret's value never enters this process, and no field here could
+  improve on that.** `gh secret set NAME` reads it from the terminal with echo
+  off and encrypts it locally before it leaves the machine, so `Flow::Detach`
+  means the value is never in a `String` here and cannot end up in a redraw.
+  The NAME is asked for, because gh takes that as an argument.
+
+  It is passed **as typed**, not upper-cased the way the bash version did:
+  GitHub treats secret names case-insensitively, so that was a convention
+  rather than a requirement, and silently rewriting what someone typed is not a
+  thing to do on their behalf. What IS checked here is the part GitHub will
+  refuse — the character set and the reserved `GITHUB_` prefix — because
+  learning that from a round trip means typing a name, handing over the
+  terminal, typing a value, and only then being told.
+
+- **The scope of a new secret comes from the GROUP the cursor is in.** The
+  Secrets screen is the repository's secrets and each environment's as groups,
+  so `+ new secret in staging` lives inside the staging group and there is no
+  dialog asking where it should live — where the fzf version opened a "Where
+  does it live?" menu first. Navigate, do not ask. The groups also mean `/`
+  narrows across every scope at once, which answers the question you actually
+  arrive with: is `DEPLOY_TOKEN` set anywhere.
 
 - **The Branches table is local git first.** One `for-each-ref` gives every
   remote branch's age, author, subject AND ahead/behind against the default —

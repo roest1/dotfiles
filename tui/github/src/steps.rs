@@ -221,15 +221,7 @@ impl Steps {
                 .unwrap_or_else(|| self.run.html_url.clone()),
             _ => self.run.html_url.clone(),
         };
-        let opener = if cfg!(target_os = "macos") {
-            "open"
-        } else {
-            "xdg-open"
-        };
-        match std::process::Command::new(opener).arg(&url).spawn() {
-            Ok(_) => self.status = format!("opened {url}"),
-            Err(e) => self.status = format!("could not run {opener}: {e}"),
-        }
+        self.status = crate::browse(&url);
         Flow::Dirty
     }
 }

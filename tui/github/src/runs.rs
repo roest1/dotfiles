@@ -109,7 +109,7 @@ impl Scope {
 /// Branch names legally contain `/`, `#` and `+`, all of which change the
 /// meaning of a query parameter -- `feat/x+y` would otherwise ask for the
 /// branch `feat/x y`. Only unreserved characters pass through.
-fn urlencode(s: &str) -> String {
+pub(crate) fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

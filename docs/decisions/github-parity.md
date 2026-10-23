@@ -43,16 +43,16 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `branch-delete` | ported | the branch menu's Delete remote branch |
 | `branch-menu` | partial | `menu.rs` has 6 of 7 — Set as default landed with text input, and Rename (which bash never had) with it. Only Effective rules is missing, and it is the same ruleset API as the dropped `rulesets` row |
 | `cancel` | ported | `x` |
-| `env-create` | todo |  |
-| `env-delete` | todo |  |
-| `env-menu` | todo | 5 items: wait timer, required reviewers, set a secret, delete, browser |
+| `env-create` | ported | the `+ new environment` row — `gh api -X PUT repos/{repo}/environments/{name}`, which is what the GitHub UI's New environment does: it arrives with no gates |
+| `env-delete` | ported | the environment menu's Delete environment, which asks first |
+| `env-menu` | ported | `envs::Envs::env_menu` — wait timer, self-review, required reviewers (a picker rather than a typed name, because the API takes an id), set a secret here, delete. The browser item became `o`, which is the key that leaves the terminal on every screen |
 | `hub-prefetch` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
 | `hub-refresh` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
 | `list-branches` | ported | `branches.rs` — the full-width table |
-| `list-envs` | todo |  |
+| `list-envs` | ported | `envs.rs` — one call, because the list endpoint already carries the protection rules and the branch policy. bash fetched each environment again for its preview |
 | `list-prs` | ported | `prs.rs` — `gh pr list --json` in one call, filters applied to the fifty that came back |
 | `list-runs` | ported | `runs.rs` — the run list, 15s live refresh |
-| `list-secrets` | todo |  |
+| `list-secrets` | ported | `secrets.rs` — the repository's and each environment's, as groups, so `/` narrows across every scope at once |
 | `list-steps` | ported | `steps.rs` — jobs and steps as a tree |
 | `log-job` | ported | `L` on a job row, into `less` |
 | `log-run` | ported | `L` on the Actions screen |
@@ -60,19 +60,19 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `open` | ported | `o` on every screen |
 | `open-branch` | ported | the branch menu's Open in browser |
 | `open-run` | ported | `o` on the steps screen |
-| `open-settings` | todo | `ctrl-o` on the Secrets and Environments screens |
+| `open-settings` | ported | `o` on the Secrets and Environments screens, which goes to the page holding whatever the cursor is on |
 | `pr-checkout` | ported | the PR menu's Checkout locally |
 | `pr-create` | ported | the sidebar's `new pull request` — `gh pr create` prompts for title and body itself |
 | `pr-menu` | ported | `prs::pr_menu` — 12 of the 13, offered only when they apply. Labels and Reviewers take a typed name rather than a picker |
 | `prs-label` | ported | the `state` dropdown in the sidebar, which says what it is set to |
 | `prs-next` | ported | the same dropdown — a list to pick from rather than a key that cycles |
 | `pv-branch` | partial | the row carries protection, ahead/behind, author, subject, checks and PR — but NOT the effective branch rules, nor whether a local copy exists |
-| `pv-env` | todo |  |
+| `pv-env` | ported | `envs::Envs::pane` — the gates, the branch policy, the environment's secrets and its last five deployments |
 | `pv-hub` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
 | `pv-job` | ported | `render::job_body` |
 | `pv-pr` | ported | the row carries review, checks, author, age, branches and ±; the mock has no preview pane, so the detail is the menu |
 | `pv-run` | ported | `render::run_header` + `run_body` |
-| `pv-secret` | todo |  |
+| `pv-secret` | ported | `secrets::Secrets::pane` — the name, the scope, what it is called in a workflow, and why there is nothing else to show |
 | `pv-step` | ported | `render::step_body` |
 | `rerun` | ported | `e`, with the failed-jobs/all distinction |
 | `rulesets` | dropped | unvalidated behaviour — porting it would preserve it bug-for-bug and let it set the shape of a screen. Use it on github.com first. See github-tui.md |
@@ -82,35 +82,34 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `screen-actions` | ported | the 🚀 Actions tab |
 | `screen-actions-for` | todo | `Scope::Commit` is built and query-correct; nothing reaches it until the PR screen's `ctrl-a` exists |
 | `screen-branches` | ported | the 🌿 Branches tab |
-| `screen-envs` | todo |  |
+| `screen-envs` | ported | the 🌍 Environments tab |
 | `screen-prs` | ported | the 🔀 Pull Requests tab |
-| `screen-secrets` | todo |  |
+| `screen-secrets` | ported | the 🔑 Secrets tab |
 | `screen-steps` | ported | pushed by enter on a run |
-| `secret-delete` | todo |  |
-| `secret-set` | todo | needs text input, or `gh secret set` on the real tty |
+| `secret-delete` | ported | the secret menu's Delete, marked destructive, so it asks |
+| `secret-set` | ported | two ways in, both ending in `gh secret set` on the real tty: the secret menu's Set a new value, and the `+ new secret` row in each group. The value is read with echo off by gh and never passes through this program |
 ## Where that leaves it
 
-**30 ported, 2 partial, 16 todo, 4 dropped** (2026-10-23). Filtering, text
-input and Pull Requests all landed, and the hub was dropped with an argument
-rather than ported.
+**42 ported, 2 partial, 1 todo, 4 dropped** (2026-10-23). Secrets and
+Environments landed together, since an environment secret is a secret and the
+environment list is what tells the Secrets screen its groups.
 
-What is left, in the order that unblocks the most:
+Two rows are outstanding, and only one of them is plain work:
 
-1. **Secrets** (5 rows) — list plus set and delete. Small: `gh secret list
-   --json` through `Req::Cmd`, and the two actions are menu items.
-2. **Environments** (7 rows, including `open-settings`) — a list and a
-   five-item menu, mostly `gh api`.
-3. **`screen-actions-for`** — the PR menu offering "the runs for this commit".
+1. **`screen-actions-for`** — the PR menu offering "the runs for this commit".
    `runs::Scope::Commit` is built and query-correct; what it needs is a way to
    construct the Actions screen from a slug and a sha rather than from an
    `index::Repo`.
-4. **The two partials** — both are only the effective branch rules, which is
-   the same ruleset API as the dropped `rulesets` row. Worth deciding whether
-   that makes them a third `dropped` rather than work.
-5. **The multi-select picker for PR labels and reviewers.** Those two menu
-   items take a typed name today, which is honest but worse than a list. Not a
-   parity gap -- bash typed them too -- but it is the one place the design doc
-   asks for a dropdown and gets a field.
+2. **The two partials**, `pv-branch` and `branch-menu`. Both are only the
+   EFFECTIVE branch rules, which is the same ruleset API as the dropped
+   `rulesets` row — so the honest question is whether they become a third
+   argued `dropped` rather than work. That is a decision, not a task.
+
+And one gap that is not a parity gap, because bash typed them too: PR
+**labels and reviewers take a typed name** rather than a picker. The
+environment reviewer picker is the shape it wants, and now exists to copy —
+the difference is that `gh pr edit --add-label` accepts a name, so there was
+never a round trip forcing the issue.
 
 ## What this file is not
 

@@ -117,6 +117,45 @@ impl Item {
     }
 }
 
+/// An argv broken over lines that fit, at argument boundaries.
+///
+/// `argv.join(" ")` was fine while every command was `gh pr merge 86 --repo
+/// x`. An environment's PUT carries the whole environment -- a wait timer,
+/// four reviewers, a branch policy -- and came to three hundred characters,
+/// which the pane truncated. A confirm you cannot read all of is not a
+/// confirm, so this wraps instead.
+///
+/// A flag keeps the value after it, because `-F` on one line and
+/// `reviewers[][id]=7` on the next reads as two things.
+fn wrap_argv(argv: &[String], width: usize) -> Vec<String> {
+    let width = width.max(12);
+    let mut out: Vec<String> = Vec::new();
+    let mut line = String::new();
+    let mut i = 0;
+    while i < argv.len() {
+        let mut piece = argv[i].clone();
+        if piece.starts_with('-') && argv.get(i + 1).is_some_and(|n| !n.starts_with('-')) {
+            piece.push(' ');
+            piece.push_str(&argv[i + 1]);
+            i += 1;
+        }
+        i += 1;
+        if line.is_empty() {
+            line = piece;
+        } else if reticle::width::width(&line) + 1 + reticle::width::width(&piece) <= width {
+            line.push(' ');
+            line.push_str(&piece);
+        } else {
+            out.push(std::mem::take(&mut line));
+            line = piece;
+        }
+    }
+    if !line.is_empty() {
+        out.push(line);
+    }
+    out
+}
+
 pub struct Menu {
     subject: String,
     kind: String,
@@ -208,7 +247,9 @@ impl Screen for Menu {
         if let Some((_, argv)) = &self.pending {
             lines.push(format!("{ORG}About to run:{OFF}"));
             lines.push(String::new());
-            lines.push(format!("  {BOLD}{}{OFF}", argv.join(" ")));
+            for line in wrap_argv(argv, cols as usize - 4) {
+                lines.push(format!("  {BOLD}{line}{OFF}"));
+            }
             lines.push(String::new());
             if item.destructive {
                 lines.push(format!("{RED}This cannot be undone.{OFF}"));
@@ -233,7 +274,9 @@ impl Screen for Menu {
             // have typed.
             Act::Run(argv) => {
                 lines.push(format!("{GRY}runs:{OFF}"));
-                lines.push(format!("  {ORG}{}{OFF}", argv.join(" ")));
+                for line in wrap_argv(argv, cols as usize - 4) {
+                    lines.push(format!("  {ORG}{line}{OFF}"));
+                }
                 lines.push(String::new());
                 lines.push(format!(
                     "{DIM}on the real terminal, so it can prompt and you see{OFF}"
@@ -247,7 +290,9 @@ impl Screen for Menu {
                 lines.push(format!("  {ORG}{label}{OFF}"));
                 lines.push(String::new());
                 lines.push(format!("{GRY}then runs:{OFF}"));
-                lines.push(format!("  {ORG}{}{OFF}", argv.join(" ")));
+                for line in wrap_argv(argv, cols as usize - 4) {
+                    lines.push(format!("  {ORG}{line}{OFF}"));
+                }
             }
         }
         Pane { image: None, lines }
@@ -362,6 +407,45 @@ mod tests {
         let mut m = menu();
         let text = m.pane(0, 60, 40).lines.join("\n");
         assert!(text.contains("git switch"), "{text}");
+    }
+
+    /// A long command wraps at argument boundaries rather than being cut, and
+    /// a flag keeps the value that belongs to it. An environment PUT is three
+    /// hundred characters, and a confirm you cannot read all of is not one.
+    #[test]
+    fn a_long_command_wraps_instead_of_being_truncated() {
+        let argv: Vec<String> = [
+            "gh",
+            "api",
+            "-X",
+            "PUT",
+            "repos/vercel/next.js/environments/bot-approved",
+            "--silent",
+            "-F",
+            "wait_timer=5",
+            "-F",
+            "reviewers[][type]=Team",
+            "-F",
+            "reviewers[][id]=7",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let lines = wrap_argv(&argv, 44);
+        assert!(lines.len() > 1, "{lines:?}");
+        for l in &lines {
+            assert!(reticle::width::width(l) <= 44 || !l.contains(' '), "{l:?}");
+        }
+        // Nothing lost, and the flags kept their values.
+        assert_eq!(lines.join(" "), argv.join(" "));
+        assert!(
+            lines.iter().any(|l| l.contains("-F wait_timer=5")),
+            "{lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|l| l.trim_end().ends_with("-F")),
+            "a flag was orphaned: {lines:?}"
+        );
     }
 
     /// A destructive item is marked in the row, in the pane and in the footer.

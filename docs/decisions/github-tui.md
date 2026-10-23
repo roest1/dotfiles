@@ -476,6 +476,130 @@ alignment and once in the pty harness used to verify it — always the same way:
 `str::find` returns bytes, `chars().count()` returns characters, and neither is
 what the terminal does.
 
+## Secrets and Environments (done 2026-10-23)
+
+The last two screens, done together because they are one subject: an
+environment secret IS a secret, and the environment list is what tells the
+Secrets screen what its groups are. One `Req::Json` serves both tabs, so
+whichever you open first pays for it.
+
+### Secrets: groups, not a dialog
+
+The fzf screen listed repository and environment secrets in one flat list with
+a glyph to tell them apart, which was right — the question you arrive with is
+"is `DEPLOY_TOKEN` set anywhere" rather than "list the staging ones". Groups
+keep that and gain two things the flat list could not have: `/` narrows across
+every scope at once, and **the scope of a new secret is whichever group the
+cursor is in**, so the "Where does it live?" menu the bash version opened first
+is gone. Navigate, do not ask.
+
+The value needs no widget and must not have one. `gh secret set NAME` reads it
+from the terminal with echo off and encrypts it locally before it leaves the
+machine, so `Flow::Detach` means the value is never in a `String` in this
+process and cannot end up in a redraw. A field here would be strictly worse at
+the only part that matters.
+
+The NAME is asked for, because gh takes it as an argument — and it is passed
+**as typed**, where bash upper-cased it. GitHub treats secret names
+case-insensitively, so that was a convention rather than a requirement, and
+silently rewriting what someone typed is not a thing to do on their behalf.
+What IS checked is the part GitHub will refuse (the character set, the reserved
+`GITHUB_` prefix), because learning that from a round trip means typing a name,
+handing over the terminal, typing a value, and only then being told.
+
+### Environments: the whole environment, every time
+
+`PUT /repos/{owner}/{repo}/environments/{name}` is "create or update an
+environment", and **the documentation does not say what happens to a parameter
+you leave out.** That was checked rather than assumed, and it decided the
+design: the bash version sent `{wait_timer: n}` alone, so if omission clears,
+setting a wait timer silently dropped the required reviewers — and nobody would
+find out until a deploy that should have waited for an approval did not.
+
+So every change here composes the complete desired state. Whatever the
+semantics, the environment afterwards is what the pane showed plus the one
+change, and `Menu`'s confirm prints the exact command so it can be read first.
+
+That cost nothing, because `gh api`'s field syntax carries all of it with no
+shell and no temp file — verified against `gh api --verbose` on a path that
+could not create anything, before any of the screen was written:
+
+```
+-F 'reviewers[][type]=User' -F 'reviewers[][id]=123'   an array of objects,
+                                                       one per pair, in order
+-F 'reviewers[]'                                       an empty array
+-F 'deployment_branch_policy[protected_branches]=true' a nested object
+-F deployment_branch_policy=null                       a real JSON null
+```
+
+The list endpoint already returns the protection rules and the branch policy,
+so the screen is one call where bash fetched each environment again for its
+preview. Only the pane's two extras — the environment's own secrets and its
+last five deployments — need a request, and those are prefetched one row ahead,
+the same rule the run list uses.
+
+### The reviewer picker, and why it had to be a picker
+
+Required reviewers are the one thing here that could not be a field: the API
+takes a numeric user id, and no amount of typing produces one. The
+collaborators endpoint hands back logins WITH their ids, so a list to tick is
+both nicer than typing and the only shape that works at all.
+
+It also matches the semantics. The field is a SET the PUT replaces wholesale,
+so the picker opens **pre-ticked with whoever is required now** — editing a set
+as a set is the only way to add a reviewer without dropping the others. And
+whoever is required is a candidate whether or not they are a collaborator: a
+team never will be, and an outside reviewer would otherwise vanish from the
+list that replaces them.
+
+This is the shape the multi-select dropdown in `GITHUB_TUI.md` asks for, built
+where a round trip forced the issue. PR labels and reviewers still take a typed
+name, because `gh pr edit --add-label` accepts one — so that remains a want
+rather than a blocker.
+
+### Three bugs, all from driving it rather than writing it
+
+The same pattern as every previous screen, and the tests that passed first did
+not catch any of them.
+
+1. **`Host` never forwarded `answered()`.** A hosted screen returning
+   `Flow::Ask` got its field, the field took the text, and the answer went to
+   the trait default and vanished — a question that silently did nothing. This
+   is the THIRD forward forgotten the same way (`split`, `sidebar`, now this),
+   and it took a while to see because `Menu` had been the only thing that
+   asked, and a `Menu` is pushed rather than hosted. So `Flow::Ask` worked
+   everywhere it had been used, right up to the first hosted screen that asked
+   for itself. The rule now lives on the trait: **a method with a default body
+   is a method `Host` has to forward.**
+2. **A placeholder row is a row.** With no environments the screen draws "no
+   environments yet", so the rows below it sit where a single environment would
+   have put them — and reading the position off `envs.len()` alone put
+   `+ new environment` one row too high, on exactly the repo where creating one
+   is the only thing the screen can do. `enter` on it did nothing. The
+   position-walk test now covers the empty shape too.
+3. **A long command was truncated in the confirm.** `argv.join(" ")` was fine
+   while every item was `gh pr merge 86 --repo x`; an environment PUT comes to
+   three hundred characters. Showing the command IS the confirmation here, so a
+   confirm you cannot read all of is not one. `menu::wrap_argv` breaks it at
+   argument boundaries and keeps a flag with its value.
+
+A fourth, smaller: the pane sat on `asking github…` forever for a repo you can
+only read, because "not yet" and "cannot" were the same `None`. Listing an
+environment's secrets needs admin, and an honest-looking "none" there would be
+the same lie `Got::Denied` exists to stop telling. The picker has the mirror
+case — it says the collaborator list failed **even though it has rows**,
+because the rows are then only the already-required ones, and a short list that
+looks like the whole list is the one way that screen could mislead.
+
+### Where parity stands
+
+**42 ported, 2 partial, 1 todo, 4 dropped.** What is left is one row and one
+decision: `screen-actions-for` needs the Actions screen constructible from a
+slug and a sha rather than from an `index::Repo`, and the two `partial` rows
+are both only the EFFECTIVE branch rules — the same ruleset API as the dropped
+`rulesets` row, so the honest question is whether they become a third argued
+`dropped` rather than work.
+
 ## Still open
 
 - ~~Filtering.~~ ~~Text input.~~ **Both done (2026-10-23).** `/` narrows any
@@ -515,6 +639,14 @@ what the terminal does.
   screen. It also overloads `h`/`l`/`enter`, which currently mean close/open
   and activate, so it needs a modal state in `nav` for the same reason
   filtering does. Doing both at once is probably one change.
+
+  **Half of it exists twice already**, which narrows what is left. The PR
+  sidebar's `Control::Many` is the dropdown-in-a-list version, and the
+  environment reviewer picker is the ticked-set-as-a-screen version. The
+  remaining question is whether those two collapse into one `reticle` widget or
+  stay two shapes for two situations — a filter you open beside a list, and a
+  set you edit on its own screen before sending it. The second one has to be
+  a screen regardless, because it ends in a command that needs confirming.
 - ~~Inline row buttons.~~ **Settled, and the first version of this entry was
   wrong.** It said the drawn `[PR]`/trash/three-dots were "mouse idioms" to be
   replaced by keys, which reads as a veto on the functions and is not what this
@@ -522,13 +654,20 @@ what the terminal does.
   nobody finds, so a visible labelled action beats a hidden binding. The bash
   implementation already worked the right way too — `enter` on a PR row opens
   thirteen actions, on a branch row seven. See **The three-dots** below.
-- **Text input, and a shared confirm.** `_gh_input` has no reticle equivalent;
-  secret-set, env-create and pr-create need one. The Actions screen settled the
-  confirm half for itself — `e` and `x` ask in the status line, `y` is the only
-  key that acts, and any other key or any cursor movement withdraws — which is
-  safe by construction and deliberately weaker than a dialog. It is one
-  screen's worth, not the answer: a shared confirm WITH text entry still
-  belongs in `reticle` before five screens each grow their own.
+- ~~**Text input, and a shared confirm.**~~ **Done, and this entry was
+  written before the answer was known.** It said secret-set, env-create and
+  pr-create all needed a `_gh_input` equivalent. Two of the three never did:
+  `gh pr create` prompts for itself, and `gh secret set` reads the VALUE off
+  the real tty with echo off, which is better than any field here could be.
+  What was actually needed was a field for short identifiers — a name, an
+  environment, a number of minutes — which is what `Flow::Ask` is.
+
+  The confirm half landed in `Menu`, which is the shared answer this entry
+  wanted. The Actions screen's own version stays where it is: `e` and `x` ask
+  in the status line, `y` is the only key that acts, and any key or any cursor
+  movement withdraws. It is screen-local and safe by construction, and it
+  guards two keys rather than a list of items — a `Menu` for two keybindings
+  would be a screen for a yes/no.
 - ~~A scrolling pane.~~ Done, as a consequence of directional focus: `l` moves
   into the pane and `j`/`k` scroll it. The render-time tail budget stays, so
   the FIRST screenful is still the useful end of a failure — scrolling is for

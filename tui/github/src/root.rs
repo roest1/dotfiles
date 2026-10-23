@@ -15,7 +15,6 @@
 
 use reticle::{nav::Action, Flow, Pane, Row, Screen};
 use std::path::PathBuf;
-use std::process::Command;
 
 use crate::index::{self, Remote, Repo};
 
@@ -253,10 +252,13 @@ impl Root {
                 let branches =
                     crate::branches::Branches::open(&slug, &repo.path, actions.fetcher());
                 let prs = crate::prs::Prs::open(&slug, &self.me, actions.fetcher());
+                let secrets = crate::secrets::Secrets::open(&slug, actions.fetcher());
+                let envs = crate::envs::Envs::open(&slug, actions.fetcher());
                 Flow::Push(Box::new(reticle::Host::new(
                     Some(slug),
                     // The same glyphs the fzf screens used as border labels,
-                    // so a repo reads the way it always did.
+                    // so a repo reads the way it always did -- and the same
+                    // order the hub listed them in.
                     vec![
                         (
                             "\u{1f33f} Branches".into(),
@@ -264,6 +266,8 @@ impl Root {
                         ),
                         ("\u{1f500} Pull Requests".into(), Box::new(prs)),
                         ("\u{1f680} Actions".into(), Box::new(actions)),
+                        ("\u{1f511} Secrets".into(), Box::new(secrets)),
+                        ("\u{1f30d} Environments".into(), Box::new(envs)),
                     ],
                 )))
             }
@@ -285,18 +289,7 @@ impl Root {
             return Flow::Dirty;
         };
         let url = format!("https://github.com/{owner}/{name}");
-        // xdg-open on Linux, open on macOS -- the same pair `_open_url` in
-        // bash_github picks between. Spawned and forgotten: waiting on it would
-        // block the loop for as long as the browser takes to start.
-        let opener = if cfg!(target_os = "macos") {
-            "open"
-        } else {
-            "xdg-open"
-        };
-        match Command::new(opener).arg(&url).spawn() {
-            Ok(_) => self.status = format!("opened {url}"),
-            Err(e) => self.status = format!("could not run {opener}: {e}"),
-        }
+        self.status = crate::browse(&url);
         Flow::Dirty
     }
 }

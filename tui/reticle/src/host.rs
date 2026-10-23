@@ -126,6 +126,20 @@ impl Screen for Host {
         self.current().on_sidebar(action, sel)
     }
 
+    /// The THIRD forward forgotten here, and the one that proved the pattern
+    /// is the trait's rather than anyone's memory: a hosted screen returning
+    /// `Flow::Ask` got its field, the field took the text, and the answer went
+    /// to this default and vanished. It presented as a question that silently
+    /// did nothing -- `github`'s Secrets tab asking for a name and never
+    /// setting a secret.
+    ///
+    /// So the rule is in `Screen`'s own documentation now: a method with a
+    /// default body is a method `Host` has to forward, and the test below
+    /// covers every one of them rather than the one that just broke.
+    fn answered(&mut self, text: Option<String>) -> Flow {
+        self.current().answered(text)
+    }
+
     fn footer(&self) -> String {
         let child = self.screens[self.active].footer();
         if self.screens.len() < 2 {
@@ -271,11 +285,14 @@ mod tests {
 
     /// Everything a screen says about ITSELF has to come from the active tab.
     ///
-    /// This has now been got wrong twice, in the same way, for two different
-    /// methods: a host answering the trait default made `Split::Full` a no-op
-    /// (a table with no names in it) and then made `Split::Sidebar` draw an
-    /// empty left column. Neither looked like a forwarding bug. So this tests
-    /// the whole set rather than the one that broke.
+    /// This has now been got wrong THREE times, in the same way, for three
+    /// different methods: a host answering the trait default made
+    /// `Split::Full` a no-op (a table with no names in it), then made
+    /// `Split::Sidebar` draw an empty left column, then swallowed the answer
+    /// to a hosted screen's `Flow::Ask`. None of them looked like a
+    /// forwarding bug from the symptom. So this tests the whole set rather
+    /// than the one that broke, and `Screen`'s own documentation says which
+    /// set that is: every method with a default body.
     #[test]
     fn everything_comes_from_the_active_tab() {
         struct Wide;
@@ -304,6 +321,12 @@ mod tests {
             fn on_sidebar(&mut self, _: Action, _: usize) -> Flow {
                 Flow::Retarget
             }
+            fn answered(&mut self, text: Option<String>) -> Flow {
+                match text {
+                    Some(t) => Flow::Detach(vec![t]),
+                    None => Flow::Pop,
+                }
+            }
         }
         let mut h = Host::new(
             None,
@@ -316,6 +339,7 @@ mod tests {
         assert!(matches!(h.split(), Split::ListPane));
         assert!(h.sidebar().is_empty());
         assert!(matches!(h.on_sidebar(Action::Open, 0), Flow::Continue));
+        assert!(matches!(h.answered(Some("x".into())), Flow::Continue));
 
         h.on_action(Action::NextTab, 0);
 
@@ -323,6 +347,10 @@ mod tests {
         assert!(matches!(h.split(), Split::Full));
         assert_eq!(h.sidebar().len(), 1, "the sidebar came from the host");
         assert!(matches!(h.on_sidebar(Action::Open, 0), Flow::Retarget));
+        match h.answered(Some("typed".into())) {
+            Flow::Detach(argv) => assert_eq!(argv, vec!["typed"]),
+            _ => panic!("the answer went to the host's default rather than the tab"),
+        }
     }
 
     #[test]

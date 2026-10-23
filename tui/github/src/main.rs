@@ -25,16 +25,22 @@ fn main() -> std::io::Result<()> {
             println!("and works offline. Set GITHUB_DIR if your clones live");
             println!("elsewhere.");
             println!();
-            println!("Enter on a repo opens its workflow runs, with the failing");
-            println!("step's log already in the pane. A run still going refreshes");
-            println!("itself until it stops, and completed runs are cached, so");
-            println!("last week's failure opens instantly in a new shell.");
+            println!("Enter on a repo opens it as five tabs: branches, pull");
+            println!("requests, workflow runs, secrets and environments. The runs");
+            println!("open with the failing step's log already in the pane; a run");
+            println!("still going refreshes itself until it stops, and completed");
+            println!("runs are cached, so last week's failure opens instantly in a");
+            println!("shell that has never seen it.");
             println!();
-            println!("  j/k move · h/l close/open · gg/G ends");
-            println!("  ctrl-d/u page · enter open · q back, and out at the top");
+            println!("hjkl everywhere, including between the tab strip, a sidebar");
+            println!("and the list. There is no key that jumps to the tabs: k off");
+            println!("the top row reaches them.");
             println!();
-            println!("  on the runs list: o browser · r refresh · b branch scope");
-            println!("                    e rerun · x cancel · L whole log");
+            println!("  j/k move · h/l close/open, or across · gg/G ends");
+            println!("  ctrl-d/u page · enter open · / filter · q back, out at the top");
+            println!();
+            println!("  o browser · r refresh, on every screen that fetches");
+            println!("  on the runs list: b branch scope · e rerun · x cancel · L log");
         }
         _ => {
             let dir = index::root_dir();

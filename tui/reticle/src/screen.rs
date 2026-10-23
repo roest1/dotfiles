@@ -234,6 +234,21 @@ pub enum Flow {
     Quit,
 }
 
+/// What a screen is.
+///
+/// ## A default body is a `Host` forward
+///
+/// Every method below with a default implementation is one `Host` has to pass
+/// to its active tab, and that has been forgotten three times -- `split`,
+/// `sidebar`, and `answered`. Each failure looked like something else: a table
+/// with no column names, an empty sidebar, a question that took text and did
+/// nothing. The default is what makes them quiet, since a host that answers
+/// for the default compiles and runs.
+///
+/// So: adding a defaulted method here means adding a forward in `host.rs` and
+/// a line to `host::tests::everything_comes_from_the_active_tab` in the same
+/// change. The required methods are safe -- a host that did not implement one
+/// would not compile.
 pub trait Screen {
     fn title(&self) -> String;
     fn rows(&mut self) -> Vec<Row>;

@@ -569,12 +569,7 @@ impl Screen for OrgPane {
                     Kind::Members => format!("https://github.com/{label}"),
                     Kind::Teams => format!("https://github.com/orgs/{}/teams", self.org),
                 };
-                let opener = if cfg!(target_os = "macos") {
-                    "open"
-                } else {
-                    "xdg-open"
-                };
-                let _ = std::process::Command::new(opener).arg(url).spawn();
+                crate::browse(&url);
                 Flow::Continue
             }
             Action::Key('r') => {
