@@ -483,7 +483,13 @@ impl Branches {
         };
         let flag = reticle::width::pad(flag, 2);
         let mut row = Row::leaf(format!("{here}{flag} {}", b.name));
-        row.depth = 0;
+        // Depth 1, because a branch IS a child of its group -- and `depth` is
+        // what says so. It was 0, which looked right because the marker column
+        // supplies the visual indent anyway, and was wrong in two ways that
+        // only showed up later: filtering could not tell which group owned a
+        // surviving row, so a match appeared with its heading deleted; and `h`
+        // on a branch had no parent to collapse.
+        row.depth = 1;
 
         let f = b.facts.as_ref();
         row = row.detail(
@@ -610,6 +616,53 @@ impl Branches {
                 );
             }
             None => {}
+        }
+        if !self.is_default(&name) {
+            // The design's "rename branch", and the first real consumer of
+            // `Flow::Ask`. `gh` has no rename command and the API wants the
+            // new name as a field, so this is the shape of thing that still
+            // needs a text field: a short identifier, not a body.
+            items.push(
+                Item::new(
+                    "Rename branch",
+                    "gh api -X POST .../rename",
+                    Act::Prompt {
+                        label: format!("rename {name} to"),
+                        initial: name.clone(),
+                        argv: vec![
+                            "gh".into(),
+                            "api".into(),
+                            "-X".into(),
+                            "POST".into(),
+                            format!("repos/{repo}/branches/{name}/rename"),
+                            "-f".into(),
+                            "new_name={}".into(),
+                        ],
+                    },
+                )
+                .note(&[
+                    "Renames it on the remote and moves any open PR with",
+                    "it. Your local branch keeps the old name until you",
+                    "fetch and re-point it.",
+                ]),
+            );
+            // No input needed, so no field: `gh` takes the branch as an
+            // argument and reports what it did.
+            items.push(
+                Item::new(
+                    "Set as default branch",
+                    "gh repo edit --default-branch",
+                    Act::Run(vec![
+                        "gh".into(),
+                        "repo".into(),
+                        "edit".into(),
+                        repo.clone(),
+                        "--default-branch".into(),
+                        name.clone(),
+                    ]),
+                )
+                .note(&["Needs admin on the repo; gh says so if you have not."]),
+            );
         }
         items.push(Item::new(
             "Open in browser",

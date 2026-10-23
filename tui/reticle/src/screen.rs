@@ -178,6 +178,24 @@ pub enum Flow {
     /// Close this screen and go back. `q` does it for you at any depth below
     /// the root, so a screen rarely needs to return this itself.
     Pop,
+    /// Ask the user for one line of text, then call `Screen::answered`.
+    ///
+    /// Screen-driven, where filtering is framework-driven, and the split is
+    /// the point: narrowing a list means the same thing on every screen, so
+    /// `app` does it and no screen is told. A VALUE only the screen knows what
+    /// to do with has to come back to the screen.
+    ///
+    /// One line, deliberately. These are identifiers — a secret's name, a new
+    /// branch name, an environment — not bodies. Anything longer already has a
+    /// better answer: `gh pr create` and `gh pr edit` prompt for a title and a
+    /// body themselves, on the real terminal, via `Flow::Detach`. That is why
+    /// this arrived later and smaller than expected.
+    Ask {
+        /// What is being asked, as a question. Shown in the field.
+        label: String,
+        /// Pre-filled, for a rename or an edit.
+        initial: String,
+    },
     /// Like `Dirty`, but the cursor's place is no longer meaningful — ask
     /// `initial_sel` again.
     ///
@@ -233,6 +251,15 @@ pub trait Screen {
     /// How to divide the body. Default: list left, pane right.
     fn split(&self) -> Split {
         Split::ListPane
+    }
+
+    /// The answer to a `Flow::Ask`, or `None` if it was abandoned.
+    ///
+    /// The screen is responsible for remembering WHAT it asked — `app` carries
+    /// the text and nothing else. A screen that can ask more than one thing
+    /// keeps a field saying which, the same way a pending confirm does.
+    fn answered(&mut self, _text: Option<String>) -> Flow {
+        Flow::Continue
     }
 
     /// Which row to open on. Default: the first.

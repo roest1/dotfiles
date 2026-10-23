@@ -225,6 +225,69 @@ pins that.
   to the row actually drawn at it, in all three shapes (following, pinned,
   section open). Do not add a conditional row without extending it.
 
+- **`/` narrows the list, and no screen knows.** `app` filters the rows a
+  screen returned and hands it `vis[sel]` — its OWN index — at the one boundary
+  where the translation happens. So Actions, Branches, Orgs, Keys and the
+  account screens all gained filtering in the commit that added it, without a
+  line changing in any of them. Same trade as `Tick::Wake` and directional
+  focus.
+
+  **Substring, case-insensitive, ORDER-PRESERVING.** fzf did two things —
+  matched loosely and reordered by score — and only the first is portable: a
+  run list is newest-first because that is the question, and branches are
+  grouped default-then-yours. A filter that reordered by score would answer
+  "which matched best" over "what is going on here". Without ranking, a
+  subsequence match is also worse than useless on short lists.
+
+  Three things this had to get right, each found by using it:
+
+  **A collapsed group survives any filter.** Its children are not in `rows` at
+  all, so dropping it asserts there is no match inside when the filter cannot
+  know. Collapsing a group while filtering emptied the screen with nothing on
+  it to say why.
+
+  **The cursor lands on a LEAF.** Landing on the heading above the match meant
+  the next `enter` collapsed that group instead of opening what you searched
+  for — which is how the blank screen above was reached.
+
+  **`esc` clears the filter before it pops the screen**, and the footer says
+  so. Otherwise a key pressed meaning "show me everything again" throws away
+  the screen you were on.
+
+  A filter in force is named in the footer when the field is closed. A list
+  quietly hiding rows is the worst thing a filter can do.
+
+- **`nav` has exactly two tables, and the mode lives there.** While a field has
+  the keyboard a bare character is TEXT; otherwise it is `Action::Key(c)`.
+  That is the whole reason filtering needed a framework change rather than a
+  screen one — `o`, `r`, `b`, `e` would otherwise fire on the first letter of
+  anything typed. `app` sets the mode from the frame on EVERY iteration rather
+  than tracking it, so a push, pop, detach or tab switch cannot leave the
+  keymap wrong; that failure would be silent and total.
+
+  ctrl-c leaves from inside a field, because a field you cannot get out of is
+  the one way this traps someone. ctrl-u clears it (PageUp outside). Arrows
+  still navigate, so "type a bit, arrow down, enter" works.
+
+- **`Flow::Ask` is screen-driven, and smaller than expected.** Filtering means
+  the same thing everywhere so the framework does it; a VALUE only the screen
+  knows what to do with comes back via `Screen::answered`, and the screen
+  remembers what it asked — `app` carries the text and nothing else.
+
+  One line, for IDENTIFIERS: a branch name, a secret's name, an environment.
+  Anything longer already has a better answer, and finding that out is what
+  made this small: **`gh pr create` and `gh pr edit` prompt for a title and
+  body themselves**, on the real terminal, through `Flow::Detach`. The text
+  widget was never the thing blocking PRs; filtering was.
+
+  An empty or abandoned answer runs NOTHING. `--delete ""` is not something to
+  find out about afterwards.
+
+  The first version returned early with `continue` after handling a field,
+  which silently dropped a `Flow::Push` or `Flow::Pop` from `answered` — a
+  screen asking for a name and then opening something with it did nothing. It
+  is an `if/else` so control still reaches the bottom of the loop.
+
 - **hjkl moves between REGIONS, not just within the list.** `Tab` used to be
   the only way to reach the strip, and a key whose whole job is changing what
   the other keys mean is a mode — the thing the nav contract exists to avoid.

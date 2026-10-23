@@ -478,14 +478,27 @@ what the terminal does.
 
 ## Still open
 
-- **Filtering, and it is now the blocker rather than a nicety.** fzf gives
-  fuzzy-filter-as-you-type for free; `reticle::nav` maps every bare char to
-  `Action::Key(c)`, which is what makes single-key actions work, so there is no
-  text-entry mode to add it to. The root screen did not need it and the Actions
-  screen only wants it — 40 runs fit on a screen. The PR and Branches screens
-  are where "type to filter" was load-bearing, so this lands before them. A
-  modal state in `nav` is a change to the one file screens are told not to
-  touch.
+- ~~Filtering.~~ ~~Text input.~~ **Both done (2026-10-23).** `/` narrows any
+  list and is framework-owned, so every screen already written gained it
+  untouched. Matching is case-insensitive substring and ORDER-PRESERVING: fzf
+  also reordered by score, and that half is not portable here, because a run
+  list is newest-first and branches are grouped — a score order would answer
+  "which matched best" over "what is going on here".
+
+  `Flow::Ask` + `Screen::answered` is the text half, and it came out far
+  smaller than planned. **`gh pr create` and `gh pr edit` prompt for titles and
+  bodies themselves**, on the real terminal via `Flow::Detach`, so `Ask` only
+  ever handles short IDENTIFIERS — a branch name, a secret's name. The widget
+  was never what blocked Pull Requests; filtering was.
+
+  Three bugs found by using it rather than by writing it: a collapsed group
+  dropped by the filter emptied the screen with nothing to say why; the
+  post-filter cursor landed on the heading above the match, so the next `enter`
+  collapsed it; and an early `continue` after a field silently swallowed a
+  `Flow::Push` from `answered`. Reasoning in `tui/CLAUDE.md`.
+
+  The confirm half is unchanged — screen-local, `y` only — and is still one
+  screen's worth rather than the shared answer.
 - **The multi-select dropdown**, which is the clearest spec in
   `GITHUB_TUI.md`: enter opens, me preselected at the top, enter toggles, left
   returns to the title row, enter collapses with the selections intact. It is a

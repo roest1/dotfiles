@@ -11,6 +11,7 @@
 //! and no binary, which is the machine `make it` exists for.
 
 pub mod app;
+pub mod filter;
 pub mod host;
 pub mod image;
 pub mod nav;

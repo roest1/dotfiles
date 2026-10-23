@@ -44,6 +44,17 @@ pub enum Act {
     Open(Box<dyn Screen>),
     /// Close the menu and tell the screen underneath to re-read.
     Back,
+    /// Ask for one line, then run `argv` with the answer appended.
+    ///
+    /// For the handful of actions `gh` cannot prompt for itself: it will ask
+    /// for a PR's title and body, but `gh api -X POST .../rename` wants a
+    /// `new_name` as an argument. The template holds everything up to it.
+    Prompt {
+        label: String,
+        initial: String,
+        /// The command, with `{}` standing for the answer.
+        argv: Vec<String>,
+    },
 }
 
 pub struct Item {
@@ -91,6 +102,9 @@ pub struct Menu {
     /// Set once something has run, so leaving the menu tells the screen
     /// underneath that its data is stale.
     ran: bool,
+    /// The item whose question is outstanding. The screen has to remember
+    /// what it asked -- `app` carries the text and nothing else.
+    asking: Option<usize>,
 }
 
 impl Menu {
@@ -101,6 +115,7 @@ impl Menu {
             items,
             sel: 0,
             ran: false,
+            asking: None,
         }
     }
 
@@ -169,6 +184,13 @@ impl Screen for Menu {
             }
             Act::Open(_) => lines.push(format!("{DIM}opens a screen{OFF}")),
             Act::Back => lines.push(format!("{DIM}closes this menu{OFF}")),
+            Act::Prompt { argv, label, .. } => {
+                lines.push(format!("{GRY}asks:{OFF}"));
+                lines.push(format!("  {ORG}{label}{OFF}"));
+                lines.push(String::new());
+                lines.push(format!("{GRY}then runs:{OFF}"));
+                lines.push(format!("  {ORG}{}{OFF}", argv.join(" ")));
+            }
         }
         Pane { image: None, lines }
     }
@@ -200,7 +222,31 @@ impl Screen for Menu {
                 }
             }
             Act::Back => Flow::Pop,
+            Act::Prompt { label, initial, .. } => {
+                let (label, initial) = (label.clone(), initial.clone());
+                self.asking = Some(sel);
+                Flow::Ask { label, initial }
+            }
         }
+    }
+
+    /// The answer to the one question a menu can ask.
+    fn answered(&mut self, text: Option<String>) -> Flow {
+        let Some(i) = self.asking.take() else {
+            return Flow::Continue;
+        };
+        // Abandoned, or typed nothing. An empty answer is a cancel rather than
+        // a command run with an empty argument -- `--delete ""` is not
+        // something to find out about afterwards.
+        let Some(text) = text.filter(|t| !t.trim().is_empty()) else {
+            return Flow::Dirty;
+        };
+        let Some(Act::Prompt { argv, .. }) = self.items.get(i).map(|it| &it.act) else {
+            return Flow::Continue;
+        };
+        let filled: Vec<String> = argv.iter().map(|a| a.replace("{}", text.trim())).collect();
+        self.ran = true;
+        Flow::Detach(filled)
     }
 
     fn footer(&self) -> String {
@@ -266,6 +312,79 @@ mod tests {
         assert!(!m.ran());
         assert!(matches!(m.on_action(Action::Activate, 0), Flow::Detach(_)));
         assert!(m.ran());
+    }
+
+    /// A prompt asks before it runs, and runs with the answer substituted.
+    #[test]
+    fn a_prompt_fills_the_template_with_what_was_typed() {
+        let mut m = Menu::new(
+            "branch",
+            "feat/x",
+            vec![Item::new(
+                "Rename",
+                "gh api",
+                Act::Prompt {
+                    label: "rename feat/x to".into(),
+                    initial: "feat/x".into(),
+                    argv: vec!["gh".into(), "api".into(), "-f".into(), "new_name={}".into()],
+                },
+            )],
+        );
+        // Enter asks rather than acting.
+        match m.on_action(Action::Activate, 0) {
+            Flow::Ask { label, initial } => {
+                assert_eq!(label, "rename feat/x to");
+                assert_eq!(initial, "feat/x", "a rename starts from the old name");
+            }
+            _ => panic!("a prompt must ask first"),
+        }
+        assert!(!m.ran(), "nothing has run yet");
+        match m.answered(Some("  feat/y  ".into())) {
+            // Trimmed: a trailing space from a paste must not become part of
+            // the branch name.
+            Flow::Detach(argv) => assert_eq!(argv.last().unwrap(), "new_name=feat/y"),
+            _ => panic!("an answer must run the command"),
+        }
+        assert!(m.ran());
+    }
+
+    /// An abandoned or empty answer runs NOTHING. `--delete ""` is not
+    /// something to find out about afterwards.
+    #[test]
+    fn an_empty_answer_is_a_cancel_rather_than_an_empty_argument() {
+        let make = || {
+            Menu::new(
+                "branch",
+                "feat/x",
+                vec![Item::new(
+                    "Rename",
+                    "gh api",
+                    Act::Prompt {
+                        label: "to".into(),
+                        initial: String::new(),
+                        argv: vec!["gh".into(), "-f".into(), "new_name={}".into()],
+                    },
+                )],
+            )
+        };
+        for answer in [None, Some(String::new()), Some("   ".into())] {
+            let mut m = make();
+            m.on_action(Action::Activate, 0);
+            assert!(
+                !matches!(m.answered(answer.clone()), Flow::Detach(_)),
+                "{answer:?} ran a command"
+            );
+            assert!(!m.ran(), "{answer:?} marked the menu as having run");
+        }
+    }
+
+    /// An answer arriving when nothing was asked must not run the row the
+    /// cursor happens to be on.
+    #[test]
+    fn an_unexpected_answer_does_nothing() {
+        let mut m = menu();
+        assert!(matches!(m.answered(Some("yes".into())), Flow::Continue));
+        assert!(!m.ran());
     }
 
     /// Only enter acts. Every other key has to fall through, or a stray

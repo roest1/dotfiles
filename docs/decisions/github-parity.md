@@ -41,7 +41,7 @@ else. `h github` documents both and will need the `github` half rewritten.
 |---|---|---|
 | `branch-checkout` | ported | the branch menu's Checkout |
 | `branch-delete` | ported | the branch menu's Delete remote branch |
-| `branch-menu` | partial | `menu.rs` has 5 of 7 items; Effective rules and Set as default are missing |
+| `branch-menu` | partial | `menu.rs` has 6 of 7 — Set as default landed with text input, and Rename (which bash never had) with it. Only Effective rules is missing, and it is the same ruleset API as the dropped `rulesets` row |
 | `cancel` | ported | `x` |
 | `env-create` | todo |  |
 | `env-delete` | todo |  |

@@ -87,6 +87,28 @@ struct Frame {
     /// First pane line drawn, for when the pane has focus and more lines than
     /// fit.
     pane_top: usize,
+    /// What the list is narrowed to. Persistent per screen, like the focus and
+    /// the cursor, so coming back to a filtered list finds it as you left it.
+    filter: String,
+    /// The text field, when one has the keyboard.
+    edit: Option<Edit>,
+}
+
+/// A text field with the keyboard.
+struct Edit {
+    what: Asking,
+    text: String,
+    /// The cursor position to put back if this is abandoned.
+    was: usize,
+}
+
+enum Asking {
+    /// Narrowing the list. Every keystroke applies, so the list moves under
+    /// you as you type -- which is what fzf did and what makes it feel like
+    /// filtering rather than like a query box.
+    Filter,
+    /// A value the SCREEN asked for, with its prompt.
+    Screen(String),
 }
 
 /// Which region the keys are acting on.
@@ -161,6 +183,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             reticle: Reticle::new(0),
             focus: Focus::List,
             pane_top: 0,
+            filter: String::new(),
+            edit: None,
         })
         .collect();
     // An empty stack would index out of bounds on the first frame rather than
@@ -172,10 +196,11 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
     // are untouched until popped to, which is what keeps a seeded path free.
     let top = stack.len() - 1;
     let mut rows = stack[top].screen.rows();
-    let sel = start_sel(stack[top].screen.as_ref(), &rows);
+    let mut vis: Vec<usize> = (0..rows.len()).collect();
+    let sel = start_sel(stack[top].screen.as_ref(), &rows, &vis);
     stack[top].sel = sel;
     stack[top].reticle = Reticle::new(sel);
-    stack[top].screen.focus(sel);
+    stack[top].screen.focus(vis.get(sel).copied().unwrap_or(0));
     let mut last = Instant::now();
     let mut pane_dirty = true;
     let mut busy = false;
@@ -185,6 +210,16 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
     loop {
         let depth = stack.len();
         let frame = stack.last_mut().expect("stack is never empty");
+        // `frame.sel` is a POSITION in `vis`, never a row index. The screen is
+        // handed `vis[sel]`, which is ITS index -- the translation happens at
+        // this boundary and nowhere else, which is why no screen knows a
+        // filter exists and why every screen already written gained filtering
+        // without a line changing in it.
+        vis = crate::filter::visible(&rows, &frame.filter);
+        if frame.sel >= vis.len() {
+            frame.sel = vis.len().saturating_sub(1);
+        }
+        let cur = vis.get(frame.sel).copied().unwrap_or(0);
         let (cols, screen_rows) = Terminal::size()?;
         let full = matches!(frame.screen.split(), Split::Full);
         // `Full` gives the whole width to the list; there is no divider to
@@ -196,17 +231,45 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         // footer that still advertised `enter runs it` while the keys were
         // talking to the pane would be the kind of small lie that gets
         // believed.
-        let foot = match frame.focus {
-            Focus::List => frame.screen.footer(),
-            Focus::Tabs => "h/l pick a tab \u{b7} j into it \u{b7} enter takes you there".into(),
-            // The position, not the visible range: the range would need the
-            // pane height, which comes from the layout, which needs this
-            // string's line count. Circular for no gain.
-            Focus::Pane => format!(
+        let foot = match &frame.edit {
+            // The field IS the footer. A separate line for it would cost a row
+            // on every screen to serve the one moment something is being
+            // typed, and the footer is already where this program answers
+            // "what do the keys do now".
+            Some(e) => {
+                let label = match &e.what {
+                    Asking::Filter => "filter".to_string(),
+                    Asking::Screen(l) => l.clone(),
+                };
+                let hint = match &e.what {
+                    Asking::Filter if vis.is_empty() => "  (nothing matches)",
+                    Asking::Filter => "  \u{2191}\u{2193} move \u{b7} enter keep \u{b7} esc clear",
+                    Asking::Screen(_) => "  enter accept \u{b7} esc cancel",
+                };
+                format!("{label}: {}\u{2588}{hint}", e.text)
+            }
+            None if !frame.filter.is_empty() => format!(
+                // Said out loud, because a list that is quietly hiding rows is
+                // the worst thing a filter can do -- you look for something,
+                // it is not there, and nothing says why.
+                "{} \u{b7} filtering on \"{}\" \u{b7} / to change \u{b7} esc to clear",
+                frame.screen.footer(),
+                frame.filter
+            ),
+            None => match frame.focus {
+                Focus::List => frame.screen.footer(),
+                Focus::Tabs => {
+                    "h/l pick a tab \u{b7} j into it \u{b7} enter takes you there".into()
+                }
+                // The position, not the visible range: the range would need the
+                // pane height, which comes from the layout, which needs this
+                // string's line count. Circular for no gain.
+                Focus::Pane => format!(
                 "j/k scroll \u{b7} ctrl-d/u page \u{b7} h back to the list \u{b7} line {} of {}",
                 frame.pane_top + 1,
                 pane_lines
             ),
+            },
         };
         let geo = layout(screen_rows, tabs.is_some(), footer_lines(&foot));
         let list_h = geo.list_h;
@@ -226,11 +289,7 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             let pane = if full {
                 None
             } else {
-                Some(
-                    frame
-                        .screen
-                        .pane(frame.sel, cols.saturating_sub(left + 1), ph),
-                )
+                Some(frame.screen.pane(cur, cols.saturating_sub(left + 1), ph))
             };
             draw_frame(
                 &mut out,
@@ -267,6 +326,7 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         draw_rows(
             &mut out,
             &rows,
+            &vis,
             &View {
                 top: frame.top,
                 sel: frame.sel,
@@ -293,6 +353,13 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                 continue;
             }
         }
+        // While a field has the keyboard, bare letters are text. Set from the
+        // frame on every iteration rather than tracked alongside it, so a
+        // push, a pop, a detach or a tab switch cannot leave the keymap in the
+        // wrong mode -- which is the one failure here that would be silent and
+        // total: every single-key action firing while you tried to type.
+        keys.typing(frame.edit.is_some());
+
         let timeout = poll_timeout(frame.reticle.moving() || busy, wake);
         busy = false;
 
@@ -308,174 +375,293 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                     continue;
                 };
                 let before = frame.sel;
-                let len = rows.len();
-                match action {
-                    // At the root this leaves; anywhere else it goes back one
-                    // screen, which is what every other pane-and-list tool in
-                    // this repo trained your fingers to expect.
-                    Action::Quit => {
-                        if depth == 1 {
-                            return Ok(());
+                let len = vis.len();
+
+                // A field has the keyboard: everything but motion is text.
+                //
+                // An `if/else` rather than an early `continue`, which is how
+                // the first version was written and was wrong: `continue`
+                // skipped the bottom of the loop, so a `Flow::Push` or
+                // `Flow::Pop` returned by `answered` was silently dropped --
+                // a screen asking for a name and then opening something with
+                // it would have done nothing.
+                if frame.edit.is_some() {
+                    let mut done: Option<Option<String>> = None;
+                    {
+                        let edit = frame.edit.as_mut().expect("checked");
+                        match action {
+                            Action::Type(c) => edit.text.push(c),
+                            Action::Backspace => {
+                                edit.text.pop();
+                            }
+                            Action::Clear => edit.text.clear(),
+                            Action::Accept => done = Some(Some(edit.text.clone())),
+                            Action::Cancel => done = Some(None),
+                            Action::Quit => return Ok(()),
+                            _ => {}
                         }
-                        popped = true;
                     }
-                    // ── j: down, or out of the strip into the list ──
-                    Action::Down => match frame.focus {
-                        Focus::Tabs => {
-                            frame.focus = Focus::List;
-                            pane_dirty = true;
+                    // A filter applies on every keystroke, so the list moves
+                    // under you as you type -- which is what made fzf feel
+                    // like filtering rather than like a query box. A screen's
+                    // question does not exist until it is accepted.
+                    let filtering =
+                        matches!(frame.edit.as_ref().map(|e| &e.what), Some(Asking::Filter));
+                    let narrowed = if filtering {
+                        let next = frame
+                            .edit
+                            .as_ref()
+                            .map(|e| e.text.clone())
+                            .unwrap_or_default();
+                        let changed = next != frame.filter;
+                        frame.filter = next;
+                        changed
+                    } else {
+                        false
+                    };
+                    // Arrows move through the filtered list without leaving
+                    // the field: type a bit, arrow down, enter.
+                    vis = crate::filter::visible(&rows, &frame.filter);
+                    match action {
+                        Action::Down => frame.sel = seek(&rows, &vis, frame.sel, 1),
+                        Action::Up => frame.sel = seek(&rows, &vis, frame.sel, -1),
+                        _ => {}
+                    }
+                    if let Some(answer) = done {
+                        let edit = frame.edit.take().expect("checked");
+                        match edit.what {
+                            Asking::Filter => {
+                                if answer.is_none() {
+                                    // Abandoned: the list comes back whole and
+                                    // the cursor returns to the row it was on,
+                                    // which is why `was` is recorded at all.
+                                    frame.filter.clear();
+                                    frame.sel = edit.was;
+                                }
+                            }
+                            Asking::Screen(_) => match frame.screen.answered(answer) {
+                                Flow::Quit => return Ok(()),
+                                Flow::Pop => popped = depth > 1,
+                                Flow::Push(next) => pushed = Some(next),
+                                Flow::Detach(argv) => detach(term, &mut out, &argv)?,
+                                _ => {}
+                            },
                         }
-                        // Every motion lands on a SELECTABLE row. Spacers exist
-                        // to group things visually; a cursor that can rest in
-                        // one turns them into potholes.
-                        Focus::List => frame.sel = seek(&rows, frame.sel, 1),
-                        Focus::Pane => {
-                            frame.pane_top = (frame.pane_top + 1).min(pane_room);
-                            pane_dirty = true;
-                        }
-                    },
-                    // ── k: up, and off the top row into the strip ──
-                    Action::Up => match frame.focus {
-                        Focus::Tabs => {}
-                        Focus::List => {
-                            let next = seek(&rows, frame.sel, -1);
-                            if next == frame.sel && tabs.is_some() {
-                                // Already at the first selectable row, so `k`
-                                // had nothing to do here -- that is the door.
-                                frame.focus = Focus::Tabs;
+                        rows = frame.screen.rows();
+                        vis = crate::filter::visible(&rows, &frame.filter);
+                    }
+                    if narrowed {
+                        // Land on the match, not on the heading above it.
+                        frame.sel = crate::filter::first_leaf(&rows, &vis);
+                    }
+                    frame.sel = frame.sel.min(vis.len().saturating_sub(1));
+                    frame.sel = first_selectable(&rows, &vis, frame.sel, -1);
+                    pane_dirty = true;
+                } else {
+                    match action {
+                        // At the root this leaves; anywhere else it goes back one
+                        // screen, which is what every other pane-and-list tool in
+                        // this repo trained your fingers to expect.
+                        Action::Quit => {
+                            // A filter in force is cleared FIRST. Without this,
+                            // `esc` on a narrowed list throws away the screen you
+                            // were on -- a surprising amount to lose for a key
+                            // pressed meaning "show me everything again" -- and
+                            // the footer says it clears.
+                            if !frame.filter.is_empty() {
+                                frame.filter.clear();
+                                vis = crate::filter::visible(&rows, &frame.filter);
+                                frame.sel = first_selectable(&rows, &vis, frame.sel, -1);
+                                frame.reticle = Reticle::new(frame.sel);
                                 pane_dirty = true;
+                            } else if depth == 1 {
+                                return Ok(());
                             } else {
-                                frame.sel = next;
+                                popped = true;
                             }
                         }
-                        Focus::Pane => {
-                            frame.pane_top = frame.pane_top.saturating_sub(1);
-                            pane_dirty = true;
-                        }
-                    },
-                    Action::Top => match frame.focus {
-                        Focus::Pane => {
-                            frame.pane_top = 0;
-                            pane_dirty = true;
-                        }
-                        _ => {
+                        // ── j: down, or out of the strip into the list ──
+                        Action::Down => match frame.focus {
+                            Focus::Tabs => {
+                                frame.focus = Focus::List;
+                                pane_dirty = true;
+                            }
+                            // Every motion lands on a SELECTABLE row. Spacers exist
+                            // to group things visually; a cursor that can rest in
+                            // one turns them into potholes.
+                            Focus::List => frame.sel = seek(&rows, &vis, frame.sel, 1),
+                            Focus::Pane => {
+                                frame.pane_top = (frame.pane_top + 1).min(pane_room);
+                                pane_dirty = true;
+                            }
+                        },
+                        // ── k: up, and off the top row into the strip ──
+                        Action::Up => match frame.focus {
+                            Focus::Tabs => {}
+                            Focus::List => {
+                                let next = seek(&rows, &vis, frame.sel, -1);
+                                if next == frame.sel && tabs.is_some() {
+                                    // Already at the first selectable row, so `k`
+                                    // had nothing to do here -- that is the door.
+                                    frame.focus = Focus::Tabs;
+                                    pane_dirty = true;
+                                } else {
+                                    frame.sel = next;
+                                }
+                            }
+                            Focus::Pane => {
+                                frame.pane_top = frame.pane_top.saturating_sub(1);
+                                pane_dirty = true;
+                            }
+                        },
+                        Action::Top => match frame.focus {
+                            Focus::Pane => {
+                                frame.pane_top = 0;
+                                pane_dirty = true;
+                            }
+                            _ => {
+                                frame.focus = Focus::List;
+                                frame.sel = first_selectable(&rows, &vis, 0, 1);
+                            }
+                        },
+                        Action::Bottom => match frame.focus {
+                            Focus::Pane => {
+                                frame.pane_top = pane_room;
+                                pane_dirty = true;
+                            }
+                            _ => {
+                                frame.focus = Focus::List;
+                                frame.sel =
+                                    first_selectable(&rows, &vis, len.saturating_sub(1), -1);
+                            }
+                        },
+                        Action::PageDown => match frame.focus {
+                            Focus::Pane => {
+                                frame.pane_top = (frame.pane_top + list_h / 2).min(pane_room);
+                                pane_dirty = true;
+                            }
+                            _ => {
+                                let want = (frame.sel + list_h / 2).min(len.saturating_sub(1));
+                                frame.sel = first_selectable(&rows, &vis, want, -1);
+                            }
+                        },
+                        Action::PageUp => match frame.focus {
+                            Focus::Pane => {
+                                frame.pane_top = frame.pane_top.saturating_sub(list_h / 2);
+                                pane_dirty = true;
+                            }
+                            _ => {
+                                let want = frame.sel.saturating_sub(list_h / 2);
+                                frame.sel = first_selectable(&rows, &vis, want, 1);
+                            }
+                        },
+                        // ── h: collapse, or leftwards out of a region ──
+                        Action::Close if frame.focus == Focus::Pane => {
                             frame.focus = Focus::List;
-                            frame.sel = first_selectable(&rows, 0, 1);
-                        }
-                    },
-                    Action::Bottom => match frame.focus {
-                        Focus::Pane => {
-                            frame.pane_top = pane_room;
                             pane_dirty = true;
                         }
-                        _ => {
-                            frame.focus = Focus::List;
-                            frame.sel = first_selectable(&rows, len.saturating_sub(1), -1);
-                        }
-                    },
-                    Action::PageDown => match frame.focus {
-                        Focus::Pane => {
-                            frame.pane_top = (frame.pane_top + list_h / 2).min(pane_room);
-                            pane_dirty = true;
-                        }
-                        _ => {
-                            let want = (frame.sel + list_h / 2).min(len.saturating_sub(1));
-                            frame.sel = first_selectable(&rows, want, -1);
-                        }
-                    },
-                    Action::PageUp => match frame.focus {
-                        Focus::Pane => {
-                            frame.pane_top = frame.pane_top.saturating_sub(list_h / 2);
-                            pane_dirty = true;
-                        }
-                        _ => {
-                            let want = frame.sel.saturating_sub(list_h / 2);
-                            frame.sel = first_selectable(&rows, want, 1);
-                        }
-                    },
-                    // ── h: collapse, or leftwards out of a region ──
-                    Action::Close if frame.focus == Focus::Pane => {
-                        frame.focus = Focus::List;
-                        pane_dirty = true;
-                    }
-                    Action::Close if frame.focus == Focus::Tabs => {
-                        // In the strip, left and right ARE the tabs.
-                        if let Flow::Retarget = frame.screen.on_action(Action::PrevTab, frame.sel) {
-                            rows = frame.screen.rows();
-                            frame.sel = start_sel(frame.screen.as_ref(), &rows);
-                            frame.top = 0;
-                            frame.pane_top = 0;
-                            frame.reticle = Reticle::new(frame.sel);
-                            pane_dirty = true;
-                        }
-                    }
-                    Action::Open if frame.focus == Focus::Tabs => {
-                        if let Flow::Retarget = frame.screen.on_action(Action::NextTab, frame.sel) {
-                            rows = frame.screen.rows();
-                            frame.sel = start_sel(frame.screen.as_ref(), &rows);
-                            frame.top = 0;
-                            frame.pane_top = 0;
-                            frame.reticle = Reticle::new(frame.sel);
-                            pane_dirty = true;
-                        }
-                    }
-                    // Enter on the strip commits the tab and drops into it,
-                    // which is what a smart TV does and what the hand expects.
-                    Action::Activate if frame.focus == Focus::Tabs => {
-                        frame.focus = Focus::List;
-                        pane_dirty = true;
-                    }
-                    other => match frame.screen.on_action(other, frame.sel) {
-                        Flow::Quit => return Ok(()),
-                        Flow::Pop => popped = depth > 1,
-                        Flow::Push(next) => pushed = Some(next),
-                        Flow::Detach(argv) => {
-                            detach(term, &mut out, &argv)?;
-                            rows = frame.screen.rows();
-                            frame.sel = frame.sel.min(rows.len().saturating_sub(1));
-                            pane_dirty = true;
-                        }
-                        Flow::Dirty => {
-                            rows = frame.screen.rows();
-                            frame.sel = frame.sel.min(rows.len().saturating_sub(1));
-                            pane_dirty = true;
-                        }
-                        // Every row was replaced, so clamping the old index
-                        // would land the cursor somewhere arbitrary. The
-                        // screen is asked where to open, exactly as it is on
-                        // a push.
-                        Flow::Retarget => {
-                            rows = frame.screen.rows();
-                            frame.sel = start_sel(frame.screen.as_ref(), &rows);
-                            frame.top = 0;
-                            frame.reticle = Reticle::new(frame.sel);
-                            frame.screen.focus(frame.sel);
-                            pane_dirty = true;
-                        }
-                        // The screen did nothing with it. For `l` that is the
-                        // door to the pane.
-                        //
-                        // Whenever a pane EXISTS, not only when it overflows.
-                        // Gating on scrollability was the first attempt and it
-                        // reads as a dead key: on a run whose body happens to
-                        // fit, `l` silently did nothing, which is exactly the
-                        // "why won't it move" the directional model is supposed
-                        // to remove. The divider lights up and the footer
-                        // changes, so the move is visible even when there is
-                        // nothing to scroll once you are there.
-                        Flow::Continue => {
-                            if other == Action::Open && !full {
-                                frame.focus = Focus::Pane;
+                        Action::Close if frame.focus == Focus::Tabs => {
+                            // In the strip, left and right ARE the tabs.
+                            if let Flow::Retarget = frame.screen.on_action(Action::PrevTab, cur) {
+                                rows = frame.screen.rows();
+                                vis = crate::filter::visible(&rows, &frame.filter);
+                                frame.sel = start_sel(frame.screen.as_ref(), &rows, &vis);
+                                frame.top = 0;
+                                frame.pane_top = 0;
+                                frame.reticle = Reticle::new(frame.sel);
                                 pane_dirty = true;
                             }
                         }
-                    },
+                        Action::Open if frame.focus == Focus::Tabs => {
+                            if let Flow::Retarget = frame.screen.on_action(Action::NextTab, cur) {
+                                rows = frame.screen.rows();
+                                vis = crate::filter::visible(&rows, &frame.filter);
+                                frame.sel = start_sel(frame.screen.as_ref(), &rows, &vis);
+                                frame.top = 0;
+                                frame.pane_top = 0;
+                                frame.reticle = Reticle::new(frame.sel);
+                                pane_dirty = true;
+                            }
+                        }
+                        // Enter on the strip commits the tab and drops into it,
+                        // which is what a smart TV does and what the hand expects.
+                        Action::Activate if frame.focus == Focus::Tabs => {
+                            frame.focus = Focus::List;
+                            pane_dirty = true;
+                        }
+                        // `/` narrows the list. Framework-owned, so it works on
+                        // every screen including the ones written before it
+                        // existed.
+                        Action::Find => {
+                            frame.edit = Some(Edit {
+                                what: Asking::Filter,
+                                text: frame.filter.clone(),
+                                was: frame.sel,
+                            });
+                            frame.focus = Focus::List;
+                            pane_dirty = true;
+                        }
+                        other => match frame.screen.on_action(other, cur) {
+                            Flow::Quit => return Ok(()),
+                            Flow::Pop => popped = depth > 1,
+                            Flow::Push(next) => pushed = Some(next),
+                            Flow::Detach(argv) => {
+                                detach(term, &mut out, &argv)?;
+                                rows = frame.screen.rows();
+                                frame.sel = frame.sel.min(rows.len().saturating_sub(1));
+                                pane_dirty = true;
+                            }
+                            Flow::Dirty => {
+                                rows = frame.screen.rows();
+                                frame.sel = frame.sel.min(rows.len().saturating_sub(1));
+                                pane_dirty = true;
+                            }
+                            // Every row was replaced, so clamping the old index
+                            // would land the cursor somewhere arbitrary. The
+                            // screen is asked where to open, exactly as it is on
+                            // a push.
+                            Flow::Ask { label, initial } => {
+                                frame.edit = Some(Edit {
+                                    what: Asking::Screen(label),
+                                    text: initial,
+                                    was: frame.sel,
+                                });
+                                pane_dirty = true;
+                            }
+                            Flow::Retarget => {
+                                rows = frame.screen.rows();
+                                vis = crate::filter::visible(&rows, &frame.filter);
+                                frame.sel = start_sel(frame.screen.as_ref(), &rows, &vis);
+                                frame.top = 0;
+                                frame.reticle = Reticle::new(frame.sel);
+                                frame.screen.focus(vis.get(frame.sel).copied().unwrap_or(0));
+                                pane_dirty = true;
+                            }
+                            // The screen did nothing with it. For `l` that is the
+                            // door to the pane.
+                            //
+                            // Whenever a pane EXISTS, not only when it overflows.
+                            // Gating on scrollability was the first attempt and it
+                            // reads as a dead key: on a run whose body happens to
+                            // fit, `l` silently did nothing, which is exactly the
+                            // "why won't it move" the directional model is supposed
+                            // to remove. The divider lights up and the footer
+                            // changes, so the move is visible even when there is
+                            // nothing to scroll once you are there.
+                            Flow::Continue => {
+                                if other == Action::Open && !full {
+                                    frame.focus = Focus::Pane;
+                                    pane_dirty = true;
+                                }
+                            }
+                        },
+                    }
                 }
                 if frame.sel != before {
                     frame.reticle.aim(frame.sel);
                     // Separate from `pane` on purpose: a row you skim past
                     // still gets prefetched, which is the whole point.
-                    frame.screen.focus(frame.sel);
+                    frame.screen.focus(vis.get(frame.sel).copied().unwrap_or(0));
                     pane_dirty = true;
                 }
             }
@@ -493,8 +679,9 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             // and then silently wrong for the first screen that did: `github`
             // drilling into a failed run opened on the run's first job instead
             // of on the step that failed.
-            let sel = start_sel(next.as_ref(), &rows);
-            next.focus(sel);
+            let nvis: Vec<usize> = (0..rows.len()).collect();
+            let sel = start_sel(next.as_ref(), &rows, &nvis);
+            next.focus(nvis.get(sel).copied().unwrap_or(0));
             stack.push(Frame {
                 screen: next,
                 sel,
@@ -502,6 +689,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                 reticle: Reticle::new(sel),
                 focus: Focus::List,
                 pane_top: 0,
+                filter: String::new(),
+                edit: None,
             });
             pane_dirty = true;
         } else if popped {
@@ -652,6 +841,7 @@ struct View<'a> {
 fn draw_rows(
     out: &mut impl Write,
     rows: &[Row],
+    vis: &[usize],
     view: &View,
     left: u16,
     y0: u16,
@@ -665,7 +855,7 @@ fn draw_rows(
     for i in 0..height {
         let y = y0 + i as u16;
         queue!(out, cursor::MoveTo(0, y), style::Print(&blank))?;
-        let Some(row) = rows.get(top + i) else {
+        let Some(row) = vis.get(top + i).map(|&r| &rows[r]) else {
             continue;
         };
         if !row.selectable && row.label.is_empty() {
@@ -832,32 +1022,44 @@ fn poll_timeout(frame: bool, wake: Option<Duration>) -> Duration {
 /// put the cursor past the end; and a spacer is a legal index that navigation
 /// otherwise never lands on, so landing there once at startup would be the one
 /// place a blank row can hold the cursor.
-fn start_sel(screen: &dyn Screen, rows: &[Row]) -> usize {
-    if rows.is_empty() {
+/// Where a screen opens, as a POSITION in the visible list.
+///
+/// The screen answers in its own row indices -- it knows nothing about a
+/// filter -- so the answer is translated here. A row the filter has hidden
+/// falls to the nearest visible one rather than nowhere.
+fn start_sel(screen: &dyn Screen, rows: &[Row], vis: &[usize]) -> usize {
+    if vis.is_empty() {
         return 0;
     }
-    let want = screen.initial_sel().min(rows.len() - 1);
-    first_selectable(rows, want, 1)
+    let want_row = screen.initial_sel();
+    let at = vis
+        .iter()
+        .position(|&r| r >= want_row)
+        .unwrap_or(vis.len() - 1);
+    first_selectable(rows, vis, at, 1)
 }
 
-/// The nearest selectable row at or after `from`, searching in `dir`. Falls
-/// back to `from` so a list that is entirely spacers cannot hang the caller.
-fn first_selectable(rows: &[Row], from: usize, dir: isize) -> usize {
+/// The nearest selectable POSITION at or after `from`, searching in `dir`.
+///
+/// Falls back to `from` so a list that is entirely spacers -- or entirely
+/// group headings, which a filter can produce -- cannot hang the caller.
+fn first_selectable(rows: &[Row], vis: &[usize], from: usize, dir: isize) -> usize {
     let mut i = from as isize;
-    while i >= 0 && (i as usize) < rows.len() {
-        if rows[i as usize].selectable {
+    while i >= 0 && (i as usize) < vis.len() {
+        if rows[vis[i as usize]].selectable {
             return i as usize;
         }
         i += dir;
     }
-    from.min(rows.len().saturating_sub(1))
+    from.min(vis.len().saturating_sub(1))
 }
 
-/// One step in `dir`, skipping spacers, staying put at the ends.
-fn seek(rows: &[Row], from: usize, dir: isize) -> usize {
+/// One step in `dir` through the VISIBLE list, skipping spacers, staying put
+/// at the ends.
+fn seek(rows: &[Row], vis: &[usize], from: usize, dir: isize) -> usize {
     let mut i = from as isize + dir;
-    while i >= 0 && (i as usize) < rows.len() {
-        if rows[i as usize].selectable {
+    while i >= 0 && (i as usize) < vis.len() {
+        if rows[vis[i as usize]].selectable {
             return i as usize;
         }
         i += dir;
@@ -1072,18 +1274,20 @@ mod tests {
     #[test]
     fn motion_never_lands_on_a_spacer() {
         let rows = list();
-        assert_eq!(seek(&rows, 0, 1), 2);
-        assert_eq!(seek(&rows, 2, 1), 4);
-        assert_eq!(seek(&rows, 4, -1), 2);
-        assert_eq!(seek(&rows, 2, -1), 0);
+        let all: Vec<usize> = (0..rows.len()).collect();
+        assert_eq!(seek(&rows, &all, 0, 1), 2);
+        assert_eq!(seek(&rows, &all, 2, 1), 4);
+        assert_eq!(seek(&rows, &all, 4, -1), 2);
+        assert_eq!(seek(&rows, &all, 2, -1), 0);
     }
 
     /// At the ends, staying put beats wrapping or landing on a blank.
     #[test]
     fn motion_stops_at_the_ends() {
         let rows = list();
-        assert_eq!(seek(&rows, 0, -1), 0);
-        assert_eq!(seek(&rows, 4, 1), 4);
+        let all: Vec<usize> = (0..rows.len()).collect();
+        assert_eq!(seek(&rows, &all, 0, -1), 0);
+        assert_eq!(seek(&rows, &all, 4, 1), 4);
     }
 
     /// G aims at the last row, which is not necessarily a selectable one.
@@ -1091,8 +1295,9 @@ mod tests {
     fn ends_seek_backwards_to_something_selectable() {
         let mut rows = list();
         rows.push(Row::spacer());
-        assert_eq!(first_selectable(&rows, rows.len() - 1, -1), 4);
-        assert_eq!(first_selectable(&rows, 1, 1), 2);
+        let all: Vec<usize> = (0..rows.len()).collect();
+        assert_eq!(first_selectable(&rows, &all, rows.len() - 1, -1), 4);
+        assert_eq!(first_selectable(&rows, &all, 1, 1), 2);
     }
 
     /// The left column has to leave a usable pane on a small terminal and stop
