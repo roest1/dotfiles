@@ -272,7 +272,7 @@ impl Screen for OrgList {
 
     fn on_action(&mut self, action: Action, sel: usize) -> Flow {
         match action {
-            Action::Activate | Action::Open => match self.orgs.get(sel) {
+            Action::Activate => match self.orgs.get(sel) {
                 Some(o) => Flow::Push(Box::new(org_screen(Arc::clone(&self.fetch), &o.login))),
                 None => Flow::Continue,
             },
@@ -299,14 +299,17 @@ pub fn org_screen(fetch: Arc<Fetcher>, login: &str) -> Host {
         Some(login.to_string()),
         vec![
             (
-                "Repos".into(),
+                "\u{1f4e6} Repos".into(),
                 Box::new(OrgPane::repos(Arc::clone(&fetch), login)) as Box<dyn Screen>,
             ),
             (
-                "Members".into(),
+                "\u{1f465} Members".into(),
                 Box::new(OrgPane::members(Arc::clone(&fetch), login)),
             ),
-            ("Teams".into(), Box::new(OrgPane::teams(fetch, login))),
+            (
+                "\u{1f3f7} Teams".into(),
+                Box::new(OrgPane::teams(fetch, login)),
+            ),
         ],
     )
 }

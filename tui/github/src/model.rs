@@ -129,22 +129,31 @@ impl Verdict {
         !matches!(self, Self::Running | Self::Queued)
     }
 
-    /// The short word for `Row::badge`, with its colour index.
+    /// Glyph AND word, with its colour index.
     ///
-    /// Words rather than the emoji the fzf list used. Not a matter of taste:
-    /// the badge is right-aligned into a fixed grid, and an emoji is
-    /// double-width in some terminals and single in others, so a column of them
-    /// does not line up anywhere reliably. The pane is free prose and keeps
-    /// them.
+    /// The glyph is back. It was dropped because an emoji is two cells where a
+    /// `char` is one, so it shifted every column after it -- but that was an
+    /// arithmetic bug, not a reason to lose the one thing in a dense list you
+    /// can find without reading. `reticle::width` measures cells properly now,
+    /// and a screen building a table pads with `width::rpad`.
+    ///
+    /// The WORD stays beside it, because several of these are not guessable
+    /// from the picture: nobody reads a white circle as "neither passed nor
+    /// failed", and a clock and an hourglass are the same thing to anyone who
+    /// has not been told which is which.
     pub fn badge(self) -> (&'static str, u8) {
         match self {
-            Self::Passed => ("ok", idx::GRN),
-            Self::Failed => ("fail", idx::RED),
-            Self::Running => ("run", idx::YEL),
-            Self::Queued => ("queued", idx::YEL),
-            Self::Cancelled => ("cancel", idx::GRY),
-            Self::Skipped => ("skip", idx::DIM),
-            Self::Other => ("?", idx::GRY),
+            Self::Passed => ("\u{2705} ok", idx::GRN),
+            Self::Failed => ("\u{274c} fail", idx::RED),
+            Self::Running => ("\u{23f3} run", idx::YEL),
+            Self::Queued => ("\u{1f552} queued", idx::YEL),
+            Self::Cancelled => ("\u{1f6ab} cancel", idx::GRY),
+            // `\u{23ed}` would read better, and is NARROW -- measured, not
+            // assumed. It would still line up, because the padding is in
+            // cells, but a column of two-cell glyphs with one one-cell hole in
+            // it looks like a mistake. `\u{23e9}` is wide and close enough.
+            Self::Skipped => ("\u{23e9} skip", idx::DIM),
+            Self::Other => ("\u{26aa} other", idx::GRY),
         }
     }
 
@@ -273,6 +282,38 @@ mod tests {
             Verdict::of(Some("completed"), Some("skipped")),
             Verdict::Skipped
         );
+    }
+
+    /// Every badge is glyph + word, and the glyph is two cells. A table pads
+    /// these into a column, so one that measured wrong would shift every
+    /// column after it -- which is what `reticle::width` exists to prevent.
+    #[test]
+    fn every_badge_carries_a_glyph_and_a_word() {
+        for v in [
+            Verdict::Passed,
+            Verdict::Failed,
+            Verdict::Running,
+            Verdict::Queued,
+            Verdict::Cancelled,
+            Verdict::Skipped,
+            Verdict::Other,
+        ] {
+            let (text, _) = v.badge();
+            let mut chars = text.chars();
+            let glyph = chars.next().expect("a glyph");
+            assert!(!glyph.is_ascii(), "{text:?} has no glyph");
+            let rest = chars.as_str();
+            assert!(rest.starts_with(' '), "{text:?} has no word");
+            assert!(rest.trim().len() >= 2, "{text:?} word too short");
+            // The invariant that actually matters: padded into a table column,
+            // every badge occupies exactly that many CELLS -- whatever mix of
+            // one- and two-cell glyphs they use.
+            assert_eq!(
+                reticle::width::width(&reticle::width::rpad(text, 9)),
+                9,
+                "{text:?} does not pad to nine cells"
+            );
+        }
     }
 
     /// The two directions that must not be guessed wrong. A conclusion GitHub

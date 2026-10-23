@@ -42,7 +42,8 @@ pins that.
 - `reticle/` — the framework. `term` (raw mode, alt screen, restore-on-panic),
   `nav` (the keymap), `reticle` (the animated brackets), `screen` (what a
   screen provides), `host` (a screen that is several screens — the tab strip's
-  other half), `app` (the loop), `image` (inline images).
+  other half), `width` (how many CELLS a string occupies), `app` (the loop),
+  `image` (inline images).
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
   only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
@@ -223,6 +224,62 @@ pins that.
   target. `console::tests::walk_agrees` asserts every selectable index resolves
   to the row actually drawn at it, in all three shapes (following, pinned,
   section open). Do not add a conditional row without extending it.
+
+- **hjkl moves between REGIONS, not just within the list.** `Tab` used to be
+  the only way to reach the strip, and a key whose whole job is changing what
+  the other keys mean is a mode — the thing the nav contract exists to avoid.
+  Riley's word for the fix was a smart TV, and it is the right model: the EDGE
+  of a region is the door to the next one.
+
+  `k` on the first row goes to the strip; `h`/`l` there change tab and `j`
+  drops back in. `l` on a row with nothing to expand goes right into the pane,
+  where `j`/`k` scroll it and `h` comes back.
+
+  **The rule that keeps the screens out of it: a direction acts within the
+  region, and when it cannot, focus moves instead.** For `h`/`l` that is read
+  straight off `Flow::Continue`, which already meant "nothing happened" — no
+  screen had to change to take part.
+
+  Two things this forced, both of which were wrong before and invisible:
+
+  **`Action::Open` is not a synonym for `Activate`.** The github screens mapped
+  `Activate | Open` together, so `l` on a run drilled into its jobs and the
+  pane beside it could never be reached. `l` now only ever expands or moves
+  right; `enter` does the thing. `Menu` takes `Activate` alone, because a
+  second key that runs a delete is the one place an extra way to act is a cost.
+
+  **Focus enters the pane whenever one EXISTS**, not only when it overflows.
+  Gating on scrollability was the first attempt and it reads as a dead key: on
+  a run whose body happens to fit, `l` silently did nothing — exactly the "why
+  won't it move" the model is meant to remove. The divider lights up and the
+  footer changes, so the move is visible either way.
+
+  Only the focused region wears the reticle brackets, and each region states
+  its OWN keys in the footer — the screen speaks for the list alone, since a
+  footer still advertising `enter runs it` while the keys were talking to the
+  pane is the kind of small lie that gets believed.
+
+- **`reticle::width` measures CELLS, and the emoji ban it replaced was a bug
+  fix pointed the wrong way.** Emoji were kept out of every fixed-width column
+  because `✅` is one `char` and TWO cells, so a column of them drifted. That
+  was arithmetic, not a reason to lose the one thing in a dense list you can
+  find without reading — so the layout counts cells now and the glyphs are
+  back: `✅ ok` / `❌ fail` badges, a 🔒 on a protected branch, and a glyph on
+  every tab.
+
+  `width()` skips ANSI escapes (characters in the string, nothing on screen),
+  returns 0 for combining marks and variation selectors, and 2 for the
+  emoji-presentation ranges. The ranges are written out rather than
+  approximated because `↑` (2191) and `⭐` (2B50) are NEIGHBOURS of each other's
+  blocks and are one and two cells respectively — an approximation that swept
+  up a whole block would break the branch table's arrows. **Measured, not
+  assumed: `⏭` is NARROW** (so the skip badge uses `⏩`), which is why the bash
+  version wrote `"⏭ "` with a trailing space.
+
+  **This confusion has now bitten three times in one session** — twice in a
+  test and once in the pty harness — always the same way: `str::find` returns
+  BYTES, `chars().count()` returns CHARACTERS, and neither is what the terminal
+  does. If you are asserting alignment, assert `width::width`.
 
 - **`Screen::split()` picks the layout, per screen.** `ListPane` (the default)
   or `Full`. The shapes genuinely differ: a workflow run is a short list with a

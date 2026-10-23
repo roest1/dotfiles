@@ -241,9 +241,14 @@ impl Root {
                     crate::branches::Branches::open(&slug, &repo.path, actions.fetcher());
                 Flow::Push(Box::new(reticle::Host::new(
                     Some(slug),
+                    // The same glyphs the fzf screens used as border labels,
+                    // so a repo reads the way it always did.
                     vec![
-                        ("Branches".into(), Box::new(branches) as Box<dyn Screen>),
-                        ("Actions".into(), Box::new(actions)),
+                        (
+                            "\u{1f33f} Branches".into(),
+                            Box::new(branches) as Box<dyn Screen>,
+                        ),
+                        ("\u{1f680} Actions".into(), Box::new(actions)),
                     ],
                 )))
             }
@@ -405,7 +410,10 @@ impl Screen for Root {
             // PRs and Branches land, this becomes the repo screen with Actions
             // as its first row, and `app::run_stack` already takes the deeper
             // seeded stack that implies.
-            (Action::Activate | Action::Open, At::Repo(i)) => self.open_repo(i),
+            // `Activate` only. `l` on a repo falls through to the pane, which
+            // is what makes hjkl work as directions rather than as a second
+            // enter -- see `Action::Open`.
+            (Action::Activate, At::Repo(i)) => self.open_repo(i),
             // `o` keeps opening the browser, the way ctrl-o does in every fzf
             // screen -- the key that leaves the terminal is the same key
             // everywhere.

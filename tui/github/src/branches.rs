@@ -404,13 +404,13 @@ impl Branches {
         let keep = |v: Vec<usize>| !v.is_empty();
         let mut groups: Vec<(Group, &'static str, Vec<usize>)> = Vec::new();
         if keep(d.clone()) {
-            groups.push((Group::Default, "default", d));
+            groups.push((Group::Default, "\u{2b50} default", d));
         }
         if keep(mine.clone()) {
-            groups.push((Group::Mine, "your branches", mine));
+            groups.push((Group::Mine, "\u{1f331} your branches", mine));
         }
         if keep(all.clone()) {
-            groups.push((Group::All, "all branches", all));
+            groups.push((Group::All, "\u{1f33f} all branches", all));
         }
         // Open state follows the group COUNT, so a group appearing after the
         // API answers does not shift which ones were collapsed.
@@ -464,23 +464,24 @@ impl Branches {
         // Two fixed cells before the name, so every name starts in the same
         // column whether or not it is marked.
         //
-        // NO EMOJI here, which is the design doc's one unmet detail: it asks
-        // for a lock glyph on protected branches, and a lock is `U+1F512` --
-        // East Asian Wide, so two cells in wezterm and one in terminals that
-        // disagree. In a column whose entire job is being fixed-width that is
-        // the bug this crate already refuses in `Verdict::badge`. So protection
-        // moved to a text column on the right, where it reads as a word and
-        // lines up everywhere.
+        // The lock is back, which is the design doc's detail an earlier version
+        // of this could not meet. `U+1F512` is East Asian Wide -- two cells
+        // where `\u{2605}` is one -- and padding by character count put them in
+        // different columns. `width::pad` measures CELLS, so the flag is
+        // exactly two wide whatever is in it.
         let here = if self.is_current(&b.name) {
             "\u{25cf}"
         } else {
             " "
         };
         let flag = if self.is_default(&b.name) {
-            "\u{2605}"
+            "\u{2b50}"
+        } else if b.protected {
+            "\u{1f512}"
         } else {
-            " "
+            ""
         };
+        let flag = reticle::width::pad(flag, 2);
         let mut row = Row::leaf(format!("{here}{flag} {}", b.name));
         row.depth = 0;
 
@@ -518,21 +519,17 @@ impl Branches {
         };
         row = row.badged(ab, ab_colour);
 
+        // Padded in CELLS. `{:>9}` counts characters, so every checked row
+        // would come out one column narrower than the blank ones -- the exact
+        // bug `reticle::width` was written for.
         let (check, check_colour) = match self.checks.get(&b.name) {
             Some(v) => {
                 let (t, c) = v.badge();
-                (format!("{t:>6}"), c)
+                (reticle::width::rpad(t, 9), c)
             }
-            None => (" ".repeat(6), idx::DIM),
+            None => (" ".repeat(9), idx::DIM),
         };
         row = row.badged(check, check_colour);
-
-        let (prot, prot_colour) = if b.protected {
-            ("prot".to_string(), idx::YEL)
-        } else {
-            (" ".repeat(4), idx::DIM)
-        };
-        row = row.badged(prot, prot_colour);
 
         let (pr, pr_colour) = match self.prs.get(&b.name) {
             Some((n, draft)) => (
@@ -743,7 +740,8 @@ impl Screen for Branches {
             }
             // The three-dots. Enter on a branch opens everything you can do to
             // it, named, rather than hiding it behind keys you have to be told.
-            (Action::Activate | Action::Open, At::Branch(..)) => {
+            // `Activate` only -- `l` is a direction.
+            (Action::Activate, At::Branch(..)) => {
                 let Some(menu) = self.branch_at(sel).map(|b| self.menu_for(b)) else {
                     return Flow::Continue;
                 };
@@ -778,7 +776,7 @@ impl Screen for Branches {
 
     fn footer(&self) -> String {
         let legend = format!(
-            "{DIM}\u{25cf} here  \u{2605} default  prot = protected  \u{2191}ahead \u{2193}behind the default{OFF}"
+            "{DIM}\u{25cf} here  \u{2b50} default  \u{1f512} protected  \u{2191}ahead \u{2193}behind the default{OFF}"
         );
         match self.at(self.sel) {
             At::Head(_) => format!("enter open/close \u{b7} f fetch \u{b7} r refresh\n{legend}"),
@@ -846,7 +844,11 @@ mod tests {
     #[test]
     fn it_groups_default_yours_and_all() {
         let b = screen();
-        let names: Vec<&str> = b.groups.iter().map(|(_, n, _)| *n).collect();
+        let names: Vec<String> = b
+            .groups
+            .iter()
+            .map(|(_, n, _)| n.split_whitespace().skip(1).collect::<Vec<_>>().join(" "))
+            .collect();
         assert_eq!(names, vec!["default", "your branches", "all branches"]);
         assert_eq!(b.groups[0].2.len(), 1, "default is alone");
         // Both of mine, despite the two different author NAMES.
@@ -933,32 +935,26 @@ mod tests {
         let mut b = screen();
         b.open = vec![true, true, true];
         let rows = b.rows();
-        let main = rows
-            .iter()
-            .find(|r| r.label.contains("main"))
-            .expect("main");
-        let z = rows
-            .iter()
-            .find(|r| r.label.contains("chore/z"))
-            .expect("z");
-        // Counted in CHARACTERS, not bytes. `str::find` returns a byte offset
-        // and `\u{2605}` is three bytes, so the byte version of this failed on
-        // a row that was perfectly aligned -- and would have passed on a broken
-        // one whose byte counts happened to cancel out.
-        let prefix = |label: &str, name: &str| -> usize {
-            let at = label.find(name).expect("name in label");
-            label[..at].chars().count()
-        };
-        assert_eq!(prefix(&main.label, "main"), prefix(&z.label, "chore"));
-
-        // And the real bug this test exists for: a marker outside the Basic
-        // Multilingual Plane is an emoji, which is TWO cells wide where
-        // `\u{2605}` is one -- so the column breaks on screen while every byte
-        // and character count still agrees.
-        for r in &rows {
-            for c in r.label.chars().take(2) {
-                assert!((c as u32) < 0x1_0000, "wide marker {c:?} in {:?}", r.label);
+        // Counted in CELLS. This assertion has now been wrong twice in two
+        // different ways, which is why it is written out rather than inlined:
+        // `str::find` returns a BYTE offset and `\u{2b50}` is four bytes, and
+        // `chars().count()` returns CHARACTERS where a star is one char but
+        // two cells. Both versions failed on a perfectly aligned row, and both
+        // would have passed on a broken one whose counts happened to cancel.
+        // Only cells describe what the terminal does.
+        const MARKS: [char; 4] = [' ', '\u{25cf}', '\u{2b50}', '\u{1f512}'];
+        for (i, r) in rows.iter().enumerate() {
+            if !matches!(b.at(i), At::Branch(..)) {
+                continue;
             }
+            let marks: String = r.label.chars().take_while(|c| MARKS.contains(c)).collect();
+            assert_eq!(
+                reticle::width::width(&marks),
+                4,
+                "marker prefix of {:?} is {} cells, so its name is in the wrong column",
+                r.label,
+                reticle::width::width(&marks)
+            );
         }
     }
 

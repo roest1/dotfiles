@@ -418,6 +418,57 @@ on the right. `★` (default) and `●` (checked out) stay — both single-width
 both already used here. If a lock is wanted back it is one line, and the
 footer legend carries the meaning either way.
 
+## Directional navigation, and the emoji coming back (2026-10-22)
+
+Both from using it. Both were my calls to get wrong and Riley's to catch.
+
+**`Tab` was a mode.** It was the only way to reach the strip, and a key whose
+whole job is changing what the other keys mean is exactly what the nav contract
+exists to avoid. Riley's word for the fix was a smart TV, which is the right
+model: hjkl moves around the screen and the EDGE of a region is the door to the
+next one. `k` on the first row reaches the strip, `h`/`l` there change tab, `j`
+drops back in; `l` on a row with nothing to expand goes right into the pane,
+`j`/`k` scroll it, `h` returns.
+
+The rule that keeps the screens out of it: a direction acts within the focused
+region, and when it cannot, focus moves instead. For `h`/`l` that is read off
+`Flow::Continue`, which already meant "nothing happened" — so no screen had to
+change to take part. `Tab` still works; it is no longer the only way.
+
+It forced one correction that was wrong before and invisible: **`Action::Open`
+was being treated as a synonym for `Activate`**, so `l` on a run drilled into
+its jobs and the pane beside it could not be reached at all. `l` now only
+expands or moves right.
+
+And one judgement call: focus enters the pane whenever one EXISTS, not only
+when it has more lines than fit. Gating on scrollability reads as a dead key —
+on a run whose body happens to fit, `l` silently did nothing, which is the "why
+won't it move" the whole model is meant to remove.
+
+**The emoji ban was a bug fix pointed the wrong way.** Glyphs were dropped from
+badges and markers because `✅` is one `char` and two cells, so columns of them
+drifted. That is arithmetic. The glyphs carry colour and meaning a word does
+not — which is why the fzf implementation used them — so the right answer was
+to measure properly, which is `reticle::width`.
+
+Back now: `✅ ok` / `❌ fail` status badges, a 🔒 on a protected branch next to
+its name (the design doc detail an earlier version could not meet), ⭐/🌱/🌿 on
+the branch groups, and a glyph on every tab — the strip being where they earn
+the most, since it is what you look at to navigate. The WORD stays beside the
+status glyph, because a white circle does not read as "neither passed nor
+failed".
+
+Not emoji'd: org rows, member rows, repo rows, menu items. There, they would be
+noise rather than signal.
+
+Measured rather than assumed along the way: **`⏭` is NARROW** where every other
+status glyph is wide, which is why the bash version wrote it as `"⏭ "` with a
+trailing space; the skip badge uses `⏩` instead. And the character-versus-cell
+confusion bit **three times in one session** — twice in a test asserting
+alignment and once in the pty harness used to verify it — always the same way:
+`str::find` returns bytes, `chars().count()` returns characters, and neither is
+what the terminal does.
+
 ## Still open
 
 - **Filtering, and it is now the blocker rather than a nicety.** fzf gives
@@ -450,11 +501,10 @@ footer legend carries the meaning either way.
   safe by construction and deliberately weaker than a dialog. It is one
   screen's worth, not the answer: a shared confirm WITH text entry still
   belongs in `reticle` before five screens each grow their own.
-- **A scrolling pane.** Everything the Actions screen shows is budgeted to fit
-  because `draw_pane` cuts silently, and `L` pages what did not. That is a
-  good answer for a log and a thin one for a long PR description. Worth doing
-  as a `reticle` feature when a screen needs the middle of something rather
-  than its end.
+- ~~A scrolling pane.~~ Done, as a consequence of directional focus: `l` moves
+  into the pane and `j`/`k` scroll it. The render-time tail budget stays, so
+  the FIRST screenful is still the useful end of a failure — scrolling is for
+  the rest, and `L` still pages the whole thing in `less`.
 - **Mouse.** fzf can bind mouse events. It cuts against the keyboard
   contract, so it should be a deliberate decision rather than accretion.
 - **Demos.** `vhs` is the modern single-binary option; worth a recording now

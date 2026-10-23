@@ -81,6 +81,40 @@ struct Frame {
     sel: usize,
     top: usize,
     reticle: Reticle,
+    /// Which region hjkl is acting on. Travels with the screen, so coming back
+    /// to one lands you where you were in every sense.
+    focus: Focus,
+    /// First pane line drawn, for when the pane has focus and more lines than
+    /// fit.
+    pane_top: usize,
+}
+
+/// Which region the keys are acting on.
+///
+/// ─── Why directional focus instead of a key per region ──────────────────
+///
+/// `Tab` used to be the only way to reach the strip, and a key that exists
+/// solely to change what the other keys mean is a mode -- the thing this nav
+/// contract is built to avoid. Riley's word for the fix was a smart TV, and it
+/// is the right model: hjkl moves you around the screen, and the EDGE of a
+/// region is the door to the next one.
+///
+/// The rule that makes it work without the screens knowing: a direction acts
+/// within the focused region, and when it cannot -- the cursor is at the top
+/// row, the tree node has nothing to collapse -- focus moves instead. For
+/// `h`/`l` that is read straight off `Flow::Continue`, which already means
+/// "nothing happened"; no screen had to change to take part.
+///
+/// `Tab` and shift-`Tab` still work. They are no longer the only way.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Focus {
+    /// The header strip. `h`/`l` change tab, `j` drops into the list.
+    Tabs,
+    /// The row list. The default, and where everything used to happen.
+    List,
+    /// The right-hand pane, when it has more to say than fits. `j`/`k`
+    /// scroll it, `h` goes back to the list.
+    Pane,
 }
 
 /// Run `argv` with the terminal handed back, then take it again.
@@ -125,6 +159,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             sel: 0,
             top: 0,
             reticle: Reticle::new(0),
+            focus: Focus::List,
+            pane_top: 0,
         })
         .collect();
     // An empty stack would index out of bounds on the first frame rather than
@@ -143,6 +179,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
     let mut last = Instant::now();
     let mut pane_dirty = true;
     let mut busy = false;
+    let mut pane_lines = 0usize;
+    let mut pane_room = 0usize;
 
     loop {
         let depth = stack.len();
@@ -153,7 +191,23 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         // leave room for and no pane to leave room beside.
         let left = if full { cols } else { left_width(cols) };
         let tabs = frame.screen.tabs();
-        let foot = frame.screen.footer();
+        // Each region says what ITS keys do. The screen only speaks for the
+        // list, because that is the only region whose contents it owns -- and a
+        // footer that still advertised `enter runs it` while the keys were
+        // talking to the pane would be the kind of small lie that gets
+        // believed.
+        let foot = match frame.focus {
+            Focus::List => frame.screen.footer(),
+            Focus::Tabs => "h/l pick a tab \u{b7} j into it \u{b7} enter takes you there".into(),
+            // The position, not the visible range: the range would need the
+            // pane height, which comes from the layout, which needs this
+            // string's line count. Circular for no gain.
+            Focus::Pane => format!(
+                "j/k scroll \u{b7} ctrl-d/u page \u{b7} h back to the list \u{b7} line {} of {}",
+                frame.pane_top + 1,
+                pane_lines
+            ),
+        };
         let geo = layout(screen_rows, tabs.is_some(), footer_lines(&foot));
         let list_h = geo.list_h;
 
@@ -181,12 +235,22 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             draw_frame(
                 &mut out,
                 frame.screen.as_mut(),
-                tabs.as_ref(),
-                cols,
-                screen_rows,
-                if full { None } else { Some(left) },
-                &geo,
+                &Chrome {
+                    tabs: tabs.as_ref(),
+                    focus: frame.focus,
+                    cols,
+                    rows: screen_rows,
+                    left: if full { None } else { Some(left) },
+                    geo: &geo,
+                },
             )?;
+            pane_lines = pane.as_ref().map(|p| p.lines.len()).unwrap_or(0);
+            // How far the pane can scroll: what it holds, less what fits. Zero
+            // means focus has no business going in there.
+            pane_room = pane_lines.saturating_sub(ph as usize);
+            if frame.pane_top > pane_room {
+                frame.pane_top = pane_room;
+            }
             if let Some(pane) = &pane {
                 draw_pane(
                     &mut out,
@@ -195,6 +259,7 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                     geo.header_h,
                     cols.saturating_sub(left + 1),
                     ph,
+                    frame.pane_top,
                 )?;
             }
             pane_dirty = false;
@@ -205,7 +270,9 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             &View {
                 top: frame.top,
                 sel: frame.sel,
-                reticle: &frame.reticle,
+                // Only the focused region wears the brackets. Two cursors on
+                // screen at once is two answers to "where am I".
+                reticle: (frame.focus == Focus::List).then_some(&frame.reticle),
             },
             left,
             geo.header_h,
@@ -252,22 +319,111 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                         }
                         popped = true;
                     }
-                    // Every motion lands on a SELECTABLE row. Spacers exist
-                    // to group things visually; a cursor that can rest in one
-                    // turns them into potholes.
-                    Action::Down => frame.sel = seek(&rows, frame.sel, 1),
-                    Action::Up => frame.sel = seek(&rows, frame.sel, -1),
-                    Action::Top => frame.sel = first_selectable(&rows, 0, 1),
-                    Action::Bottom => {
-                        frame.sel = first_selectable(&rows, len.saturating_sub(1), -1)
+                    // ── j: down, or out of the strip into the list ──
+                    Action::Down => match frame.focus {
+                        Focus::Tabs => {
+                            frame.focus = Focus::List;
+                            pane_dirty = true;
+                        }
+                        // Every motion lands on a SELECTABLE row. Spacers exist
+                        // to group things visually; a cursor that can rest in
+                        // one turns them into potholes.
+                        Focus::List => frame.sel = seek(&rows, frame.sel, 1),
+                        Focus::Pane => {
+                            frame.pane_top = (frame.pane_top + 1).min(pane_room);
+                            pane_dirty = true;
+                        }
+                    },
+                    // ── k: up, and off the top row into the strip ──
+                    Action::Up => match frame.focus {
+                        Focus::Tabs => {}
+                        Focus::List => {
+                            let next = seek(&rows, frame.sel, -1);
+                            if next == frame.sel && tabs.is_some() {
+                                // Already at the first selectable row, so `k`
+                                // had nothing to do here -- that is the door.
+                                frame.focus = Focus::Tabs;
+                                pane_dirty = true;
+                            } else {
+                                frame.sel = next;
+                            }
+                        }
+                        Focus::Pane => {
+                            frame.pane_top = frame.pane_top.saturating_sub(1);
+                            pane_dirty = true;
+                        }
+                    },
+                    Action::Top => match frame.focus {
+                        Focus::Pane => {
+                            frame.pane_top = 0;
+                            pane_dirty = true;
+                        }
+                        _ => {
+                            frame.focus = Focus::List;
+                            frame.sel = first_selectable(&rows, 0, 1);
+                        }
+                    },
+                    Action::Bottom => match frame.focus {
+                        Focus::Pane => {
+                            frame.pane_top = pane_room;
+                            pane_dirty = true;
+                        }
+                        _ => {
+                            frame.focus = Focus::List;
+                            frame.sel = first_selectable(&rows, len.saturating_sub(1), -1);
+                        }
+                    },
+                    Action::PageDown => match frame.focus {
+                        Focus::Pane => {
+                            frame.pane_top = (frame.pane_top + list_h / 2).min(pane_room);
+                            pane_dirty = true;
+                        }
+                        _ => {
+                            let want = (frame.sel + list_h / 2).min(len.saturating_sub(1));
+                            frame.sel = first_selectable(&rows, want, -1);
+                        }
+                    },
+                    Action::PageUp => match frame.focus {
+                        Focus::Pane => {
+                            frame.pane_top = frame.pane_top.saturating_sub(list_h / 2);
+                            pane_dirty = true;
+                        }
+                        _ => {
+                            let want = frame.sel.saturating_sub(list_h / 2);
+                            frame.sel = first_selectable(&rows, want, 1);
+                        }
+                    },
+                    // ── h: collapse, or leftwards out of a region ──
+                    Action::Close if frame.focus == Focus::Pane => {
+                        frame.focus = Focus::List;
+                        pane_dirty = true;
                     }
-                    Action::PageDown => {
-                        let want = (frame.sel + list_h / 2).min(len.saturating_sub(1));
-                        frame.sel = first_selectable(&rows, want, -1);
+                    Action::Close if frame.focus == Focus::Tabs => {
+                        // In the strip, left and right ARE the tabs.
+                        if let Flow::Retarget = frame.screen.on_action(Action::PrevTab, frame.sel) {
+                            rows = frame.screen.rows();
+                            frame.sel = start_sel(frame.screen.as_ref(), &rows);
+                            frame.top = 0;
+                            frame.pane_top = 0;
+                            frame.reticle = Reticle::new(frame.sel);
+                            pane_dirty = true;
+                        }
                     }
-                    Action::PageUp => {
-                        let want = frame.sel.saturating_sub(list_h / 2);
-                        frame.sel = first_selectable(&rows, want, 1);
+                    Action::Open if frame.focus == Focus::Tabs => {
+                        if let Flow::Retarget = frame.screen.on_action(Action::NextTab, frame.sel) {
+                            rows = frame.screen.rows();
+                            frame.sel = start_sel(frame.screen.as_ref(), &rows);
+                            frame.top = 0;
+                            frame.pane_top = 0;
+                            frame.reticle = Reticle::new(frame.sel);
+                            pane_dirty = true;
+                        }
+                    }
+                    // Enter on the strip commits the tab and drops into it,
+                    // which is what a smart TV does and what the hand expects.
+                    Action::Activate if frame.focus == Focus::Tabs => {
+                        frame.focus = Focus::List;
+                        pane_dirty = true;
                     }
                     other => match frame.screen.on_action(other, frame.sel) {
                         Flow::Quit => return Ok(()),
@@ -296,7 +452,23 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                             frame.screen.focus(frame.sel);
                             pane_dirty = true;
                         }
-                        Flow::Continue => {}
+                        // The screen did nothing with it. For `l` that is the
+                        // door to the pane.
+                        //
+                        // Whenever a pane EXISTS, not only when it overflows.
+                        // Gating on scrollability was the first attempt and it
+                        // reads as a dead key: on a run whose body happens to
+                        // fit, `l` silently did nothing, which is exactly the
+                        // "why won't it move" the directional model is supposed
+                        // to remove. The divider lights up and the footer
+                        // changes, so the move is visible even when there is
+                        // nothing to scroll once you are there.
+                        Flow::Continue => {
+                            if other == Action::Open && !full {
+                                frame.focus = Focus::Pane;
+                                pane_dirty = true;
+                            }
+                        }
                     },
                 }
                 if frame.sel != before {
@@ -328,6 +500,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                 sel,
                 top: 0,
                 reticle: Reticle::new(sel),
+                focus: Focus::List,
+                pane_top: 0,
             });
             pane_dirty = true;
         } else if popped {
@@ -340,16 +514,33 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
     }
 }
 
-fn draw_frame(
-    out: &mut impl Write,
-    screen: &mut dyn Screen,
-    tabs: Option<&Tabs>,
+/// Everything about the frame that is not the screen itself.
+///
+/// Bundled because it reached nine arguments once focus became a thing the
+/// chrome had to show -- which is a signal rather than a lint. The strip, the
+/// divider and the geometry are one description of "the frame around the
+/// content", so they travel as one.
+struct Chrome<'a> {
+    tabs: Option<&'a Tabs>,
+    focus: Focus,
     cols: u16,
     rows: u16,
-    // `left` is where the vertical divider goes, or None for a full-width list.
+    /// Where the vertical divider goes, or `None` for a full-width list.
     left: Option<u16>,
-    geo: &Layout,
-) -> io::Result<()> {
+    geo: &'a Layout,
+}
+
+fn draw_frame(out: &mut impl Write, screen: &mut dyn Screen, c: &Chrome) -> io::Result<()> {
+    let Chrome {
+        tabs,
+        focus,
+        cols,
+        rows,
+        left,
+        geo,
+    } = *c;
+    let tabs_focused = focus == Focus::Tabs;
+    let pane_focused = focus == Focus::Pane;
     queue!(
         out,
         terminal::Clear(terminal::ClearType::All),
@@ -361,7 +552,7 @@ fn draw_frame(
             queue!(out, style::Print(format!("\x1b[1m{title}\x1b[0m")))?;
         }
         Some(t) => {
-            queue!(out, style::Print(tab_strip(t, cols)))?;
+            queue!(out, style::Print(tab_strip(t, cols, tabs_focused)))?;
             // The rule spans the FULL width, above both columns -- the strip
             // belongs to the screen, not to the list, so the divider starts
             // under it rather than beside it.
@@ -376,11 +567,15 @@ fn draw_frame(
         }
     }
     if let Some(left) = left {
+        // The divider lights up when the PANE has the keys. It is the border
+        // between the two regions, so it is the honest place to say which side
+        // you are on -- and it needs no extra row to do it.
+        let colour = if pane_focused { "211" } else { "240" };
         for r in geo.header_h..rows.saturating_sub(geo.footer_h) {
             queue!(
                 out,
                 cursor::MoveTo(left, r),
-                style::Print("\x1b[38;5;240m\u{2502}\x1b[0m")
+                style::Print(format!("\x1b[38;5;{colour}m\u{2502}\x1b[0m"))
             )?;
         }
     }
@@ -397,12 +592,12 @@ fn draw_frame(
 /// Truncated from the RIGHT when it does not fit, so the leftmost tabs -- the
 /// ones a screen puts first because they matter most -- survive a narrow
 /// terminal.
-fn tab_strip(tabs: &Tabs, cols: u16) -> String {
+fn tab_strip(tabs: &Tabs, cols: u16, focused: bool) -> String {
     let mut out = String::from(" ");
     let mut width = 1usize;
     if let Some(label) = &tabs.label {
         out.push_str(&format!("\x1b[38;5;245m{label}\x1b[0m"));
-        width += label.chars().count();
+        width += crate::width::width(label);
     }
     for (i, name) in tabs.names.iter().enumerate() {
         // Width is counted from the PLAIN text, because the SGR codes are
@@ -413,15 +608,20 @@ fn tab_strip(tabs: &Tabs, cols: u16) -> String {
         } else {
             "  "
         };
-        let plain = sep.len() + name.chars().count() + if i == tabs.active { 4 } else { 0 };
+        let plain = sep.len() + crate::width::width(name) + if i == tabs.active { 4 } else { 0 };
         if width + plain + 1 > cols as usize {
             out.push_str("\x1b[38;5;240m\u{2026}\x1b[0m");
             break;
         }
         out.push_str(sep);
         if i == tabs.active {
+            // The reticle's own pink when the strip HAS focus, dim when it
+            // does not -- so "where am I" is answered by the same pair of
+            // brackets everywhere in this program, rather than by a second
+            // idiom to learn.
+            let b = if focused { "211" } else { "240" };
             out.push_str(&format!(
-                "\x1b[38;5;211m[\x1b[1;38;5;255m {name} \x1b[0m\x1b[38;5;211m]\x1b[0m"
+                "\x1b[38;5;{b}m[\x1b[1;38;5;255m {name} \x1b[0m\x1b[38;5;{b}m]\x1b[0m"
             ));
         } else {
             out.push_str(&format!("\x1b[38;5;244m{name}\x1b[0m"));
@@ -444,7 +644,9 @@ fn tab_strip(tabs: &Tabs, cols: u16) -> String {
 struct View<'a> {
     top: usize,
     sel: usize,
-    reticle: &'a Reticle,
+    /// `None` when another region has focus -- the list keeps its selection
+    /// highlight, but the brackets belong to whoever the keys are talking to.
+    reticle: Option<&'a Reticle>,
 }
 
 fn draw_rows(
@@ -456,8 +658,8 @@ fn draw_rows(
     height: usize,
 ) -> io::Result<()> {
     let View { top, sel, reticle } = *view;
-    let spread = reticle.spread();
-    let ret_row = reticle.row();
+    let spread = reticle.map(|r| r.spread()).unwrap_or(0);
+    let ret_row = reticle.map(|r| r.row()).unwrap_or(usize::MAX);
     let blank = " ".repeat(left as usize);
 
     for i in 0..height {
@@ -484,7 +686,7 @@ fn draw_rows(
         } else {
             row.badges
                 .iter()
-                .map(|(t, _)| t.chars().count() as u16 + 1)
+                .map(|(t, _)| crate::width::width(t) as u16 + 1)
                 .sum::<u16>()
                 + 1
         };
@@ -501,11 +703,11 @@ fn draw_rows(
         };
         let label = format!("{marker}{}", row.label);
         let label = truncate(&label, avail as u16);
-        let label_cols = label.chars().count();
+        let label_cols = crate::width::width(&label);
         // The reticle hugs the NAME, not the padding. A header padded for
         // column alignment would otherwise read `[ claude      ]`, with the
         // frame closing around whitespace.
-        let name_cols = label.trim_end().chars().count();
+        let name_cols = crate::width::width(label.trim_end());
 
         queue!(out, cursor::MoveTo(indent, y))?;
         let styled = if row.group {
@@ -539,7 +741,7 @@ fn draw_rows(
         // width then comes out as columns.
         let mut bx = left;
         for (badge, color) in row.badges.iter().rev() {
-            let w = badge.chars().count() as u16;
+            let w = crate::width::width(badge) as u16;
             bx = bx.saturating_sub(w + 1);
             queue!(
                 out,
@@ -548,7 +750,7 @@ fn draw_rows(
             )?;
         }
 
-        if top + i == ret_row && row.selectable {
+        if reticle.is_some() && top + i == ret_row && row.selectable {
             let open = indent.saturating_sub(spread + 1);
             let close = indent + name_cols as u16 + spread;
             if close < left {
@@ -678,6 +880,8 @@ fn draw_pane(
     y: u16,
     width: u16,
     height: u16,
+    // First text line to draw, for a pane with focus and more than fits.
+    scroll: usize,
 ) -> io::Result<()> {
     let has_image = pane.image.as_ref().filter(|_| crate::image::supported());
     let text_h = (pane.lines.len() as u16 + 1).min(height);
@@ -714,7 +918,7 @@ fn draw_pane(
             style::Print(format!("\x1b[38;5;240m{rule}\x1b[0m"))
         )?;
     }
-    for (i, line) in pane.lines.iter().enumerate() {
+    for (i, line) in pane.lines.iter().skip(scroll).enumerate() {
         let row = text_y + i as u16;
         if row >= y + height {
             break;
@@ -774,12 +978,14 @@ fn draw_footer(
 
 /// Truncates on CHARACTERS, not bytes -- the labels here are font family names
 /// and the pane carries box-drawing and arrows.
+/// Shorten to fit, measured in CELLS.
+///
+/// Delegates to `width::truncate`, which knows an emoji is two cells and an
+/// ANSI escape is none. The character-counting version this replaces was the
+/// reason emoji had to be kept out of every fixed-width column: one `char`
+/// that draws two cells shifted everything after it by one.
 fn truncate(s: &str, width: u16) -> String {
-    let w = width as usize;
-    if s.chars().count() <= w {
-        return s.to_string();
-    }
-    s.chars().take(w.saturating_sub(1)).collect::<String>() + "\u{2026}"
+    crate::width::truncate(s, width as usize)
 }
 
 #[cfg(test)]

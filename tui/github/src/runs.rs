@@ -632,7 +632,11 @@ impl Screen for Actions {
         }
         self.status.clear();
         match action {
-            Action::Activate | Action::Open => {
+            // `Activate` only; `l` moves into the pane. The pane IS this
+            // screen's answer -- the run body with the failing step's log --
+            // so being able to scroll it matters more than a second way to
+            // drill in.
+            Action::Activate => {
                 let Some(run) = self.run(sel).cloned() else {
                     return Flow::Continue;
                 };

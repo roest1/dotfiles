@@ -18,6 +18,7 @@ pub mod probe;
 pub mod reticle;
 pub mod screen;
 pub mod term;
+pub mod width;
 
 use std::sync::OnceLock;
 

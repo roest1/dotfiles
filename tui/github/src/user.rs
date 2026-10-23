@@ -42,11 +42,21 @@ use crate::root::Root;
 pub fn screen(fetch: Arc<Fetcher>, root: Root, login: &str) -> Host {
     Host::new(
         Some(login.to_string()),
+        // Glyphs on the tabs, which is where they earn the most: the strip is
+        // the thing you look at to navigate, and a shape is faster to find
+        // than a word. The set is deliberately small and each one is a noun
+        // you would draw -- a folder, a building, a person, a key.
         vec![
-            ("Repos".into(), Box::new(root) as Box<dyn Screen>),
-            ("Orgs".into(), Box::new(OrgList::new(Arc::clone(&fetch)))),
-            ("Account".into(), Box::new(Account::new(Arc::clone(&fetch)))),
-            ("Keys".into(), Box::new(Keys::new(fetch))),
+            ("\u{1f4c2} Repos".into(), Box::new(root) as Box<dyn Screen>),
+            (
+                "\u{1f3e2} Orgs".into(),
+                Box::new(OrgList::new(Arc::clone(&fetch))),
+            ),
+            (
+                "\u{1f464} Account".into(),
+                Box::new(Account::new(Arc::clone(&fetch))),
+            ),
+            ("\u{1f511} Keys".into(), Box::new(Keys::new(fetch))),
         ],
     )
 }
@@ -357,17 +367,17 @@ impl Keys {
     fn new(fetch: Arc<Fetcher>) -> Self {
         let lanes = vec![
             Lane {
-                name: "ssh keys",
+                name: "\u{1f511} ssh keys",
                 path: "user/keys",
                 state: LaneState::Waiting,
             },
             Lane {
-                name: "gpg keys",
+                name: "\u{1f510} gpg keys",
                 path: "user/gpg_keys",
                 state: LaneState::Waiting,
             },
             Lane {
-                name: "signing keys",
+                name: "\u{1f4dd} signing keys",
                 path: "user/ssh_signing_keys",
                 state: LaneState::Waiting,
             },

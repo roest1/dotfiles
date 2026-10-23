@@ -174,7 +174,10 @@ impl Screen for Menu {
     }
 
     fn on_action(&mut self, action: Action, sel: usize) -> Flow {
-        if !matches!(action, Action::Activate | Action::Open) {
+        // Enter alone. `l` would be a second key that runs a delete, which is
+        // the one place in this program where an extra way to act is a cost
+        // rather than a convenience.
+        if action != Action::Activate {
             return Flow::Continue;
         }
         let Some(item) = self.items.get_mut(sel) else {

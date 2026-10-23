@@ -15,7 +15,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 pub enum Action {
     Up,
     Down,
+    /// `l`: expand the thing under the cursor, or -- if there is nothing to
+    /// expand -- move RIGHT, into the pane.
+    ///
+    /// Not a synonym for `Activate`. It was, in the first few screens, and
+    /// that made directional navigation impossible: `l` on a run drilled into
+    /// its jobs, so the pane beside it could never be reached. A screen that
+    /// does nothing with `Open` returns `Flow::Continue`, which `app` reads as
+    /// "the cursor may move on".
     Open,
+    /// `h`: collapse, or move LEFT out of the region.
     Close,
     Top,
     Bottom,
