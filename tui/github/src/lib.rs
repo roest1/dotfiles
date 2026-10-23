@@ -20,9 +20,11 @@
 //! See `docs/decisions/github-tui.md` for the port's shape and what is
 //! deliberately not being carried over.
 
+pub mod branches;
 pub mod gh;
 pub mod index;
 pub mod logs;
+pub mod menu;
 pub mod model;
 pub mod orgs;
 pub mod paint;

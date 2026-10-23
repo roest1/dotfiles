@@ -27,11 +27,20 @@ pub struct Row {
     pub depth: u16,
     pub group: bool,
     pub expanded: bool,
-    /// A short marker — a status glyph, a fit verdict — with its ANSI colour.
-    /// RIGHT-ALIGNED to the pane edge, with the text before it truncated to
-    /// make room, so a long family name can never shove a badge across the
-    /// divider.
-    pub badge: Option<(String, u8)>,
+    /// Short markers — a status word, a fit verdict, a column of a table —
+    /// each with its ANSI colour.
+    ///
+    /// RIGHT-ALIGNED to the list's right edge, laid out right to left in the
+    /// order given, with the text before them truncated to make room — so a
+    /// long family name can never shove a badge across the divider.
+    ///
+    /// SEVERAL, because a full-width table is a row with six facts on the
+    /// right of it and one badge could only hold the last. They do not
+    /// self-align: `app` packs them against the edge, so a screen that wants a
+    /// COLUMN pads each value to a fixed width itself. It knows its own data
+    /// and `rows()` does not know the terminal width, which is the trade that
+    /// keeps the width out of this trait.
+    pub badges: Vec<(String, u8)>,
     /// False for spacers. Navigation skips them, so blank rows can group
     /// things without the cursor ever landing in one.
     pub selectable: bool,
@@ -45,7 +54,7 @@ impl Row {
             depth: 0,
             group: false,
             expanded: false,
-            badge: None,
+            badges: Vec::new(),
             selectable: true,
         }
     }
@@ -58,8 +67,9 @@ impl Row {
         r
     }
 
+    /// Add one marker, rightmost first.
     pub fn badged(mut self, text: impl Into<String>, color: u8) -> Self {
-        self.badge = Some((text.into(), color));
+        self.badges.push((text.into(), color));
         self
     }
 
@@ -67,6 +77,22 @@ impl Row {
         self.detail = Some(text.into());
         self
     }
+}
+
+/// How a screen wants the body divided.
+///
+/// Per screen rather than per program, because the shapes genuinely differ: a
+/// workflow run is a short list with a long story beside it, where a branch
+/// list is a TABLE -- six columns of fact per row and nothing worth a pane.
+/// Forcing the table into a 52-column sidebar would have meant dropping
+/// columns to fit a pane that had nothing to say.
+pub enum Split {
+    /// List on the left, detail pane on the right. The default, and what
+    /// `font`, `dots`, Actions and the account screens all want.
+    ListPane,
+    /// The list spans the full width. No pane, no divider -- and `pane()` is
+    /// never called, so a screen using this need not implement one usefully.
+    Full,
 }
 
 /// A header strip of sibling screens, drawn above BOTH columns.
@@ -202,6 +228,11 @@ pub trait Screen {
     /// title is drawn plain.
     fn tabs(&self) -> Option<Tabs> {
         None
+    }
+
+    /// How to divide the body. Default: list left, pane right.
+    fn split(&self) -> Split {
+        Split::ListPane
     }
 
     /// Which row to open on. Default: the first.

@@ -205,6 +205,13 @@ impl Actions {
         Some(me)
     }
 
+    /// The shared fetcher, so the repo's other screens reuse what this one has
+    /// already asked for -- the runs list is the Branches screen's checks
+    /// column, so sharing it turns a second call into none.
+    pub fn fetcher(&self) -> Arc<Fetcher> {
+        Arc::clone(&self.fetch)
+    }
+
     fn list_req(&self) -> Req {
         Req::Runs {
             query: self.scope.query(),

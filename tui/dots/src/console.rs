@@ -750,14 +750,14 @@ mod tests {
     #[test]
     fn only_the_skipped_sections_are_badged() {
         let mut c = console("badges", None);
-        assert!(c.rows().iter().all(|r| r.badge.is_none()));
+        assert!(c.rows().iter().all(|r| r.badges.is_empty()));
 
         c.toggle(0);
         let name = c.sections[0].name.clone();
         let rows = c.rows();
         let row = rows.iter().find(|r| r.label == name).expect("the section");
-        assert_eq!(row.badge.as_ref().map(|(t, _)| t.as_str()), Some("off"));
-        assert_eq!(rows.iter().filter(|r| r.badge.is_some()).count(), 1);
+        assert_eq!(row.badges.first().map(|(t, _)| t.as_str()), Some("off"));
+        assert_eq!(rows.iter().filter(|r| !r.badges.is_empty()).count(), 1);
     }
 
     /// The footer names the RESULT of pressing space, so you do not have to

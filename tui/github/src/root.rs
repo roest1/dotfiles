@@ -220,15 +220,33 @@ impl Root {
         }
     }
 
-    /// Open the Actions screen for this repo.
+    /// Open the repo's own screens.
+    ///
+    /// A `Host` now that there are two of them, which is what earns the tab
+    /// strip -- a one-tab strip is a title that cost a row. Branches first
+    /// because it is the one that answers "what is going on here" without a
+    /// network round trip; Actions second because it is where you go when
+    /// something is wrong.
     ///
     /// Refused rather than attempted for a clone with no GitHub remote: the
-    /// Actions API has nothing to say about a local-only repo, and an empty
-    /// screen with an auth error in it is a worse answer than a sentence in the
-    /// pane saying why there is nothing to show.
-    fn open_actions(&mut self, i: usize) -> Flow {
-        match crate::Actions::open(&self.repos[i]) {
-            Some(screen) => Flow::Push(Box::new(screen)),
+    /// API has nothing to say about a local-only repo, and an empty screen with
+    /// an auth error in it is a worse answer than a sentence saying why there
+    /// is nothing to show.
+    fn open_repo(&mut self, i: usize) -> Flow {
+        let repo = &self.repos[i];
+        match crate::Actions::open(repo) {
+            Some(actions) => {
+                let slug = repo.slug();
+                let branches =
+                    crate::branches::Branches::open(&slug, &repo.path, actions.fetcher());
+                Flow::Push(Box::new(reticle::Host::new(
+                    Some(slug),
+                    vec![
+                        ("Branches".into(), Box::new(branches) as Box<dyn Screen>),
+                        ("Actions".into(), Box::new(actions)),
+                    ],
+                )))
+            }
             None => {
                 self.status = match &self.repos[i].remote {
                     Remote::Elsewhere(host) => {
@@ -387,7 +405,7 @@ impl Screen for Root {
             // PRs and Branches land, this becomes the repo screen with Actions
             // as its first row, and `app::run_stack` already takes the deeper
             // seeded stack that implies.
-            (Action::Activate | Action::Open, At::Repo(i)) => self.open_actions(i),
+            (Action::Activate | Action::Open, At::Repo(i)) => self.open_repo(i),
             // `o` keeps opening the browser, the way ctrl-o does in every fzf
             // screen -- the key that leaves the terminal is the same key
             // everywhere.

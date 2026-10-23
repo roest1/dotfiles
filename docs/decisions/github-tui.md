@@ -343,6 +343,81 @@ nothing from nothing. Invisible while the only screen was `font`'s specimen;
 wrong for `dots` and for every `github` pane including the Actions body shipped
 in the previous commit. The image path's arithmetic is unchanged.
 
+## Branches, `Split::Full`, and the three-dots (done 2026-10-22)
+
+**Layout is per screen, option 1 of the three offered.** `Screen::split()`
+returns `ListPane` (the default — `font`, `dots`, Actions, the account screens)
+or `Full`. Branches is the reason: a branch row carries protection, when, who,
+ahead/behind, the subject, its checks and its PR, and squeezing seven facts
+into a 52-column sidebar beside a pane with nothing to say would have meant
+dropping columns to make room for emptiness. Riley picked faithfulness to the
+drawings over the cheaper single layout, with option 3 (one layout, per-screen
+split width) held as the fallback if the per-tab version grates.
+
+`Row` gained `badges: Vec<_>` for it. One badge could only hold the last of
+seven columns. `app` packs them against the right edge and does NOT align them,
+so a screen wanting a table pads each value to a fixed width itself — it knows
+its own data, and `rows()` deliberately does not know the terminal width.
+
+**Nearly all of the table is local git**, which is the bash implementation's
+shape and worth preserving exactly: one `for-each-ref` gives every remote
+branch's age, author, subject AND its ahead/behind against the default, offline
+and instantly. The API is asked only for what git cannot know — `protected`,
+open PRs, and checks. So the table draws before any request is made.
+
+Two things measured rather than assumed:
+
+- **Checks cost no extra call.** A workflow run carries its `head_branch`, so
+  the newest run per branch IS that branch's check status — and `Req::Runs` is
+  already fetched. The repo-level `Host` shares one `Fetcher` across its tabs,
+  so Branches reuses what Actions asked for.
+- **"Your branches" matches on EMAIL, not name.** On this repo the same person
+  authored commits as both `Riley Oest` and `roest1` — a local `user.name`
+  and GitHub's web UI disagreeing — while the email was identical on every
+  one. Matching the name filed your own branches under someone else.
+
+### The three-dots
+
+`enter` on a row opens a `Menu`: that row's actions, named, with the exact
+command shown in the pane. It needs nothing new from `reticle` — a menu is a
+list of rows and `Flow::Push` opens it.
+
+What a menu avoids is the only expensive part of the drawing: putting the
+cursor ON a button inside a row needs column-wise focus, a second navigation
+axis, and it would collide with `h`/`l` meaning close/open everywhere else. The
+menu gets identical functionality on one axis. Direct keys stay available as
+accelerators for the two or three actions done constantly, named in the footer.
+
+**The surprise: most items are `Flow::Detach`, and that largely dissolves the
+text-input blocker.** `gh pr create` prompts for a title and body on a tty;
+`gh pr edit` prompts for what to change; `git push --delete` prints what it did
+and fails loudly on a protected branch. Handing them the real terminal buys
+text entry, confirmation and error reporting in the tools' own words. So "full
+functionality, all in a TUI" does NOT wait on a text-input widget — it waits on
+FILTERING, which is a different and smaller thing.
+
+Showing the command is the confirmation. A destructive item is marked in the
+row, in the pane and in the footer, and does not add a prompt of its own: the
+tool being run already asks or already reports, and two confirms is one too
+many.
+
+### The repo level earned its strip
+
+With Branches and Actions there are two repo screens, so the repo level is a
+`Host` now — `[Branches] [Actions]` — which is the design's centrepiece. Four
+of the six tabs are still unported. A one-tab strip is a title that cost a row,
+which is why this waited for the second screen.
+
+### One unmet detail, deliberately
+
+The design asks for a lock glyph on protected branches, next to the name.
+`U+1F512` is East Asian Wide: two cells in wezterm, one in terminals that
+disagree, in the one column whose whole job is being fixed-width. That is the
+bug `Verdict::badge` already refuses, so protection became a `prot` text column
+on the right. `★` (default) and `●` (checked out) stay — both single-width and
+both already used here. If a lock is wanted back it is one line, and the
+footer legend carries the meaning either way.
+
 ## Still open
 
 - **Filtering, and it is now the blocker rather than a nicety.** fzf gives
@@ -361,12 +436,13 @@ in the previous commit. The image path's arithmetic is unchanged.
   screen. It also overloads `h`/`l`/`enter`, which currently mean close/open
   and activate, so it needs a modal state in `nav` for the same reason
   filtering does. Doing both at once is probably one change.
-- **Inline row buttons.** The design draws `[PR]`, a trash can and a
-  three-dots menu on a branch row. Those are mouse idioms; in a keyboard TUI
-  they are keys on the selected row with the footer naming them, which is what
-  the bash version already did (`ctrl-k` checkout, `ctrl-x` delete). Same
-  functions, different expression — worth settling explicitly rather than
-  letting the drawing imply a widget.
+- ~~Inline row buttons.~~ **Settled, and the first version of this entry was
+  wrong.** It said the drawn `[PR]`/trash/three-dots were "mouse idioms" to be
+  replaced by keys, which reads as a veto on the functions and is not what this
+  repo believes: `tui/CLAUDE.md` says a key you have to be told about is a key
+  nobody finds, so a visible labelled action beats a hidden binding. The bash
+  implementation already worked the right way too — `enter` on a PR row opens
+  thirteen actions, on a branch row seven. See **The three-dots** below.
 - **Text input, and a shared confirm.** `_gh_input` has no reticle equivalent;
   secret-set, env-create and pr-create need one. The Actions screen settled the
   confirm half for itself — `e` and `x` ask in the status line, `y` is the only

@@ -39,4 +39,4 @@ pub(crate) fn set_term_info(info: probe::TermInfo) {
 
 pub use host::Host;
 pub use nav::Action;
-pub use screen::{Flow, Image, Pane, Row, Screen, Tabs, Tick};
+pub use screen::{Flow, Image, Pane, Row, Screen, Split, Tabs, Tick};

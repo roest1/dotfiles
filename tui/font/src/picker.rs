@@ -314,7 +314,7 @@ impl Screen for FontScreen {
                         .map(|(v, c, _)| (v.to_string(), c));
                     let mut r = Row::leaf(family);
                     r.depth = 1;
-                    r.badge = badge;
+                    r.badges = badge.into_iter().collect();
                     out.push(r);
                 }
             }

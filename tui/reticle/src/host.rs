@@ -27,7 +27,7 @@
 //! is.
 
 use crate::nav::Action;
-use crate::screen::{Flow, Pane, Row, Screen, Tabs, Tick};
+use crate::screen::{Flow, Pane, Row, Screen, Split, Tabs, Tick};
 
 pub struct Host {
     label: Option<String>,
@@ -101,6 +101,16 @@ impl Screen for Host {
 
     fn rows(&mut self) -> Vec<Row> {
         self.current().rows()
+    }
+
+    /// Forwarded, because the LAYOUT belongs to the tab rather than to the
+    /// strip above it -- a repo's Branches table wants the full width and its
+    /// Actions list wants a pane, and they are siblings. Forgetting this made
+    /// `Split::Full` silently do nothing: the host answered for the default and
+    /// the table's badges, packed into a 52-column sidebar, truncated every
+    /// branch name to nothing.
+    fn split(&self) -> Split {
+        self.screens[self.active].split()
     }
 
     fn footer(&self) -> String {
@@ -244,6 +254,44 @@ mod tests {
         assert_eq!(h.footer(), "x keys");
         assert!(matches!(h.on_action(Action::NextTab, 0), Flow::Continue));
         assert_eq!(h.tabs().unwrap().active, 0);
+    }
+
+    /// The layout belongs to the TAB. A host that answered for itself made
+    /// `Split::Full` a no-op, which showed up as a table with no names in it
+    /// rather than as anything resembling a layout bug.
+    #[test]
+    fn the_layout_comes_from_the_active_tab() {
+        struct Wide;
+        impl Screen for Wide {
+            fn title(&self) -> String {
+                "wide".into()
+            }
+            fn rows(&mut self) -> Vec<Row> {
+                vec![Row::leaf("w")]
+            }
+            fn footer(&self) -> String {
+                String::new()
+            }
+            fn pane(&mut self, _: usize, _: u16, _: u16) -> Pane {
+                Pane::default()
+            }
+            fn on_action(&mut self, _: Action, _: usize) -> Flow {
+                Flow::Continue
+            }
+            fn split(&self) -> Split {
+                Split::Full
+            }
+        }
+        let mut h = Host::new(
+            None,
+            vec![
+                ("Narrow".into(), Box::new(Fake("n", 2)) as Box<dyn Screen>),
+                ("Wide".into(), Box::new(Wide)),
+            ],
+        );
+        assert!(matches!(h.split(), Split::ListPane));
+        h.on_action(Action::NextTab, 0);
+        assert!(matches!(h.split(), Split::Full));
     }
 
     #[test]

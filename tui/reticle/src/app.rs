@@ -26,7 +26,7 @@ use crossterm::{cursor, queue, style, terminal};
 
 use crate::nav::{Action, Keymap};
 use crate::reticle::Reticle;
-use crate::screen::{Flow, Pane, Row, Screen, Tabs, Tick};
+use crate::screen::{Flow, Pane, Row, Screen, Split, Tabs, Tick};
 use crate::term::Terminal;
 
 const FRAME: Duration = Duration::from_millis(16);
@@ -148,7 +148,10 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         let depth = stack.len();
         let frame = stack.last_mut().expect("stack is never empty");
         let (cols, screen_rows) = Terminal::size()?;
-        let left = left_width(cols);
+        let full = matches!(frame.screen.split(), Split::Full);
+        // `Full` gives the whole width to the list; there is no divider to
+        // leave room for and no pane to leave room beside.
+        let left = if full { cols } else { left_width(cols) };
         let tabs = frame.screen.tabs();
         let foot = frame.screen.footer();
         let geo = layout(screen_rows, tabs.is_some(), footer_lines(&foot));
@@ -162,19 +165,38 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         }
 
         if pane_dirty {
-            let pw = cols.saturating_sub(left + 1);
             let ph = screen_rows.saturating_sub(geo.header_h + geo.footer_h);
-            let pane = frame.screen.pane(frame.sel, pw, ph);
+            // Built BEFORE the frame is cleared only when there is one -- a
+            // `Full` screen is never asked for a pane at all, so it does not
+            // have to implement one it would never draw.
+            let pane = if full {
+                None
+            } else {
+                Some(
+                    frame
+                        .screen
+                        .pane(frame.sel, cols.saturating_sub(left + 1), ph),
+                )
+            };
             draw_frame(
                 &mut out,
                 frame.screen.as_mut(),
                 tabs.as_ref(),
                 cols,
                 screen_rows,
-                left,
+                if full { None } else { Some(left) },
                 &geo,
             )?;
-            draw_pane(&mut out, &pane, left + 1, geo.header_h, pw, ph)?;
+            if let Some(pane) = &pane {
+                draw_pane(
+                    &mut out,
+                    pane,
+                    left + 1,
+                    geo.header_h,
+                    cols.saturating_sub(left + 1),
+                    ph,
+                )?;
+            }
             pane_dirty = false;
         }
         draw_rows(
@@ -324,7 +346,8 @@ fn draw_frame(
     tabs: Option<&Tabs>,
     cols: u16,
     rows: u16,
-    left: u16,
+    // `left` is where the vertical divider goes, or None for a full-width list.
+    left: Option<u16>,
     geo: &Layout,
 ) -> io::Result<()> {
     queue!(
@@ -352,12 +375,14 @@ fn draw_frame(
             )?;
         }
     }
-    for r in geo.header_h..rows.saturating_sub(geo.footer_h) {
-        queue!(
-            out,
-            cursor::MoveTo(left, r),
-            style::Print("\x1b[38;5;240m\u{2502}\x1b[0m")
-        )?;
+    if let Some(left) = left {
+        for r in geo.header_h..rows.saturating_sub(geo.footer_h) {
+            queue!(
+                out,
+                cursor::MoveTo(left, r),
+                style::Print("\x1b[38;5;240m\u{2502}\x1b[0m")
+            )?;
+        }
     }
     Ok(())
 }
@@ -451,11 +476,18 @@ fn draw_rows(
 
         // Reserve the badge's column first; everything else lives in what is
         // left. One space of air before the divider.
-        let badge_w = row
-            .badge
-            .as_ref()
-            .map(|(t, _)| t.chars().count() as u16 + 2)
-            .unwrap_or(0);
+        // Every marker plus one space of air between each and one before the
+        // divider. Reserved FIRST, so the label is truncated to what is left
+        // rather than pushing a badge across the divider.
+        let badge_w: u16 = if row.badges.is_empty() {
+            0
+        } else {
+            row.badges
+                .iter()
+                .map(|(t, _)| t.chars().count() as u16 + 1)
+                .sum::<u16>()
+                + 1
+        };
         let avail = left.saturating_sub(indent + badge_w + 1) as usize;
 
         let marker = if row.group {
@@ -501,11 +533,17 @@ fn draw_rows(
             }
         }
 
-        if let Some((badge, color)) = &row.badge {
-            let x = left.saturating_sub(badge.chars().count() as u16 + 1);
+        // Packed against the right edge, but walked in REVERSE -- so the last
+        // badge lands rightmost and a screen listing them in reading order gets
+        // them in that order on screen. A table that pads each value to a fixed
+        // width then comes out as columns.
+        let mut bx = left;
+        for (badge, color) in row.badges.iter().rev() {
+            let w = badge.chars().count() as u16;
+            bx = bx.saturating_sub(w + 1);
             queue!(
                 out,
-                cursor::MoveTo(x, y),
+                cursor::MoveTo(bx, y),
                 style::Print(format!("\x1b[38;5;{color}m{badge}\x1b[0m"))
             )?;
         }

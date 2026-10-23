@@ -46,7 +46,8 @@ pins that.
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
   only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
-- `github/` — the port. `user` (the user level — the root, and its Account and
+- `github/` — the port. `branches` (the full-width branch table), `menu` (a
+  row's actions — the design's three-dots), `user` (the user level — the root, and its Account and
   Keys tabs), `orgs` (the org list and one org's three tabs), `index` (every
   clone under `~/github`, read from disk), `root` (the repo tree — the user
   level's Repos tab), `runs` (the Actions screen), `steps` (one run as a tree),
@@ -222,6 +223,70 @@ pins that.
   target. `console::tests::walk_agrees` asserts every selectable index resolves
   to the row actually drawn at it, in all three shapes (following, pinned,
   section open). Do not add a conditional row without extending it.
+
+- **`Screen::split()` picks the layout, per screen.** `ListPane` (the default)
+  or `Full`. The shapes genuinely differ: a workflow run is a short list with a
+  long story beside it, where a branch list is a TABLE — seven facts per row
+  and nothing a pane could add. A `Full` screen is never asked for a pane at
+  all, so it need not implement one usefully.
+
+  **`Host` must FORWARD it**, because the layout belongs to the tab rather than
+  the strip above it. Forgetting that made `Split::Full` silently do nothing:
+  the host answered for the default and the table's badges, packed into a
+  52-column sidebar, truncated every branch name to nothing. There is a test.
+
+- **`Row::badges` is a VEC, and it does not self-align.** One badge could only
+  hold the last of a table's seven columns. `app` packs them against the right
+  edge, rightmost last so a screen listing them in reading order gets that
+  order on screen — but it does not align them. A screen that wants COLUMNS
+  pads each value to a fixed width itself, because it knows its own data and
+  `rows()` deliberately does not know the terminal width.
+
+- **No emoji in a fixed-width column, and the branch marker is where that bit.**
+  The design asks for a lock glyph on protected branches. `U+1F512` is East
+  Asian Wide — two cells in wezterm, one in terminals that disagree — in the one
+  column whose entire job is being fixed-width. `★` and `●` are single-width
+  and already used here; protection is a `prot` text column on the right.
+  `branches::tests::the_marker_column_is_fixed_width` asserts every marker is
+  inside the BMP, and it also counts the prefix in CHARACTERS rather than
+  bytes: `str::find` returns a byte offset and `★` is three bytes, so the byte
+  version failed on a perfectly aligned row and would have passed on a broken
+  one whose counts cancelled.
+
+- **`enter` on a row opens that row's MENU, and that is the design's
+  three-dots.** It needs nothing from `reticle` — a menu is a list of rows and
+  `Flow::Push` opens it. What it avoids is the only expensive part of drawing
+  buttons on a row: putting the cursor ON one needs column-wise focus, a second
+  navigation axis, and it collides with `h`/`l` meaning close/open everywhere
+  else. The bash implementation already worked this way (thirteen actions on a
+  PR row, seven on a branch), so this is the shape being ported.
+
+  **Most items are `Flow::Detach`, and that is the finding worth keeping.**
+  `gh pr create` prompts for a title and body on a tty; `gh pr edit` prompts for
+  what to change; `git push --delete` prints what it did and fails loudly on a
+  protected branch. Handing them the real terminal buys text entry,
+  confirmation and error reporting in the tools' own words — so full
+  functionality does NOT wait on a text-input widget. Showing the command in
+  the pane IS the confirmation; a destructive item is marked in the row, the
+  pane and the footer, and adds no prompt of its own, because the tool already
+  asks or already reports and two confirms is one too many.
+
+- **The Branches table is local git first.** One `for-each-ref` gives every
+  remote branch's age, author, subject AND ahead/behind against the default —
+  offline, instantly, in one spawn. The API is asked only for what git cannot
+  know: `protected`, open PRs, and checks. So the table draws before any
+  request is made. `%(ahead-behind:)` needs git >= 2.41 and an unsupported atom
+  fails the WHOLE command, so the fallback re-runs without it rather than
+  trying to salvage a partial answer.
+
+  **Checks cost no extra call**: a run carries its `head_branch`, so the newest
+  run per branch is that branch's status, and the repo `Host` shares one
+  `Fetcher` across its tabs so Branches reuses what Actions asked for.
+
+  **"Your branches" matches on EMAIL.** Measured here: the same person authored
+  commits as both `Riley Oest` and `roest1` — a local `user.name` and GitHub's
+  web UI disagreeing — while the email was identical on every one. Matching the
+  name filed your own branches under someone else.
 
 - **There is ONE root, and it is the user level — including inside a repo.**
   This is the whole answer to "I want my settings even when I opened this in a
