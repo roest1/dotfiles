@@ -235,6 +235,13 @@ a `test` step out of a job log whose window also held an `apt-get` transcript,
 anchored on the step's own `##[group]Run` line, and ended on the last
 `##[error]`.
 
+**The precondition is a table, and CI enforces it.**
+[`github-parity.md`](github-parity.md) has one row per worker verb, derived
+from `_ghw_main`'s dispatcher so it cannot be incomplete, and CI refuses to let
+`github` into `tui/deps.sh` while any row is `todo` or `partial`. As of
+2026-10-23: 22 ported, 2 partial, 24 todo, 1 dropped. The swap cannot be
+reached by deciding it has been.
+
 **The bash file is replaced as a unit, not incrementally.** It stays complete
 and untouched until the Rust side covers what is actually used, then it is
 deleted in one commit. A `github` dispatching to both halves is the drift this

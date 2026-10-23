@@ -1347,6 +1347,59 @@ jobs:
       # deciding which one runs.
       #
       # reticle is excluded because it is the framework and ships no binary.
+      # The precondition for deleting bash_github_tui, enforced rather than
+      # asserted. "We won't lose any functionality" is a claim nobody can check
+      # from memory -- 2500 lines, 49 worker verbs, seven screens, four menus,
+      # most of it behind a keystroke nobody has typed in months. So the table
+      # is DERIVED from the dispatcher (a verb added or renamed in the bash file
+      # fails this until the table says what happened to it), and the swap is
+      # blocked while anything is still outstanding.
+      #
+      # The second half is the part that matters: the condition cannot be met
+      # by deciding it has been.
+      - name: github parity table covers the bash implementation
+        run: |
+          fail=0
+          table=docs/decisions/github-parity.md
+          [ -s "$table" ] || { echo "$table is missing"; exit 1; }
+          verbs=$(sed -n '/^_ghw_main()/,/^}/p' bash/bash_github_tui \
+                  | grep -oE '^[[:space:]]+[a-z-]+\)' | tr -d ' )' | sort -u)
+          [ -n "$verbs" ] || { echo "could not read the _ghw_main dispatcher"; exit 1; }
+          echo "dispatcher verbs: $(echo "$verbs" | wc -l | tr -d ' ')"
+          for v in $verbs; do
+            row=$(grep -E "^\| \`$v\` *\|" "$table" || true)
+            if [ -z "$row" ]; then
+              echo "verb '$v' is not in $table"; fail=1; continue
+            fi
+            st=$(printf '%s' "$row" | awk -F'|' '{gsub(/ /,"",$3); print $3}')
+            case "$st" in
+              ported|partial|todo|dropped) ;;
+              *) echo "verb '$v' has an unknown status '$st'"; fail=1 ;;
+            esac
+          done
+          # A row for a verb that no longer exists is drift in the other
+          # direction, and means the table is describing a file that changed.
+          for v in $(grep -oE '^\| `[a-z-]+`' "$table" | tr -d '|` '); do
+            printf '%s\n' "$verbs" | grep -qx "$v" \
+              || { echo "$table lists '$v', which is not a dispatcher verb"; fail=1; }
+          done
+          # The gate. `crates=(...)` in tui/deps.sh is what installs the binary,
+          # so its gaining `github` IS the swap.
+          if grep -qE '^crates=\(.*[( ]github[ )]' tui/deps.sh; then
+            left=$(grep -cE "^\| \`[a-z-]+\` *\| *(todo|partial)" "$table" || true)
+            if [ "$left" -gt 0 ]; then
+              echo "github is installed, but $left parity row(s) are still todo/partial"
+              grep -E "^\| \`[a-z-]+\` *\| *(todo|partial)" "$table" | head -30
+              fail=1
+            else
+              echo "parity table is green and github is installed -- the swap is done"
+            fi
+          else
+            left=$(grep -cE "^\| \`[a-z-]+\` *\| *(todo|partial)" "$table" || true)
+            echo "github not installed yet; $left row(s) outstanding"
+          fi
+          exit $fail
+
       - name: No bash function shadows a tui binary
         run: |
           fail=0

@@ -433,6 +433,14 @@ pins that.
   a unit is exactly what the CI rule "only bash_github_tui may invoke fzf" was
   built to allow.
 
+  **The precondition for the swap is a table, not a judgement.**
+  [`docs/decisions/github-parity.md`](../docs/decisions/github-parity.md) has a
+  row per `_ghw_main` verb, DERIVED from the dispatcher so a verb cannot be
+  silently absent, and CI blocks `github` entering `tui/deps.sh`'s `crates=()`
+  while any row is `todo` or `partial`. Both directions are asserted. The
+  statuses are a measurement except `dropped`, which is a decision and needs an
+  argument in the row.
+
   **The `No bash function shadows a tui binary` CI row is RED for the duration
   of the port, and that is the forcing function it was written to be.** It
   derives the binary names from `tui/Cargo.toml`'s `members`, so adding
