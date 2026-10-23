@@ -33,10 +33,15 @@ pub enum Action {
     Activate,
     /// Move to the next/previous sibling in a `Tabs` strip.
     ///
-    /// `Tab` and shift-`Tab`, which were both unbound and are what a header
-    /// strip trains your fingers to reach for. NOT `h`/`l`: those close and
-    /// open a tree, and a screen with both a strip and a tree needs them to
-    /// keep meaning that.
+    /// **Bound to no key.** `app` sends these when `h`/`l` are pressed with the
+    /// strip focused, and that is the only way to reach them.
+    ///
+    /// They were `Tab` and shift-`Tab` for one commit. Riley's objection is the
+    /// right one: a key that exists only to reach a region is a mode by
+    /// another name, and the point of directional focus is that hjkl goes
+    /// everywhere. Keeping `Tab` as a shortcut sounds harmless and is not --
+    /// it is a second way to express the one thing, so it is a second thing to
+    /// learn, document and keep working.
     NextTab,
     PrevTab,
     Help,
@@ -130,8 +135,6 @@ impl Keymap {
                 return None;
             }
             (KeyCode::Enter, _) => Action::Activate,
-            (KeyCode::Tab, _) => Action::NextTab,
-            (KeyCode::BackTab, _) => Action::PrevTab,
             (KeyCode::Char('/'), false) => Action::Find,
             (KeyCode::Char('?'), false) => Action::Help,
             (KeyCode::Char('q'), false) | (KeyCode::Esc, _) => Action::Quit,
@@ -165,6 +168,21 @@ mod tests {
         assert_eq!(k.resolve(key('o')), Some(Action::Type('o')));
         k.typing(false);
         assert_eq!(k.resolve(key('o')), Some(Action::Key('o')));
+    }
+
+    /// `Tab` is NOT bound. hjkl reaches the strip; a second way to do it
+    /// would be a second thing to learn.
+    #[test]
+    fn tab_does_not_move_the_tabs() {
+        let mut k = Keymap::default();
+        assert_eq!(
+            k.resolve(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+            None
+        );
+        assert_eq!(
+            k.resolve(KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE)),
+            None
+        );
     }
 
     /// `/` starts it, and is not a screen key.

@@ -113,18 +113,31 @@ impl Screen for Host {
         self.screens[self.active].split()
     }
 
+    /// Forwarded for the same reason `split` is, and forgotten for the same
+    /// reason too: a host answering the default made `Split::Sidebar` draw an
+    /// empty left column. Anything a screen can say about ITSELF has to come
+    /// from the active tab -- `host::tests::everything_comes_from_the_active_tab`
+    /// is the test that now covers all of them at once.
+    fn sidebar(&mut self) -> Vec<Row> {
+        self.current().sidebar()
+    }
+
+    fn on_sidebar(&mut self, action: Action, sel: usize) -> Flow {
+        self.current().on_sidebar(action, sel)
+    }
+
     fn footer(&self) -> String {
         let child = self.screens[self.active].footer();
         if self.screens.len() < 2 {
             return child;
         }
-        // The strip's own key, named on the last line where the stack's `q`
-        // also lands -- so "how do I move sideways" and "how do I go back" are
-        // in the same place on every screen.
+        // How to REACH the strip, since there is no key that jumps to it --
+        // `k` off the top row is the whole mechanism, and a screen whose first
+        // row is where you start needs telling once.
         if child.is_empty() {
-            "tab switches".into()
+            "k for the tabs".into()
         } else {
-            format!("{child}\n\u{21e5} tab switches")
+            format!("{child}\nk at the top row reaches the tabs")
         }
     }
 
@@ -244,7 +257,7 @@ mod tests {
     }
 
     /// A one-tab host is not a tab bar: no switching, and no footer line
-    /// advertising a key that would do nothing.
+    /// advertising a way to reach something that is not there.
     #[test]
     fn a_lone_tab_advertises_no_switch() {
         let mut h = Host::new(
@@ -256,11 +269,15 @@ mod tests {
         assert_eq!(h.tabs().unwrap().active, 0);
     }
 
-    /// The layout belongs to the TAB. A host that answered for itself made
-    /// `Split::Full` a no-op, which showed up as a table with no names in it
-    /// rather than as anything resembling a layout bug.
+    /// Everything a screen says about ITSELF has to come from the active tab.
+    ///
+    /// This has now been got wrong twice, in the same way, for two different
+    /// methods: a host answering the trait default made `Split::Full` a no-op
+    /// (a table with no names in it) and then made `Split::Sidebar` draw an
+    /// empty left column. Neither looked like a forwarding bug. So this tests
+    /// the whole set rather than the one that broke.
     #[test]
-    fn the_layout_comes_from_the_active_tab() {
+    fn everything_comes_from_the_active_tab() {
         struct Wide;
         impl Screen for Wide {
             fn title(&self) -> String {
@@ -281,6 +298,12 @@ mod tests {
             fn split(&self) -> Split {
                 Split::Full
             }
+            fn sidebar(&mut self) -> Vec<Row> {
+                vec![Row::leaf("filter")]
+            }
+            fn on_sidebar(&mut self, _: Action, _: usize) -> Flow {
+                Flow::Retarget
+            }
         }
         let mut h = Host::new(
             None,
@@ -289,9 +312,17 @@ mod tests {
                 ("Wide".into(), Box::new(Wide)),
             ],
         );
+        // The plain tab answers with the defaults.
         assert!(matches!(h.split(), Split::ListPane));
+        assert!(h.sidebar().is_empty());
+        assert!(matches!(h.on_sidebar(Action::Open, 0), Flow::Continue));
+
         h.on_action(Action::NextTab, 0);
+
+        // The wide tab answers with its own.
         assert!(matches!(h.split(), Split::Full));
+        assert_eq!(h.sidebar().len(), 1, "the sidebar came from the host");
+        assert!(matches!(h.on_sidebar(Action::Open, 0), Flow::Retarget));
     }
 
     #[test]

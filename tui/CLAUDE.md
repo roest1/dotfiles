@@ -367,8 +367,39 @@ pins that.
   BYTES, `chars().count()` returns CHARACTERS, and neither is what the terminal
   does. If you are asserting alignment, assert `width::width`.
 
-- **`Screen::split()` picks the layout, per screen.** `ListPane` (the default)
-  or `Full`. The shapes genuinely differ: a workflow run is a short list with a
+- **`Tab` is bound to nothing.** It moved the tabs for one commit, and that
+  was wrong for the reason the whole directional model exists: a key whose only
+  job is reaching a region is a mode by another name. Keeping it as a shortcut
+  sounds harmless and is not — it is a second way to express one thing, so it
+  is a second thing to learn, document and keep working. `k` off the top row
+  reaches the strip and `h`/`l` move along it. The `Host` footer says so, since
+  there is no key to discover.
+
+- **`Split::Sidebar` is TWO row regions, and `hjkl` crosses them.** Filters
+  left, list right — the inverse of `ListPane`, and the shape of the Issues and
+  PR mocks. `Screen::sidebar()` and `Screen::on_sidebar()` are the second pair;
+  split in two rather than passed a region so a screen cannot read an index
+  against the wrong list, which is the one mistake here that would act on a row
+  nobody was looking at.
+
+  **`l` opens what it can and crosses when it cannot**, which is the same edge
+  rule as everywhere else and is load-bearing here: every row in the PR sidebar
+  is a dropdown, so without the second half `l` toggled dropdowns forever and
+  the list was unreachable. An open control has nothing left to open, so `l`
+  moves on.
+
+  `draw_rows` measures `indent` from the region's `x0`. It did not for one
+  commit and the main list drew straight over the sidebar.
+
+- **Forward EVERYTHING from `Host` that a screen says about itself.** This has
+  now been got wrong twice in the same way — `split()`, then `sidebar()` — and
+  neither looked like a forwarding bug: the first showed up as a table with no
+  names in it, the second as an empty left column.
+  `host::tests::everything_comes_from_the_active_tab` covers the whole set
+  rather than the method that broke.
+
+- **`Screen::split()` picks the layout, per screen.** `ListPane` (the default),
+  `Full`, or `Sidebar`. The shapes genuinely differ: a workflow run is a short list with a
   long story beside it, where a branch list is a TABLE — seven facts per row
   and nothing a pane could add. A `Full` screen is never asked for a pane at
   all, so it need not implement one usefully.
@@ -395,6 +426,28 @@ pins that.
   bytes: `str::find` returns a byte offset and `★` is three bytes, so the byte
   version failed on a perfectly aligned row and would have passed on a broken
   one whose counts cancelled.
+
+- **Every control is a dropdown, and bulk actions are a menu.** The PR mock
+  draws state toggles, a sort order and a search in a header strip and five
+  filters down the side. They are all the same thing — a named thing you open,
+  pick from and close — so they are all sidebar rows, one control per row, and
+  `enter` means exactly one thing. A header row holding four controls side by
+  side would need column focus inside a row, which is the axis this does not
+  have.
+
+  `space` ticks a pull request, the key that toggles a section in `dots`. With
+  anything ticked the list grows a row saying how many, and `enter` on it opens
+  a `Menu` whose items act on the set — so bulk actions cost no new region and
+  no new keys, and inherit the confirm.
+
+  **Ticks are kept by NUMBER and dropdown picks by NAME**, never by position. A
+  refresh reorders the list and grows the option lists, and a `Vec<bool>`
+  indexed by position would silently move a tick onto a different pull request
+  or a filter onto a different person.
+
+  Only `state` refetches, because it is the only control that changes which
+  pull requests EXIST. Author, assignee, involvement, labels, sort and the `/`
+  search are all applied to the fifty that came back.
 
 - **`enter` on a row opens that row's MENU, and that is the design's
   three-dots.** It needs nothing from `reticle` — a menu is a list of rows and

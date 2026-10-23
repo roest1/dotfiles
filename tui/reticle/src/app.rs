@@ -87,8 +87,16 @@ struct Frame {
     /// First pane line drawn, for when the pane has focus and more lines than
     /// fit.
     pane_top: usize,
-    /// What the list is narrowed to. Persistent per screen, like the focus and
-    /// the cursor, so coming back to a filtered list finds it as you left it.
+    /// The sidebar's own cursor, for `Split::Sidebar`. Separate because the
+    /// two lists are navigated separately and crossing between them must not
+    /// move the cursor you are coming back to.
+    side_sel: usize,
+    side_top: usize,
+    /// What the MAIN list is narrowed to -- the mock's search bar. The sidebar
+    /// is a handful of rows and has nothing to filter.
+    ///
+    /// Persistent per screen, like the focus and the cursor, so coming back to
+    /// a filtered list finds it as you left it.
     filter: String,
     /// The text field, when one has the keyboard.
     edit: Option<Edit>,
@@ -130,8 +138,11 @@ enum Asking {
 /// `Tab` and shift-`Tab` still work. They are no longer the only way.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Focus {
-    /// The header strip. `h`/`l` change tab, `j` drops into the list.
+    /// The header strip. `h`/`l` change tab, `j` drops into the body.
     Tabs,
+    /// The left column of a `Split::Sidebar` screen: its filters and
+    /// controls. `l` crosses to the list, `k` off the top reaches the strip.
+    Sidebar,
     /// The row list. The default, and where everything used to happen.
     List,
     /// The right-hand pane, when it has more to say than fits. `j`/`k`
@@ -183,6 +194,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             reticle: Reticle::new(0),
             focus: Focus::List,
             pane_top: 0,
+            side_sel: 0,
+            side_top: 0,
             filter: String::new(),
             edit: None,
         })
@@ -221,7 +234,22 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
         }
         let cur = vis.get(frame.sel).copied().unwrap_or(0);
         let (cols, screen_rows) = Terminal::size()?;
-        let full = matches!(frame.screen.split(), Split::Full);
+        let split = frame.screen.split();
+        let full = matches!(split, Split::Full);
+        let sided = matches!(split, Split::Sidebar);
+        // The sidebar's rows, and its own visible list. No filter: the search
+        // bar in the mock belongs to the main list, and a column of five
+        // filters has nothing to narrow.
+        let side: Vec<Row> = if sided {
+            frame.screen.sidebar()
+        } else {
+            Vec::new()
+        };
+        let svis: Vec<usize> = (0..side.len()).collect();
+        if frame.side_sel >= svis.len() {
+            frame.side_sel = svis.len().saturating_sub(1);
+        }
+        let scur = svis.get(frame.side_sel).copied().unwrap_or(0);
         // `Full` gives the whole width to the list; there is no divider to
         // leave room for and no pane to leave room beside.
         let left = if full { cols } else { left_width(cols) };
@@ -257,6 +285,9 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                 frame.filter
             ),
             None => match frame.focus {
+                Focus::Sidebar => {
+                    "j/k move \u{b7} enter pick \u{b7} l to the list \u{b7} k at the top for the tabs".into()
+                }
                 Focus::List => frame.screen.footer(),
                 Focus::Tabs => {
                     "h/l pick a tab \u{b7} j into it \u{b7} enter takes you there".into()
@@ -323,21 +354,55 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
             }
             pane_dirty = false;
         }
-        draw_rows(
-            &mut out,
-            &rows,
-            &vis,
-            &View {
-                top: frame.top,
-                sel: frame.sel,
-                // Only the focused region wears the brackets. Two cursors on
-                // screen at once is two answers to "where am I".
-                reticle: (frame.focus == Focus::List).then_some(&frame.reticle),
-            },
-            left,
-            geo.header_h,
-            list_h,
-        )?;
+        if sided {
+            // Left: the filters. Right: the list. Both are real lists with
+            // their own cursor, and only the focused one wears the brackets --
+            // two sets on screen would be two answers to "where am I".
+            draw_rows(
+                &mut out,
+                &side,
+                &svis,
+                &View {
+                    x0: 0,
+                    top: frame.side_top,
+                    sel: frame.side_sel,
+                    reticle: (frame.focus == Focus::Sidebar).then_some(&frame.reticle),
+                },
+                left,
+                geo.header_h,
+                list_h,
+            )?;
+            draw_rows(
+                &mut out,
+                &rows,
+                &vis,
+                &View {
+                    x0: left + 1,
+                    top: frame.top,
+                    sel: frame.sel,
+                    reticle: (frame.focus == Focus::List).then_some(&frame.reticle),
+                },
+                cols,
+                geo.header_h,
+                list_h,
+            )?;
+        } else {
+            draw_rows(
+                &mut out,
+                &rows,
+                &vis,
+                &View {
+                    x0: 0,
+                    top: frame.top,
+                    sel: frame.sel,
+                    // Only the focused region wears the brackets.
+                    reticle: (frame.focus == Focus::List).then_some(&frame.reticle),
+                },
+                left,
+                geo.header_h,
+                list_h,
+            )?;
+        }
         draw_footer(&mut out, &foot, cols, screen_rows, depth, geo.footer_h)?;
         out.flush()?;
 
@@ -483,8 +548,12 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                         // ── j: down, or out of the strip into the list ──
                         Action::Down => match frame.focus {
                             Focus::Tabs => {
-                                frame.focus = Focus::List;
+                                // Into whichever region the body starts with.
+                                frame.focus = if sided { Focus::Sidebar } else { Focus::List };
                                 pane_dirty = true;
+                            }
+                            Focus::Sidebar => {
+                                frame.side_sel = seek(&side, &svis, frame.side_sel, 1)
                             }
                             // Every motion lands on a SELECTABLE row. Spacers exist
                             // to group things visually; a cursor that can rest in
@@ -498,6 +567,15 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                         // ── k: up, and off the top row into the strip ──
                         Action::Up => match frame.focus {
                             Focus::Tabs => {}
+                            Focus::Sidebar => {
+                                let next = seek(&side, &svis, frame.side_sel, -1);
+                                if next == frame.side_sel && tabs.is_some() {
+                                    frame.focus = Focus::Tabs;
+                                    pane_dirty = true;
+                                } else {
+                                    frame.side_sel = next;
+                                }
+                            }
                             Focus::List => {
                                 let next = seek(&rows, &vis, frame.sel, -1);
                                 if next == frame.sel && tabs.is_some() {
@@ -514,6 +592,22 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                                 pane_dirty = true;
                             }
                         },
+                        Action::Top if frame.focus == Focus::Sidebar => {
+                            frame.side_sel = first_selectable(&side, &svis, 0, 1);
+                        }
+                        Action::Bottom if frame.focus == Focus::Sidebar => {
+                            frame.side_sel =
+                                first_selectable(&side, &svis, svis.len().saturating_sub(1), -1);
+                        }
+                        Action::PageDown if frame.focus == Focus::Sidebar => {
+                            let want =
+                                (frame.side_sel + list_h / 2).min(svis.len().saturating_sub(1));
+                            frame.side_sel = first_selectable(&side, &svis, want, -1);
+                        }
+                        Action::PageUp if frame.focus == Focus::Sidebar => {
+                            let want = frame.side_sel.saturating_sub(list_h / 2);
+                            frame.side_sel = first_selectable(&side, &svis, want, 1);
+                        }
                         Action::Top => match frame.focus {
                             Focus::Pane => {
                                 frame.pane_top = 0;
@@ -559,6 +653,51 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                         Action::Close if frame.focus == Focus::Pane => {
                             frame.focus = Focus::List;
                             pane_dirty = true;
+                        }
+                        // In the sidebar, `h` is the screen's -- to collapse a
+                        // dropdown. There is nothing further left to go to.
+                        Action::Close if frame.focus == Focus::Sidebar => {
+                            frame.screen.on_sidebar(Action::Close, scur);
+                            pane_dirty = true;
+                        }
+                        // On a sidebar screen the main list's left edge IS the
+                        // sidebar, and the screen gets first refusal: `h`
+                        // collapses a group if there is one, and crosses if not.
+                        Action::Close if sided && frame.focus == Focus::List => {
+                            if matches!(frame.screen.on_action(Action::Close, cur), Flow::Continue)
+                            {
+                                frame.focus = Focus::Sidebar;
+                            }
+                            pane_dirty = true;
+                        }
+                        Action::Open if sided && frame.focus == Focus::Sidebar => {
+                            if matches!(frame.screen.on_sidebar(Action::Open, scur), Flow::Continue)
+                            {
+                                frame.focus = Focus::List;
+                            }
+                            pane_dirty = true;
+                        }
+                        // Everything else a sidebar row might do -- enter to
+                        // pick, a letter key -- is the screen's other handler.
+                        other if frame.focus == Focus::Sidebar => {
+                            match frame.screen.on_sidebar(other, scur) {
+                                Flow::Quit => return Ok(()),
+                                Flow::Pop => popped = depth > 1,
+                                Flow::Push(next) => pushed = Some(next),
+                                Flow::Detach(argv) => {
+                                    detach(term, &mut out, &argv)?;
+                                    pane_dirty = true;
+                                }
+                                Flow::Ask { label, initial } => {
+                                    frame.edit = Some(Edit {
+                                        what: Asking::Screen(label),
+                                        text: initial,
+                                        was: frame.sel,
+                                    });
+                                    pane_dirty = true;
+                                }
+                                _ => pane_dirty = true,
+                            }
                         }
                         Action::Close if frame.focus == Focus::Tabs => {
                             // In the strip, left and right ARE the tabs.
@@ -689,6 +828,8 @@ fn event_loop(screens: Vec<Box<dyn Screen>>, term: &mut Terminal) -> io::Result<
                 reticle: Reticle::new(sel),
                 focus: Focus::List,
                 pane_top: 0,
+                side_sel: 0,
+                side_top: 0,
                 filter: String::new(),
                 edit: None,
             });
@@ -831,6 +972,8 @@ fn tab_strip(tabs: &Tabs, cols: u16, focused: bool) -> String {
 /// same three -- `draw_rows` took eight arguments once the header origin became
 /// variable, which is a signal rather than a lint.
 struct View<'a> {
+    /// First column of this region.
+    x0: u16,
     top: usize,
     sel: usize,
     /// `None` when another region has focus -- the list keeps its selection
@@ -847,14 +990,22 @@ fn draw_rows(
     y0: u16,
     height: usize,
 ) -> io::Result<()> {
-    let View { top, sel, reticle } = *view;
+    let View {
+        x0,
+        top,
+        sel,
+        reticle,
+    } = *view;
     let spread = reticle.map(|r| r.spread()).unwrap_or(0);
     let ret_row = reticle.map(|r| r.row()).unwrap_or(usize::MAX);
-    let blank = " ".repeat(left as usize);
+    // `x0` is where this region starts and `left` where it ends, so one
+    // function draws the narrow column, the full width, or the right-hand list
+    // of a sidebar screen.
+    let blank = " ".repeat(left.saturating_sub(x0) as usize);
 
     for i in 0..height {
         let y = y0 + i as u16;
-        queue!(out, cursor::MoveTo(0, y), style::Print(&blank))?;
+        queue!(out, cursor::MoveTo(x0, y), style::Print(&blank))?;
         let Some(row) = vis.get(top + i).map(|&r| &rows[r]) else {
             continue;
         };
@@ -864,7 +1015,13 @@ fn draw_rows(
 
         // The label's column never depends on the reticle -- only the brackets
         // move. See the note in reticle.rs.
-        let indent = 2 + row.depth * 2 + SPREAD_ROOM;
+        //
+        // Measured from `x0`, the region's left edge. Everything downstream --
+        // the detail's column, the available width, the bracket positions --
+        // derives from this, so the region offset lives in exactly one place.
+        // It did not, for one commit, and the main list of a sidebar screen
+        // drew over the sidebar.
+        let indent = x0 + 2 + row.depth * 2 + SPREAD_ROOM;
 
         // Reserve the badge's column first; everything else lives in what is
         // left. One space of air before the divider.

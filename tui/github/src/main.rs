@@ -53,7 +53,8 @@ fn main() -> std::io::Result<()> {
                 None => root,
             };
             let fetch = std::sync::Arc::new(github::gh::Fetcher::new(""));
-            let user = github::user::screen(fetch, root, &github::user::login());
+            let me = github::user::login();
+            let user = github::user::screen(fetch, root.as_me(&me), &me);
             app::run_stack(vec![Box::new(user)])?
         }
     }

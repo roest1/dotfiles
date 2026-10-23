@@ -28,6 +28,7 @@ pub mod menu;
 pub mod model;
 pub mod orgs;
 pub mod paint;
+pub mod prs;
 pub mod render;
 pub mod root;
 pub mod runs;

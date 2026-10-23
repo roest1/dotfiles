@@ -46,11 +46,11 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `env-create` | todo |  |
 | `env-delete` | todo |  |
 | `env-menu` | todo | 5 items: wait timer, required reviewers, set a secret, delete, browser |
-| `hub-prefetch` | todo | the hub's six panes were a repo DASHBOARD — ci, prs, branches, secrets, envs and a header, fetched in parallel. The tab strip replaces its navigation but not its at-a-glance summary |
-| `hub-refresh` | todo | see hub-prefetch |
+| `hub-prefetch` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
+| `hub-refresh` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
 | `list-branches` | ported | `branches.rs` — the full-width table |
 | `list-envs` | todo |  |
-| `list-prs` | todo | needs filtering first |
+| `list-prs` | ported | `prs.rs` — `gh pr list --json` in one call, filters applied to the fifty that came back |
 | `list-runs` | ported | `runs.rs` — the run list, 15s live refresh |
 | `list-secrets` | todo |  |
 | `list-steps` | ported | `steps.rs` — jobs and steps as a tree |
@@ -61,16 +61,16 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `open-branch` | ported | the branch menu's Open in browser |
 | `open-run` | ported | `o` on the steps screen |
 | `open-settings` | todo | `ctrl-o` on the Secrets and Environments screens |
-| `pr-checkout` | todo |  |
-| `pr-create` | todo | `gh pr create` prompts, so this is a menu item not a widget |
-| `pr-menu` | todo | 13 items: diff, files, comment, approve, request changes, labels, reviewers, edit, merge, ready/draft, close, browser |
-| `prs-label` | todo | the open/closed/all scope label |
-| `prs-next` | todo | `ctrl-f` cycling the scope |
+| `pr-checkout` | ported | the PR menu's Checkout locally |
+| `pr-create` | ported | the sidebar's `new pull request` — `gh pr create` prompts for title and body itself |
+| `pr-menu` | ported | `prs::pr_menu` — 12 of the 13, offered only when they apply. Labels and Reviewers take a typed name rather than a picker |
+| `prs-label` | ported | the `state` dropdown in the sidebar, which says what it is set to |
+| `prs-next` | ported | the same dropdown — a list to pick from rather than a key that cycles |
 | `pv-branch` | partial | the row carries protection, ahead/behind, author, subject, checks and PR — but NOT the effective branch rules, nor whether a local copy exists |
 | `pv-env` | todo |  |
-| `pv-hub` | todo | see hub-prefetch |
+| `pv-hub` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
 | `pv-job` | ported | `render::job_body` |
-| `pv-pr` | todo |  |
+| `pv-pr` | ported | the row carries review, checks, author, age, branches and ±; the mock has no preview pane, so the detail is the menu |
 | `pv-run` | ported | `render::run_header` + `run_body` |
 | `pv-secret` | todo |  |
 | `pv-step` | ported | `render::step_body` |
@@ -83,33 +83,34 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `screen-actions-for` | todo | `Scope::Commit` is built and query-correct; nothing reaches it until the PR screen's `ctrl-a` exists |
 | `screen-branches` | ported | the 🌿 Branches tab |
 | `screen-envs` | todo |  |
-| `screen-prs` | todo |  |
+| `screen-prs` | ported | the 🔀 Pull Requests tab |
 | `screen-secrets` | todo |  |
 | `screen-steps` | ported | pushed by enter on a run |
 | `secret-delete` | todo |  |
 | `secret-set` | todo | needs text input, or `gh secret set` on the real tty |
 ## Where that leaves it
 
-**22 ported, 2 partial, 24 todo, 1 dropped.** Roughly half, and the half that
-is left is not the easy half: Pull Requests and Secrets both need text input or
-filtering, and the hub was a dashboard rather than a list.
+**30 ported, 2 partial, 16 todo, 4 dropped** (2026-10-23). Filtering, text
+input and Pull Requests all landed, and the hub was dropped with an argument
+rather than ported.
 
-The order that unblocks the most, which is also the order the remaining work
-should be done in:
+What is left, in the order that unblocks the most:
 
-1. **Filtering and text input**, with the multi-select dropdown. `reticle::nav`
-   maps every bare char to `Action::Key(c)`, so there is no text-entry mode to
-   hang any of it on. PRs and Secrets are built around all three.
-2. **Pull requests** — the biggest single screen, and the one that makes
-   `screen-actions-for` reachable.
-3. **Secrets and Environments** — small once text input exists.
-4. **The hub's summary.** The tab strip replaced the hub's NAVIGATION and not
-   its content: six panes fetched in parallel telling you the state of CI, PRs,
-   branches, secrets and environments at once. That is a real capability and it
-   has no home in the current design yet. It may want to be the repo level's
-   own first tab rather than a thing the strip does.
-5. **The two partials**, which are small and specific: a branch's effective
-   rules and whether a local copy exists, plus the two branch-menu items.
+1. **Secrets** (5 rows) — list plus set and delete. Small: `gh secret list
+   --json` through `Req::Cmd`, and the two actions are menu items.
+2. **Environments** (7 rows, including `open-settings`) — a list and a
+   five-item menu, mostly `gh api`.
+3. **`screen-actions-for`** — the PR menu offering "the runs for this commit".
+   `runs::Scope::Commit` is built and query-correct; what it needs is a way to
+   construct the Actions screen from a slug and a sha rather than from an
+   `index::Repo`.
+4. **The two partials** — both are only the effective branch rules, which is
+   the same ruleset API as the dropped `rulesets` row. Worth deciding whether
+   that makes them a third `dropped` rather than work.
+5. **The multi-select picker for PR labels and reviewers.** Those two menu
+   items take a typed name today, which is honest but worse than a list. Not a
+   parity gap -- bash typed them too -- but it is the one place the design doc
+   asks for a dropdown and gets a field.
 
 ## What this file is not
 

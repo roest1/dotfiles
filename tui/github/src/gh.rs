@@ -166,6 +166,18 @@ pub enum Req {
     },
     /// One completed job's log, whole.
     Log { job: u64 },
+    /// An arbitrary `gh` subcommand that prints JSON.
+    ///
+    /// For the things `gh` computes that the REST API does not hand over in
+    /// one call. `gh pr list --json reviewDecision,statusCheckRollup` is the
+    /// reason: both are GraphQL aggregates, and asking REST for them is a
+    /// request per pull request. `gh` already does that work.
+    ///
+    /// Unlike `Json` this does NOT go through `gh api`, so there are no
+    /// `X-OAuth-Scopes` headers on the way back and no `Got::Denied` from it.
+    /// That is honest rather than a gap: a `gh pr list` that fails has failed
+    /// for its own reasons, and gh says what they were on stderr.
+    Cmd { args: Vec<String> },
     /// Any read-only endpoint whose result the caller parses itself.
     ///
     /// One variant rather than nine. The user and org screens are a dozen flat
@@ -184,6 +196,7 @@ impl Req {
             Req::Jobs { run, attempt, .. } => format!("jobs:{run}:{attempt}"),
             Req::Log { job } => format!("log:{job}"),
             Req::Json { path } => format!("json:{path}"),
+            Req::Cmd { args } => format!("cmd:{}", args.join(" ")),
         }
     }
 
@@ -264,10 +277,33 @@ fn parse(req: &Req, bytes: Vec<u8>) -> Got {
             Ok(v) => Got::Json(Arc::new(v)),
             Err(e) => Got::Failed(format!("unreadable response from {path}: {e}")),
         },
+        Req::Cmd { args } => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+            Ok(v) => Got::Json(Arc::new(v)),
+            Err(e) => Got::Failed(format!("unreadable output from gh {}: {e}", args.join(" "))),
+        },
     }
 }
 
 fn fetch(repo: &str, req: &Req, seen: &Mutex<Granted>) -> Got {
+    // `gh <subcommand>`, not `gh api`, so it takes the other route.
+    if let Req::Cmd { args } = req {
+        let out = Command::new("gh").args(args).output();
+        return match out {
+            Ok(o) if o.status.success() => parse(req, o.stdout),
+            Ok(o) => Got::Failed(
+                String::from_utf8_lossy(&o.stderr)
+                    .lines()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("gh failed")
+                    .trim()
+                    .to_string(),
+            ),
+            Err(e) => Got::Failed(match e.kind() {
+                std::io::ErrorKind::NotFound => "gh is not installed".to_string(),
+                _ => format!("could not run gh: {e}"),
+            }),
+        };
+    }
     let args: Vec<String> = match req {
         Req::Runs { query } => vec![format!("repos/{repo}/actions/runs?{query}")],
         Req::Jobs { run, .. } => vec![format!("repos/{repo}/actions/runs/{run}/jobs?per_page=100")],
@@ -276,6 +312,8 @@ fn fetch(repo: &str, req: &Req, seen: &Mutex<Granted>) -> Got {
             format!("repos/{repo}/actions/jobs/{job}/logs"),
         ],
         Req::Json { path } => vec![path.clone()],
+        // Handled above; `gh api` never sees it.
+        Req::Cmd { .. } => unreachable!("Cmd takes the other route"),
     };
     let reply = match api(&args) {
         Ok(r) => r,

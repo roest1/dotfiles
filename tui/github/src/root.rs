@@ -20,6 +20,8 @@ use std::process::Command;
 use crate::index::{self, Remote, Repo};
 
 pub struct Root {
+    /// The signed-in login, for the pull request screen's "me at the top".
+    me: String,
     root: PathBuf,
     repos: Vec<Repo>,
     /// Lane names in display order, with the index of each repo under them.
@@ -70,6 +72,7 @@ impl Root {
         // showing you what you have.
         let open = vec![true; lanes.len()];
         Self {
+            me: String::new(),
             root,
             repos,
             lanes,
@@ -78,6 +81,16 @@ impl Root {
             focus_sel: 0,
             start_sel: 0,
         }
+    }
+
+    /// Who is signed in, for the screens that need "me" in a list.
+    ///
+    /// Passed in rather than looked up here: `user::login` shells out to `gh`,
+    /// and the root screen's whole claim is that it draws before anything
+    /// runs. The caller already knows it for the title strip.
+    pub fn as_me(mut self, me: &str) -> Self {
+        self.me = me.to_string();
+        self
     }
 
     /// Select this repo on arrival, opening its lane.
@@ -239,6 +252,7 @@ impl Root {
                 let slug = repo.slug();
                 let branches =
                     crate::branches::Branches::open(&slug, &repo.path, actions.fetcher());
+                let prs = crate::prs::Prs::open(&slug, &self.me, actions.fetcher());
                 Flow::Push(Box::new(reticle::Host::new(
                     Some(slug),
                     // The same glyphs the fzf screens used as border labels,
@@ -248,6 +262,7 @@ impl Root {
                             "\u{1f33f} Branches".into(),
                             Box::new(branches) as Box<dyn Screen>,
                         ),
+                        ("\u{1f500} Pull Requests".into(), Box::new(prs)),
                         ("\u{1f680} Actions".into(), Box::new(actions)),
                     ],
                 )))

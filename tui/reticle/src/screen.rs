@@ -93,6 +93,17 @@ pub enum Split {
     /// The list spans the full width. No pane, no divider -- and `pane()` is
     /// never called, so a screen using this need not implement one usefully.
     Full,
+    /// A narrow column of controls on the left, the list on the right.
+    ///
+    /// The shape of Riley's Issues and PRs mocks, and the inverse of
+    /// `ListPane`: the left column holds the FILTERS and the content is on the
+    /// right. So there are two row regions, both navigable, with `h` and `l`
+    /// crossing between them -- which is why this needed `Screen::sidebar` and
+    /// `Screen::on_sidebar` rather than being a width setting.
+    ///
+    /// No pane. The mocks put everything a row needs on the row and the
+    /// actions behind a menu, so there is nothing a third column would hold.
+    Sidebar,
 }
 
 /// A header strip of sibling screens, drawn above BOTH columns.
@@ -251,6 +262,25 @@ pub trait Screen {
     /// How to divide the body. Default: list left, pane right.
     fn split(&self) -> Split {
         Split::ListPane
+    }
+
+    /// The left column's rows, for `Split::Sidebar`.
+    ///
+    /// Its own method rather than a flag on `rows()` because the two lists are
+    /// navigated separately and have separate cursors -- and because every
+    /// screen that does not want one should not have to say so.
+    fn sidebar(&mut self) -> Vec<Row> {
+        Vec::new()
+    }
+
+    /// A key pressed with the SIDEBAR focused, with the sidebar's own row
+    /// index. `rows()`'s handler is `on_action`; this is the other one.
+    ///
+    /// Split in two rather than passed a region, so a screen cannot read the
+    /// index against the wrong list -- which is the one mistake here that
+    /// would act on a row nobody was looking at.
+    fn on_sidebar(&mut self, _action: Action, _sel: usize) -> Flow {
+        Flow::Continue
     }
 
     /// The answer to a `Flow::Ask`, or `None` if it was abandoned.
