@@ -283,6 +283,29 @@ pins that.
   An empty or abandoned answer runs NOTHING. `--delete ""` is not something to
   find out about afterwards.
 
+- **A menu item that changes something asks first, and "the tool reports" is
+  not the same as "the tool asks".** That conflation was a real hole, wider
+  than it looked: `git push --delete` prints what it did and fails loudly on a
+  protected branch, and `gh api -X POST .../rename` does neither — so deleting
+  a remote branch was ONE `enter` from a menu row, behind a note claiming the
+  tool confirmed it.
+
+  `Item::confirm()` asks; `danger()` implies it and adds "cannot be undone".
+  Where the tool genuinely does stop and ask — `gh pr create` for a title, `gh
+  auth refresh` printing a code and waiting — neither flag is set, so there is
+  still only ever one prompt.
+
+  **The confirm comes AFTER the field**, so what you approve is the command
+  with the name you just typed in it rather than a template. Only `y` acts; any
+  other key withdraws, and so does moving the cursor. `focus` clears it
+  unconditionally rather than only on a change — `app` calls `focus` only when
+  the cursor moved, so the guarded version was equivalent with a subtlety to
+  reason about, and that subtlety is the sort of thing that leaves a delete
+  armed.
+
+  Because this lives in `Menu`, every screen's menu has it. That is the shared
+  confirm the decision doc kept listing as open.
+
   The first version returned early with `continue` after handling a field,
   which silently dropped a `Flow::Push` or `Flow::Pop` from `answered` — a
   screen asking for a name and then opening something with it did nothing. It

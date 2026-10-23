@@ -497,8 +497,16 @@ what the terminal does.
   collapsed it; and an early `continue` after a field silently swallowed a
   `Flow::Push` from `answered`. Reasoning in `tui/CLAUDE.md`.
 
-  The confirm half is unchanged — screen-local, `y` only — and is still one
-  screen's worth rather than the shared answer.
+  The confirm half then moved into `Menu`, which makes it the shared answer
+  after all. The reason was a hole Riley spotted in the rename and which turned
+  out to be wider: nothing in a menu asked anything, so **deleting a remote
+  branch was one `enter` from a menu row.** The note defending that conflated
+  two different things — `git push --delete` REPORTS afterwards and `gh api -X
+  POST` does neither. Reporting is not confirming.
+
+  `Item::confirm()` asks, `danger()` implies it, and where the tool genuinely
+  does stop and wait the flags stay off, so there is only ever one prompt. The
+  confirm comes after the field, so what is approved is the filled command.
 - **The multi-select dropdown**, which is the clearest spec in
   `GITHUB_TUI.md`: enter opens, me preselected at the top, enter toggles, left
   returns to the title row, enter collapses with the selections intact. It is a

@@ -65,10 +65,22 @@ pub struct Item {
     /// Said in the pane, for anything whose consequences are worth a sentence
     /// before you press enter.
     pub note: Vec<String>,
-    /// True for anything that cannot be undone, which draws it in red and
-    /// says so in the pane. It does NOT add a prompt -- the tool being run
-    /// does that, and two confirms is one too many.
+    /// True for anything that cannot be undone: red, a `!` badge, and the
+    /// pane says so. Implies `asks`.
     pub destructive: bool,
+    /// Require a `y` before this runs.
+    ///
+    /// This used to be absent, on the reasoning that the tool being run does
+    /// the confirming and two confirms is one too many. That premise was
+    /// false and the distinction it missed is the whole point: `git push
+    /// --delete` REPORTS afterwards, it does not ASK beforehand, and `gh api
+    /// -X POST .../rename` does neither. So deleting a remote branch was one
+    /// `enter` from a menu row, which is not a price anyone agreed to.
+    ///
+    /// Reporting is not confirming. Where the tool genuinely does ask -- `gh
+    /// pr create` stopping for a title, `gh auth refresh` printing a code and
+    /// waiting -- this stays false, and there is still only one prompt.
+    pub asks: bool,
     pub act: Act,
 }
 
@@ -79,6 +91,7 @@ impl Item {
             detail: detail.into(),
             note: Vec::new(),
             destructive: false,
+            asks: false,
             act,
         }
     }
@@ -88,8 +101,18 @@ impl Item {
         self
     }
 
+    /// Ask before running. For anything that changes a shared thing --
+    /// a default branch, a branch everyone has tracked.
+    pub fn confirm(mut self) -> Self {
+        self.asks = true;
+        self
+    }
+
+    /// Cannot be undone. Implies `confirm`, because the one thing worse than
+    /// an unconfirmed change is an unconfirmed irreversible one.
     pub fn danger(mut self) -> Self {
         self.destructive = true;
+        self.asks = true;
         self
     }
 }
@@ -105,6 +128,10 @@ pub struct Menu {
     /// The item whose question is outstanding. The screen has to remember
     /// what it asked -- `app` carries the text and nothing else.
     asking: Option<usize>,
+    /// An item waiting on a `y`, with the command already resolved -- so the
+    /// prompt can show exactly what is about to run, including whatever was
+    /// typed into a field a moment ago.
+    pending: Option<(usize, Vec<String>)>,
 }
 
 impl Menu {
@@ -116,7 +143,18 @@ impl Menu {
             sel: 0,
             ran: false,
             asking: None,
+            pending: None,
         }
+    }
+
+    /// Either run it, or ask first.
+    fn go(&mut self, i: usize, argv: Vec<String>) -> Flow {
+        if self.items.get(i).is_some_and(|it| it.asks) {
+            self.pending = Some((i, argv));
+            return Flow::Dirty;
+        }
+        self.ran = true;
+        Flow::Detach(argv)
     }
 
     /// Did anything run? The screen underneath reads this after the pop to
@@ -132,6 +170,12 @@ impl Screen for Menu {
     }
 
     fn focus(&mut self, sel: usize) {
+        // Any focus call withdraws a pending confirm, not only one that moves.
+        // `app` calls this only when the cursor actually changed, so the
+        // unconditional version is equivalent and has no guard to reason
+        // about -- and the guarded version's subtlety is exactly the sort of
+        // thing that leaves a delete armed.
+        self.pending = None;
         self.sel = sel;
     }
 
@@ -161,6 +205,20 @@ impl Screen for Menu {
         lines.push(format!("{BOLD}{}{OFF}", item.label));
         lines.push(format!("{GRY}{}{OFF}", self.subject));
         lines.push(crate::paint::rule(cols));
+        if let Some((_, argv)) = &self.pending {
+            lines.push(format!("{ORG}About to run:{OFF}"));
+            lines.push(String::new());
+            lines.push(format!("  {BOLD}{}{OFF}", argv.join(" ")));
+            lines.push(String::new());
+            if item.destructive {
+                lines.push(format!("{RED}This cannot be undone.{OFF}"));
+                lines.push(String::new());
+            }
+            lines.push(format!(
+                "{ORG}y{OFF} to go ahead \u{b7} any other key leaves it"
+            ));
+            return Pane { image: None, lines };
+        }
         if item.destructive {
             lines.push(format!("{RED}This cannot be undone.{OFF}"));
             lines.push(String::new());
@@ -196,6 +254,19 @@ impl Screen for Menu {
     }
 
     fn on_action(&mut self, action: Action, sel: usize) -> Flow {
+        // A pending confirm consumes the very next key, whatever it is. Only
+        // `y` acts; everything else withdraws. Safe by construction rather
+        // than by bookkeeping -- a stale prompt cannot turn a later keystroke
+        // into a delete, because the later keystroke is not a `y`.
+        if let Some((_, argv)) = self.pending.take() {
+            return match action {
+                Action::Key('y') | Action::Key('Y') => {
+                    self.ran = true;
+                    Flow::Detach(argv)
+                }
+                _ => Flow::Dirty,
+            };
+        }
         // Enter alone. `l` would be a second key that runs a delete, which is
         // the one place in this program where an extra way to act is a cost
         // rather than a convenience.
@@ -207,8 +278,8 @@ impl Screen for Menu {
         };
         match &mut item.act {
             Act::Run(argv) => {
-                self.ran = true;
-                Flow::Detach(argv.clone())
+                let argv = argv.clone();
+                self.go(sel, argv)
             }
             // Taken rather than cloned, because a `Box<dyn Screen>` is not
             // cloneable and a menu item is chosen once. Re-choosing it finds
@@ -245,13 +316,19 @@ impl Screen for Menu {
             return Flow::Continue;
         };
         let filled: Vec<String> = argv.iter().map(|a| a.replace("{}", text.trim())).collect();
-        self.ran = true;
-        Flow::Detach(filled)
+        // The confirm comes AFTER the field, so what it shows is the command
+        // that will actually run, with the name just typed in it. Asking first
+        // would be confirming a template.
+        self.go(i, filled)
     }
 
     fn footer(&self) -> String {
+        if self.pending.is_some() {
+            return "y to go ahead \u{b7} any other key leaves it".into();
+        }
         match self.items.get(self.sel) {
-            Some(i) if i.destructive => "enter runs it \u{b7} it will say what it did".into(),
+            Some(i) if i.destructive => "enter asks, then y \u{b7} cannot be undone".into(),
+            Some(i) if i.asks => "enter asks, then y".into(),
             Some(_) => "enter runs it".into(),
             None => "nothing here".into(),
         }
@@ -296,12 +373,87 @@ mod tests {
         assert!(rows[0].badges.is_empty());
         assert_eq!(rows[1].badges.first().map(|b| b.0.as_str()), Some("!"));
         m.focus(1);
-        assert!(m.footer().contains("say what it did"));
+        assert!(m.footer().contains("cannot be undone"), "{}", m.footer());
         assert!(m
             .pane(1, 60, 40)
             .lines
             .join("\n")
             .contains("cannot be undone"));
+    }
+
+    /// The hole Riley spotted, and it was wider than rename: deleting a remote
+    /// branch was ONE `enter` from a menu row. The note claimed the tool does
+    /// the confirming, but `git push --delete` only REPORTS afterwards and
+    /// `gh api -X POST` does neither. Reporting is not confirming.
+    #[test]
+    fn a_destructive_item_cannot_run_on_one_keypress() {
+        let mut m = menu();
+        // Item 1 is the delete. Enter asks rather than acting.
+        assert!(matches!(m.on_action(Action::Activate, 1), Flow::Dirty));
+        assert!(!m.ran(), "it ran on the first enter");
+        assert!(m.footer().contains("y to go ahead"));
+        // The pane shows the command about to run, which IS the confirmation.
+        assert!(m.pane(1, 60, 40).lines.join("\n").contains("About to run"));
+        assert!(matches!(m.on_action(Action::Key('y'), 1), Flow::Detach(_)));
+        assert!(m.ran());
+    }
+
+    /// Anything that is not `y` withdraws -- including a second `enter`, which
+    /// is the key most likely to be leaned on.
+    #[test]
+    fn only_y_goes_ahead() {
+        for a in [
+            Action::Activate,
+            Action::Key('n'),
+            Action::Key('d'),
+            Action::Down,
+            Action::Close,
+        ] {
+            let mut m = menu();
+            m.on_action(Action::Activate, 1);
+            assert!(
+                !matches!(m.on_action(a, 1), Flow::Detach(_)),
+                "{a:?} ran it"
+            );
+            assert!(!m.ran(), "{a:?} ran it");
+        }
+        // And moving the cursor withdraws it.
+        let mut m = menu();
+        m.focus(1);
+        m.on_action(Action::Activate, 1);
+        assert!(m.pending.is_some());
+        m.focus(0);
+        assert!(m.pending.is_none());
+    }
+
+    /// A prompt confirms AFTER the field, so what gets approved is the command
+    /// with the name just typed in it rather than a template.
+    #[test]
+    fn a_prompt_that_confirms_shows_the_filled_command() {
+        let mut m = Menu::new(
+            "branch",
+            "feat/x",
+            vec![Item::new(
+                "Rename",
+                "gh api",
+                Act::Prompt {
+                    label: "to".into(),
+                    initial: "feat/x".into(),
+                    argv: vec!["gh".into(), "-f".into(), "new_name={}".into()],
+                },
+            )
+            .confirm()],
+        );
+        assert!(matches!(m.on_action(Action::Activate, 0), Flow::Ask { .. }));
+        // The answer does not run it -- it asks.
+        assert!(matches!(m.answered(Some("feat/y".into())), Flow::Dirty));
+        assert!(!m.ran());
+        let pane = m.pane(0, 60, 40).lines.join("\n");
+        assert!(pane.contains("new_name=feat/y"), "{pane}");
+        match m.on_action(Action::Key('y'), 0) {
+            Flow::Detach(argv) => assert_eq!(argv.last().unwrap(), "new_name=feat/y"),
+            _ => panic!("y must run it"),
+        }
     }
 
     /// Choosing an item detaches and records that something ran, which is how
