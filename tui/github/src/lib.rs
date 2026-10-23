@@ -42,6 +42,7 @@ pub mod paint;
 pub mod prs;
 pub mod render;
 pub mod root;
+pub mod rules;
 pub mod runs;
 pub mod scopes;
 pub mod secrets;

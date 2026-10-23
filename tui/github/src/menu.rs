@@ -84,6 +84,15 @@ pub struct Item {
     pub act: Act,
 }
 
+impl Menu {
+    /// The items, for the structural tests that assert something about EVERY
+    /// command a menu offers rather than about one of them.
+    #[cfg(test)]
+    pub(crate) fn items(&self) -> &[Item] {
+        &self.items
+    }
+}
+
 impl Item {
     pub fn new(label: impl Into<String>, detail: impl Into<String>, act: Act) -> Self {
         Self {

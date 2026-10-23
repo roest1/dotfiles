@@ -41,7 +41,7 @@ else. `h github` documents both and will need the `github` half rewritten.
 |---|---|---|
 | `branch-checkout` | ported | the branch menu's Checkout |
 | `branch-delete` | ported | the branch menu's Delete remote branch |
-| `branch-menu` | partial | `menu.rs` has 6 of 7 — Set as default landed with text input, and Rename (which bash never had) with it. Only Effective rules is missing, and it is the same ruleset API as the dropped `rulesets` row |
+| `branch-menu` | ported | all 7, plus Rename, which bash never had. Effective rules opens `rules.rs` rather than paging a dump, and it is offered on every branch — "no rules apply" is a different answer from "unprotected by mistake", and only the call tells them apart |
 | `cancel` | ported | `x` |
 | `env-create` | ported | the `+ new environment` row — `gh api -X PUT repos/{repo}/environments/{name}`, which is what the GitHub UI's New environment does: it arrives with no gates |
 | `env-delete` | ported | the environment menu's Delete environment, which asks first |
@@ -66,7 +66,7 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `pr-menu` | ported | `prs::pr_menu` — 12 of the 13, offered only when they apply. Labels and Reviewers take a typed name rather than a picker |
 | `prs-label` | ported | the `state` dropdown in the sidebar, which says what it is set to |
 | `prs-next` | ported | the same dropdown — a list to pick from rather than a key that cycles |
-| `pv-branch` | partial | the row carries protection, ahead/behind, author, subject, checks and PR — but NOT the effective branch rules, nor whether a local copy exists |
+| `pv-branch` | ported | the row carries protection, ahead/behind, author, subject, checks, PR, and now whether you have a local copy — `○` for fetched, `●` for checked out, blank for remote only, in the cell that already existed. The effective rules are a screen of their own, since the bypass actors need more room than a column. The 20-commit log is not here and is NOT claimed: it needs a pane, and this screen is `Split::Full` by argument |
 | `pv-env` | ported | `envs::Envs::pane` — the gates, the branch policy, the environment's secrets and its last five deployments |
 | `pv-hub` | dropped | the tab strip replaced the hub's NAVIGATION, and tabs replaced its summary too: the hub previewed each area because the bash screens were NESTED -- hub, enter Actions, esc, enter PRs -- so surveying the repo without entering anything was worth a screen. With a strip, each tab IS what the hub previewed, one `l` away, and `gha` already answers the HEAD-check-runs view from the shell without a TUI. Riley's call, having looked at it |
 | `pv-job` | ported | `render::job_body` |
@@ -75,7 +75,7 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `pv-secret` | ported | `secrets::Secrets::pane` — the name, the scope, what it is called in a workflow, and why there is nothing else to show |
 | `pv-step` | ported | `render::step_body` |
 | `rerun` | ported | `e`, with the failed-jobs/all distinction |
-| `rulesets` | dropped | unvalidated behaviour — porting it would preserve it bug-for-bug and let it set the shape of a screen. Use it on github.com first. See github-tui.md |
+| `rulesets` | dropped | the browser/EDITOR, unvalidated, which is a different thing from the read-only `rules.rs` that `branch-menu` now opens: that one is two GETs rendered as lines, where this one writes. Porting a write path nobody has exercised would preserve its bugs and let it set a screen's shape. Use it on github.com first. See github-tui.md |
 | `runs-label` | ported | `runs::Scope::label` in the title bar |
 | `runs-toggle` | ported | `b` on the Actions screen |
 | `screen` | ported | the tab strip dispatches to a screen; `reticle::Host` |
@@ -90,21 +90,23 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `secret-set` | ported | two ways in, both ending in `gh secret set` on the real tty: the secret menu's Set a new value, and the `+ new secret` row in each group. The value is read with echo off by gh and never passes through this program |
 ## Where that leaves it
 
-**43 ported, 2 partial, 0 todo, 4 dropped** (2026-10-23). Secrets and
-Environments landed together, since an environment secret is a secret and the
-environment list is what tells the Secrets screen its groups;
-`screen-actions-for` followed, which was the last row that was work rather than
-a decision.
+**45 ported, 0 partial, 0 todo, 4 dropped** (2026-10-23). Nothing is
+outstanding, and the gate this table exists to hold is open.
 
-One thing is outstanding, and it is not work:
+Secrets and Environments landed together, since an environment secret is a
+secret and the environment list is what tells the Secrets screen its groups.
+`screen-actions-for` followed. The last two were `pv-branch` and
+`branch-menu`, both of them the effective branch rules — argued for a while as
+a third `dropped`, and that was wrong: the rules call is READ-ONLY, so the
+reason `rulesets` is dropped (an unexercised write path setting a screen's
+shape) does not reach it. Porting cost less than arguing it away, and it
+closed the gate by measurement rather than by decision.
 
-1. **The two partials**, `pv-branch` and `branch-menu`. Both are only the
-   EFFECTIVE branch rules, which is the same ruleset API as the dropped
-   `rulesets` row — so the honest question is whether they become a third
-   argued `dropped` rather than work. That is a decision, not a task, and it
-   is the last thing between here and the swap.
+**The four `dropped` rows are the whole of what this port does not carry**,
+each with its argument in its row: the hub's three verbs, which the tab strip
+replaced, and the ruleset editor.
 
-And one gap that is not a parity gap, because bash typed them too: PR
+One gap that is not a parity gap, because bash typed them too: PR
 **labels and reviewers take a typed name** rather than a picker. The
 environment reviewer picker is the shape it wants, and now exists to copy —
 the difference is that `gh pr edit --add-label` accepts a name, so there was

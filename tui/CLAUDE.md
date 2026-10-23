@@ -553,6 +553,49 @@ pins that.
   narrows across every scope at once, which answers the question you actually
   arrive with: is `DEPLOY_TOKEN` set anywhere.
 
+- **A command must not depend on the process's working directory.** `github`
+  is launched from anywhere — that is what `index` is for — so every `gh` a
+  menu offers names the repo (as `--repo`, or inside a `gh api` path) and every
+  `git` carries `-C`. One item got this wrong: `New pull request` ran `gh pr
+  create --head <branch>` with no `--repo`, which worked when launched from
+  inside the clone and failed with `not a git repository` everywhere else.
+  `branches::tests::no_menu_item_depends_on_the_working_directory` asserts the
+  rule over every item of every branch's menu rather than over the one that
+  broke.
+
+- **`rules.rs` is read-only, and that is why it exists while `rulesets` is
+  dropped.** The two look like the same feature and are not. The dropped row
+  is a ruleset browser and EDITOR whose writes nobody has exercised; this is
+  two GETs — `rules/branches/{branch}`, then `rulesets/{id}` per ruleset — so
+  there is no write to get wrong and no shape for an unvalidated feature to
+  set. The first version of this file argued for dropping both, and the
+  distinction is what reversed it.
+
+  **The bypass is the point, not the rule list.** `protected: true` on a
+  branch, which the table already shows, answers a weaker question than it
+  looks like it does: a ruleset with a bypass actor turns every rule under it
+  into guidance somebody can push straight past. So the bypass is in the
+  group's DETAIL, readable without selecting, and the actors are in the pane.
+  An unreadable ruleset says **bypass unknown**, never "no bypass" — same
+  rule as the reviewer picker naming its failed collaborators call, and for
+  the same reason: the rules above still apply, so a missing line must not
+  read as an absence.
+
+  **An empty answer is said out loud.** No ruleset targeting a branch is the
+  normal state for a feature branch, so the screen says "no rules apply" and
+  why. A blank screen would read as a finding.
+
+  **The parameters render generically**, with a hand-written summary for only
+  the two worth reading at a glance. Not future-proofing for its own sake:
+  `copilot_code_review` postdates the bash version and arrived rendering
+  correctly with no code. The summary lists what is ON; the pane shows the OFF
+  settings too and expands the required-checks array by name.
+
+  **A slash in a branch name needs no encoding, measured.**
+  `rules/branches/main/x` answers `[]` rather than 404 on a repo whose `main`
+  has four rules, so the route takes the branch as the rest of the path. `#` is
+  still escaped — it is legal in a branch name and would start a fragment.
+
 - **The Branches table is local git first.** One `for-each-ref` gives every
   remote branch's age, author, subject AND ahead/behind against the default —
   offline, instantly, in one spawn. The API is asked only for what git cannot
@@ -564,6 +607,15 @@ pins that.
   **Checks cost no extra call**: a run carries its `head_branch`, so the newest
   run per branch is that branch's status, and the repo `Host` shares one
   `Fetcher` across its tabs so Branches reuses what Actions asked for.
+
+  **The marker cell has THREE states, in one cell.** `●` you are on it, `○`
+  you have it, blank it is only on the remote — which is the question in front
+  of "should I check it out", and the one a list of REMOTE branches could not
+  answer. It costs one more `for-each-ref` over `refs/heads` and no new
+  column; blank is the common case on a long list, which is the right way
+  round. `U+25CB` is BMP and single-width, so the fixed-width assertion still
+  holds. The menu's Checkout says which act it is about to perform, since
+  creating a branch and moving to one are different things.
 
   **"Your branches" matches on EMAIL.** Measured here: the same person authored
   commits as both `Riley Oest` and `roest1` — a local `user.name` and GitHub's

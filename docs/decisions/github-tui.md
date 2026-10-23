@@ -686,6 +686,101 @@ it is why the list is already drawn when the screen appears.
 outstanding is one decision — whether the two `partial` rows become a third
 argued `dropped`, for the same reason `rulesets` is one.
 
+## The effective rules, and the argument I got wrong (done 2026-10-23)
+
+The last two parity rows, `pv-branch` and `branch-menu`, were both the same
+missing thing: the EFFECTIVE branch rules. I argued for a while that they
+should become a third `dropped`, on the grounds that they use the same ruleset
+API as the dropped `rulesets` row. Reading `_ghbranch_effective` is what
+settled it the other way, and the distinction is worth writing down because it
+is the one the first argument missed.
+
+`rulesets` is a browser and an **editor** — `_ghbranch_ruleset_menu` and
+`_ghbranch_ruleset_apply` write. The argument for dropping it is that nobody
+has exercised those writes, so porting would preserve their bugs and let an
+unvalidated feature set a screen's shape. `_ghbranch_effective` is two GETs
+rendered as lines. There is no write to get wrong and no shape to set, so
+neither half of the argument reaches it. Porting cost less than arguing it
+away, and it closed the gate by measurement rather than by decision — which is
+what the table was built to prefer.
+
+### The bypass is the point
+
+`protected: true`, which the branch table already showed, answers a weaker
+question than it looks like it does. A ruleset with a bypass actor turns every
+rule under it into guidance that somebody — possibly you — can push straight
+past. So the bypass goes in the group's DETAIL, where it reads without
+selecting anything, and the actors go in the pane:
+
+```
+  🛡 main-branch-rules        1 can bypass     4
+      deletion
+      non fast forward
+      pull request              1 approval · code owners
+      required status checks    11 checks · strict
+```
+
+with the pane saying `RepositoryRole 5  through a pull request` and why that
+matters. An unreadable ruleset says **"who can bypass it is unknown"** rather
+than nothing, for the same reason the reviewer picker says its collaborators
+call failed: the rules above it still apply and still list, so a missing
+bypass line must not read as "none".
+
+### "No rules" is not "unprotected by mistake"
+
+An empty answer is the normal, correct state for a feature branch — a ruleset
+is written against a ref pattern and a feature branch is outside every one of
+them. The bash version said so in as many words and the sentence is ported,
+because a blank screen here reads as a finding.
+
+### The parameters render generically
+
+Two rule types get a hand-written summary, the two worth reading at a glance.
+Everything else is derived from whatever JSON came back, which is not
+future-proofing for its own sake: `copilot_code_review` already exists, did not
+when the bash version was written, and showed up with its settings needing no
+code. The summary lists only what is switched ON; the pane shows the OFF ones
+too, because "not strict" is a fact you opened the rule to learn, and expands
+the required-checks array by name — "which checks" is most of why anyone opens
+that rule.
+
+### Measured: a slash in a branch name needs no encoding
+
+`GET /repos/{owner}/{repo}/rules/branches/{branch}` takes the branch as the
+REST of the path. Asked for `rules/branches/main/x` on a repo whose `main` has
+four rules, it answers `[]` rather than 404 — so the route is greedy and
+`feat/github-tui` passes through unencoded, as the bash version assumed without
+checking. Everything outside the unreserved set is still escaped, because `#`
+is legal in a branch name and would otherwise start a fragment.
+
+### The local copy, in a cell that already existed
+
+`pv-branch`'s other half was whether you have the branch locally. The table
+lists REMOTE branches, so it could not say — and that is the question in front
+of "should I check it out". It needed one more `for-each-ref`, over
+`refs/heads`, and no new column: the marker cell now has three states, `●` for
+checked out, `○` for fetched, blank for remote only. Blank is the common case
+on a long list, which is the right way round. The menu's Checkout says which of
+the two acts it is about to perform, since creating a branch and moving to one
+are different things.
+
+What is NOT ported, and the parity row says so rather than quietly claiming it:
+`pv_branch`'s twenty-line commit log. It needs a pane, and the Branches screen
+is `Split::Full` by an argument that still holds.
+
+### One bug, found by driving into it by accident
+
+`New pull request` ran `gh pr create --head <branch>` with no `--repo`, so it
+resolved the repo from the process's working directory. It worked when `github`
+was launched from inside the clone and failed with `not a git repository`
+everywhere else — and launching from anywhere is the entire point of the repo
+index. Every other item in that menu passed `--repo`; this one place did not.
+
+The test that now covers it is structural rather than about this item: every
+`gh` command a branch menu offers must name the repo somewhere, and every `git`
+command must carry `-C`. It fails on the old argv, which is the only version
+of this test worth having.
+
 ## Still open
 
 - ~~Filtering.~~ ~~Text input.~~ **Both done (2026-10-23).** `/` narrows any

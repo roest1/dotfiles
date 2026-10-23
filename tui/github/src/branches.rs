@@ -104,6 +104,14 @@ struct Branch {
 struct Local {
     default: Option<String>,
     current: Option<String>,
+    /// Every branch under `refs/heads` -- the ones you have a copy of.
+    ///
+    /// The table is otherwise a list of REMOTE branches, which cannot answer
+    /// "do I have this one" -- and that is the question in front of "should I
+    /// check it out". The fzf preview said `remote only -- enter to check
+    /// out`; here it is a marker, because it belongs on every row at once
+    /// rather than on the one the cursor happens to be resting on.
+    locals: std::collections::HashSet<String>,
     /// `user.email`, then `user.name` as a fallback for a repo configured with
     /// no email.
     me_email: Option<String>,
@@ -134,7 +142,7 @@ fn git(dir: &std::path::Path, args: &[&str]) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Read every local fact in four `git` calls.
+/// Read every local fact in five `git` calls.
 ///
 /// Synchronous, at open, which is the one place this crate shells out before
 /// the first frame. It is affordable because all four read files -- no network,
@@ -153,6 +161,22 @@ fn read_local(dir: &std::path::Path) -> Local {
     let current = git(dir, &["symbolic-ref", "--short", "HEAD"]);
     let me_email = git(dir, &["config", "user.email"]);
     let me_name = git(dir, &["config", "user.name"]);
+    // `lstrip=2` drops `refs/heads/`, so these are directly comparable with
+    // the remote names below, which `lstrip=3` strips to the same shape.
+    let locals: std::collections::HashSet<String> = git(
+        dir,
+        &[
+            "for-each-ref",
+            "--format",
+            "%(refname:lstrip=2)",
+            "refs/heads",
+        ],
+    )
+    .unwrap_or_default()
+    .lines()
+    .filter(|l| !l.is_empty())
+    .map(str::to_string)
+    .collect();
 
     let base = default.clone().unwrap_or_else(|| "HEAD".into());
     let fmt = format!(
@@ -205,6 +229,7 @@ fn read_local(dir: &std::path::Path) -> Local {
     Local {
         default,
         current,
+        locals,
         me_email,
         me_name,
         facts,
@@ -469,8 +494,15 @@ impl Branches {
         // where `\u{2605}` is one -- and padding by character count put them in
         // different columns. `width::pad` measures CELLS, so the flag is
         // exactly two wide whatever is in it.
+        // Three states in one cell, which is what keeps the column fixed:
+        // you are ON it, you HAVE it, or it is only on the remote. The last
+        // is the interesting one -- it is the branch `Checkout` would have to
+        // create -- and it is the blank, because most of a long list is
+        // branches you have never fetched.
         let here = if self.is_current(&b.name) {
             "\u{25cf}"
+        } else if self.local.locals.contains(&b.name) {
+            "\u{25cb}"
         } else {
             " "
         };
@@ -560,12 +592,36 @@ impl Branches {
         let mut items = Vec::new();
 
         if !self.is_current(&name) {
-            items.push(Item::new(
-                "Checkout",
-                format!("git switch {name}"),
-                Act::Run(g(&["switch", &name])),
-            ));
+            let have = self.local.locals.contains(&name);
+            items.push(
+                Item::new(
+                    "Checkout",
+                    format!("git switch {name}"),
+                    Act::Run(g(&["switch", &name])),
+                )
+                .note(if have {
+                    &["You already have this branch locally."]
+                } else {
+                    &[
+                        "You have no local copy, so git creates one",
+                        "tracking origin -- which is why the marker",
+                        "column is blank on this row.",
+                    ]
+                }),
+            );
         }
+        // Offered on every branch, including one with no lock on it, because
+        // "no rules apply" is a different answer from "unprotected by
+        // mistake" and only this call can tell them apart.
+        items.push(Item::new(
+            "Effective rules",
+            format!("gh api repos/{repo}/rules/branches/{name}"),
+            Act::Open(Box::new(crate::rules::Rules::open(
+                &repo,
+                &name,
+                Arc::clone(&self.fetch),
+            ))),
+        ));
         match self.prs.get(&name) {
             Some((n, _)) => {
                 items.push(Item::new(
@@ -601,10 +657,20 @@ impl Branches {
                     Item::new(
                         "New pull request",
                         "gh pr create",
+                        // `--repo` is load-bearing, not tidiness: without it
+                        // `gh pr create` resolves the repo from the process's
+                        // cwd, and this TUI is launched from anywhere --
+                        // which is the entire point of the repo index. Run
+                        // from outside the clone it failed with `not a git
+                        // repository`. Verified that `-R` alone is enough: gh
+                        // resolves the base branch from the API, so there is
+                        // no `--base` to supply.
                         Act::Run(vec![
                             "gh".into(),
                             "pr".into(),
                             "create".into(),
+                            "--repo".into(),
+                            repo.clone(),
                             "--head".into(),
                             name.clone(),
                         ]),
@@ -829,7 +895,7 @@ impl Screen for Branches {
 
     fn footer(&self) -> String {
         let legend = format!(
-            "{DIM}\u{25cf} here  \u{2b50} default  \u{1f512} protected  \u{2191}ahead \u{2193}behind the default{OFF}"
+            "{DIM}\u{25cf} here  \u{25cb} local copy  \u{2b50} default  \u{1f512} protected  \u{2191}ahead \u{2193}behind the default{OFF}"
         );
         match self.at(self.sel) {
             At::Head(_) => format!("enter open/close \u{b7} f fetch \u{b7} r refresh\n{legend}"),
@@ -853,6 +919,13 @@ mod tests {
             local: Local {
                 default: Some("main".into()),
                 current: Some("feat/x".into()),
+                // feat/x is checked out, feat/y is fetched but not checked
+                // out, and chore/z has never been fetched -- one row per
+                // marker state.
+                locals: std::collections::HashSet::from([
+                    "feat/x".to_string(),
+                    "feat/y".to_string(),
+                ]),
                 me_email: Some("me@example.com".into()),
                 me_name: Some("Riley Oest".into()),
                 facts: HashMap::new(),
@@ -995,7 +1068,7 @@ mod tests {
         // two cells. Both versions failed on a perfectly aligned row, and both
         // would have passed on a broken one whose counts happened to cancel.
         // Only cells describe what the terminal does.
-        const MARKS: [char; 4] = [' ', '\u{25cf}', '\u{2b50}', '\u{1f512}'];
+        const MARKS: [char; 5] = [' ', '\u{25cf}', '\u{25cb}', '\u{2b50}', '\u{1f512}'];
         for (i, r) in rows.iter().enumerate() {
             if !matches!(b.at(i), At::Branch(..)) {
                 continue;
@@ -1008,6 +1081,108 @@ mod tests {
                 r.label,
                 reticle::width::width(&marks)
             );
+        }
+    }
+
+    /// Three states in one cell: on it, have it, or remote only. The last is
+    /// the one the table could not say before, and it is the one that decides
+    /// whether Checkout creates a branch or moves to one.
+    #[test]
+    fn the_marker_says_whether_you_have_a_local_copy() {
+        let mut b = screen();
+        b.open = vec![true, true, true];
+        let rows = b.rows();
+        let mark = |name: &str| -> char {
+            rows.iter()
+                .find(|r| r.label.contains(name))
+                .unwrap_or_else(|| panic!("no row for {name}"))
+                .label
+                .chars()
+                .next()
+                .unwrap()
+        };
+        assert_eq!(mark("feat/x"), '\u{25cf}', "checked out");
+        assert_eq!(mark("feat/y"), '\u{25cb}', "fetched, not checked out");
+        assert_eq!(mark("chore/z"), ' ', "remote only");
+
+        // And the menu says which of the two Checkout is about to do, since
+        // creating a branch and moving to one are different acts.
+        let z = b
+            .branches
+            .iter()
+            .find(|x| x.name == "chore/z")
+            .unwrap()
+            .clone();
+        let pane = b.menu_for(&z).pane(0, 60, 40).lines.join("\n");
+        assert!(pane.contains("no local copy"), "{pane}");
+        let y = b
+            .branches
+            .iter()
+            .find(|x| x.name == "feat/y")
+            .unwrap()
+            .clone();
+        let pane = b.menu_for(&y).pane(0, 60, 40).lines.join("\n");
+        assert!(pane.contains("already have"), "{pane}");
+    }
+
+    /// Effective rules is offered on EVERY branch, lock or no lock: "no rules
+    /// apply" and "unprotected by mistake" are different answers, and only
+    /// the call can tell them apart.
+    #[test]
+    fn every_branch_can_be_asked_what_actually_rules_it() {
+        let mut b = screen();
+        b.open = vec![true, true, true];
+        for name in ["main", "feat/x", "chore/z"] {
+            let br = b.branches.iter().find(|x| x.name == name).unwrap().clone();
+            let labels: Vec<String> = b
+                .menu_for(&br)
+                .rows()
+                .iter()
+                .map(|r| r.label.clone())
+                .collect();
+            assert!(
+                labels.iter().any(|l| l == "Effective rules"),
+                "{name}: {labels:?}"
+            );
+        }
+    }
+
+    /// Nothing a menu offers may depend on the process's working directory.
+    ///
+    /// This TUI is launched from anywhere -- that is what the repo index is
+    /// for -- so a `gh` command has to name the repo and a `git` command has
+    /// to carry `-C`. `New pull request` did neither: `gh pr create --head x`
+    /// resolves the repo from the cwd, so it worked when run inside the clone
+    /// and failed with `not a git repository` everywhere else. Found by
+    /// driving it, which is also the only way it could have been found.
+    #[test]
+    fn no_menu_item_depends_on_the_working_directory() {
+        let mut b = screen();
+        b.open = vec![true, true, true];
+        for name in ["main", "feat/x", "feat/y", "chore/z"] {
+            let br = b.branches.iter().find(|x| x.name == name).unwrap().clone();
+            for item in b.menu_for(&br).items() {
+                let argv = match &item.act {
+                    Act::Run(v) => v.clone(),
+                    Act::Prompt { argv, .. } => argv.clone(),
+                    _ => continue,
+                };
+                match argv.first().map(String::as_str) {
+                    // Either as `--repo <slug>` or inside a `gh api` path.
+                    // Both name it, which is what actually matters.
+                    Some("gh") => assert!(
+                        argv.iter().any(|a| a.contains("roest1/dotfiles")),
+                        "{name}: {:?} names no repo: {argv:?}",
+                        item.label
+                    ),
+                    Some("git") => assert!(
+                        argv.iter().any(|a| a == "-C"),
+                        "{name}: {:?} runs git without -C: {argv:?}",
+                        item.label
+                    ),
+                    _ => {}
+                }
+            }
         }
     }
 
