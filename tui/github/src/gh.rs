@@ -415,6 +415,21 @@ impl Fetcher {
         self.state.lock().ok()?.get(&req.key()).cloned()
     }
 
+    /// Put an answer in by hand. Tests only.
+    ///
+    /// The only other way in is `request`, which reaches the network, so how a
+    /// screen behaves on an answer it ALREADY HAS is otherwise untestable --
+    /// and "already has" is exactly what toggling back to a scope looks like.
+    /// It deliberately does NOT bump the epoch, because nothing arrived: that
+    /// is the condition the screens have to cope with rather than a quirk of
+    /// the seam.
+    #[cfg(test)]
+    pub fn seed(&self, req: Req, got: Got) {
+        if let Ok(mut guard) = self.state.lock() {
+            guard.insert(req.key(), got);
+        }
+    }
+
     pub fn pending(&self) -> bool {
         self.state
             .lock()

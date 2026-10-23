@@ -51,7 +51,7 @@ use crate::time;
 const IN_FLIGHT: std::time::Duration = std::time::Duration::from_millis(100);
 
 /// Everything `gh pr list` is asked for, in one call.
-const FIELDS: &str = "number,title,author,headRefName,baseRefName,reviewDecision,\
+const FIELDS: &str = "number,title,author,headRefName,headRefOid,baseRefName,reviewDecision,\
 isDraft,createdAt,updatedAt,additions,deletions,labels,statusCheckRollup,url,state,assignees";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -86,6 +86,16 @@ struct Pr {
     #[serde(default)]
     assignees: Vec<Who>,
     head_ref_name: Option<String>,
+    /// The head COMMIT, which is what the runs for a pull request are keyed
+    /// on: `GET /actions/runs?head_sha=` takes a sha, and a branch name would
+    /// answer for whatever is on the branch NOW rather than for what was
+    /// reviewed.
+    ///
+    /// `Option` is defensive rather than observed -- merged and closed pull
+    /// requests were both checked and still carry it, deleted head branch and
+    /// all. The menu simply does not offer the row when it is missing, which
+    /// is cheaper than finding out from a query for a commit called `None`.
+    head_ref_oid: Option<String>,
     base_ref_name: Option<String>,
     review_decision: Option<String>,
     #[serde(default)]
@@ -559,6 +569,39 @@ impl Prs {
             // gh opens an editor or prompts for the body itself.
             Item::new("Comment", "gh pr comment", Act::Run(gh(&["comment", &n]))),
         ];
+        // The bash screen's ctrl-a, as a row -- a key nobody is told about is
+        // a key nobody finds. It sits with the items above it because those
+        // are the ones that only LOOK at the pull request; everything below
+        // changes it.
+        //
+        // Building the screen here fires its run list now rather than when
+        // the row is chosen -- the same prefetch the reviewer picker does from
+        // the environment menu, and the reason the screen is already drawn
+        // when it opens. One request per menu, deduplicated by the fetcher.
+        if let Some(sha) = &pr.head_ref_oid {
+            // The whole sha goes in the NOTE, because the detail column is
+            // narrow enough to truncate it and `Act::Open`'s pane line is just
+            // "opens a screen" -- so without this the one fact that
+            // distinguishes this item is readable nowhere.
+            let full = format!("head {sha}");
+            let on = match &pr.head_ref_name {
+                Some(b) => format!("Its runs, not {b}'s as it is now."),
+                None => "Its runs, not the head branch's as it is now.".into(),
+            };
+            items.push(
+                Item::new(
+                    "Workflow runs for this commit",
+                    format!("head {}", crate::runs::short(sha)),
+                    Act::Open(Box::new(crate::runs::Actions::for_commit(
+                        &self.repo,
+                        sha,
+                        pr.head_ref_name.as_deref(),
+                        Arc::clone(&self.fetch),
+                    ))),
+                )
+                .note(&[&full, &on]),
+            );
+        }
         if pr.state.as_deref() == Some("OPEN") {
             items.push(
                 Item::new(
@@ -969,20 +1012,20 @@ mod tests {
 
     const RAW: &str = r#"[
       {"number":70,"title":"Add the thing","author":{"login":"roest1"},"assignees":[],
-       "headRefName":"feat/a","baseRefName":"main","reviewDecision":"REVIEW_REQUIRED",
+       "headRefName":"feat/a","headRefOid":"1a2b3c4d5e6f7a8b9c0d","baseRefName":"main","reviewDecision":"REVIEW_REQUIRED",
        "isDraft":false,"createdAt":"2026-10-22T10:00:00Z","updatedAt":"2026-10-23T10:00:00Z",
        "additions":10,"deletions":2,"labels":[{"name":"enhancement"}],
        "statusCheckRollup":[{"conclusion":"SUCCESS","state":null,"status":"COMPLETED"}],
        "state":"OPEN"},
       {"number":69,"title":"Fix the other","author":{"login":"someone"},
-       "assignees":[{"login":"roest1"}],"headRefName":"fix/b","baseRefName":"main",
+       "assignees":[{"login":"roest1"}],"headRefName":"fix/b","headRefOid":"aaaabbbbccccddddeeee","baseRefName":"main",
        "reviewDecision":"APPROVED","isDraft":false,"createdAt":"2026-10-20T10:00:00Z",
        "updatedAt":"2026-10-24T10:00:00Z","additions":1,"deletions":1,
        "labels":[{"name":"bug"}],
        "statusCheckRollup":[{"conclusion":"FAILURE","state":null,"status":"COMPLETED"}],
        "state":"OPEN"},
       {"number":68,"title":"Draft idea","author":{"login":"roest1"},"assignees":[],
-       "headRefName":"wip","baseRefName":"main","reviewDecision":null,"isDraft":true,
+       "headRefName":"wip","headRefOid":"ffff0000111122223333","baseRefName":"main","reviewDecision":null,"isDraft":true,
        "createdAt":"2026-10-19T10:00:00Z","updatedAt":"2026-10-19T10:00:00Z",
        "additions":0,"deletions":0,"labels":[],"statusCheckRollup":[],"state":"OPEN"}
     ]"#;
@@ -1238,6 +1281,46 @@ mod tests {
         // A draft offers to become ready rather than to become a draft.
         let draft = labels(&mut p.pr_menu(&p.prs[2]));
         assert!(draft.iter().any(|s| s == "Mark ready"), "{draft:?}");
+    }
+
+    /// The pull request screen's ctrl-a, as a row: the runs for the head
+    /// COMMIT, not for the head branch, because a branch answers for whatever
+    /// is on it now rather than for what was reviewed. It is offered whatever
+    /// state the pull request is in -- a merged one's runs are exactly what
+    /// you go looking for afterwards.
+    #[test]
+    fn the_menu_reaches_the_runs_for_the_head_commit() {
+        let p = screen();
+        let mut m = p.pr_menu(&p.prs[0]);
+        let row = m
+            .rows()
+            .into_iter()
+            .find(|r| r.label == "Workflow runs for this commit")
+            .expect("no way to the runs");
+        // Seven characters, the length git and github.com both show.
+        assert_eq!(row.detail.as_deref(), Some("head 1a2b3c4"));
+
+        let mut closed = p.prs[0].clone();
+        closed.state = Some("MERGED".into());
+        assert!(
+            p.pr_menu(&closed)
+                .rows()
+                .iter()
+                .any(|r| r.label == "Workflow runs for this commit"),
+            "a merged pull request lost the way to its runs"
+        );
+
+        // And one that came back without a head sha offers nothing rather
+        // than a query for a commit called `None`.
+        let mut headless = p.prs[0].clone();
+        headless.head_ref_oid = None;
+        assert!(
+            !p.pr_menu(&headless)
+                .rows()
+                .iter()
+                .any(|r| r.label == "Workflow runs for this commit"),
+            "offered runs for a commit it does not know"
+        );
     }
 
     /// The bulk menu names how many it will touch, and every item that changes

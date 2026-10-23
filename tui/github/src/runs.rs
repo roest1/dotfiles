@@ -71,16 +71,14 @@ const JOBS_EVERY: Duration = Duration::from_secs(5);
 const PAGER_WAIT: Duration = Duration::from_secs(10);
 
 /// Which runs the list is showing.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Scope {
     /// Everything the repo has run, which is the right default when you have
     /// just arrived and do not yet know what you are looking for.
     All,
     /// One branch -- normally the one checked out here.
     Branch(String),
-    /// One commit. Nothing reaches this yet; it is what the PR screen's "its
-    /// runs" becomes, and it is here because the query builder is the only
-    /// thing that would have had to change and it may as well be right once.
+    /// One commit -- the pull request menu's "Workflow runs for this commit".
     Commit(String),
 }
 
@@ -99,8 +97,20 @@ impl Scope {
         match self {
             Scope::All => "all branches".into(),
             Scope::Branch(b) => format!("\u{2387} {b}"),
-            Scope::Commit(sha) => format!("commit {}", &sha[..sha.len().min(7)]),
+            Scope::Commit(sha) => format!("commit {}", short(sha)),
         }
+    }
+}
+
+/// A commit, at the length everything here says it at.
+///
+/// Seven characters, which is what `git log --oneline` and github.com both
+/// show. Cut on a CHARACTER boundary rather than a byte one: a sha is hex and
+/// could not break, but this is handed whatever the API returned.
+pub(crate) fn short(sha: &str) -> &str {
+    match sha.char_indices().nth(7) {
+        Some((i, _)) => &sha[..i],
+        None => sha,
     }
 }
 
@@ -137,8 +147,19 @@ pub struct Actions {
     /// to. `None` for a detached HEAD or an unborn branch, which is why the
     /// toggle has to cope with there being no branch scope at all.
     branch: Option<String>,
-    /// `HEAD`, for marking the runs of the commit you are actually sitting on.
+    /// The commit whose runs get the marker: `HEAD` on a screen opened from a
+    /// clone, and the pull request's head on one opened from its menu -- where
+    /// it answers "which of this branch's runs are the ones I came from" the
+    /// moment `b` widens past the commit.
     head_sha: Option<String>,
+    /// The commit this screen was OPENED for, if it was opened for one.
+    ///
+    /// Not the same question as `scope`, which is where `b` has got to since.
+    /// Remembering it is what makes `b` reversible on a screen the pull
+    /// request menu opened: the pair offered there is this commit and the
+    /// branch it is on, because widening to every branch is a door that does
+    /// not come back -- nothing on screen afterwards names the commit again.
+    commit: Option<String>,
     /// Shared with the jobs & steps screen pushed on top, so drilling into
     /// a run reuses the jobs and logs already fetched for its pane instead of
     /// asking for them again one keystroke later.
@@ -191,6 +212,7 @@ impl Actions {
             scope: Scope::All,
             branch,
             head_sha,
+            commit: None,
             runs: Vec::new(),
             multi: false,
             error: None,
@@ -203,6 +225,42 @@ impl Actions {
         };
         me.fetch.request(me.list_req());
         Some(me)
+    }
+
+    /// Open on one commit, sharing the repo's fetcher.
+    ///
+    /// The pull request menu's route in. It takes a slug and a sha rather than
+    /// an `index::Repo` because a pull request's head commit need not be
+    /// anywhere on this disk -- it is a fork, or a branch this clone has never
+    /// fetched -- so there is no `git rev-parse` to do and nothing local to
+    /// read. That is the whole reason this constructor had to exist.
+    ///
+    /// The fetcher is the pull request screen's own, which is the same repo. A
+    /// run LIST is a question about now and is never cached, but a completed
+    /// run's jobs and logs are, so drilling into a run from here reuses
+    /// whatever the Actions tab has already fetched.
+    pub fn for_commit(repo: &str, sha: &str, branch: Option<&str>, fetch: Arc<Fetcher>) -> Self {
+        let me = Self {
+            fetch,
+            repo: repo.to_string(),
+            scope: Scope::Commit(sha.to_string()),
+            branch: branch.map(str::to_string),
+            // Marking the commit is what tells you, once `b` has widened to
+            // the branch, which of its runs belong to the one you came from.
+            head_sha: Some(sha.to_string()),
+            commit: Some(sha.to_string()),
+            runs: Vec::new(),
+            multi: false,
+            error: None,
+            status: String::new(),
+            epoch_seen: 0,
+            list_due: None,
+            jobs_due: None,
+            sel: 0,
+            pending: None,
+        };
+        me.fetch.request(me.list_req());
+        me
     }
 
     /// The shared fetcher, so the repo's other screens reuse what this one has
@@ -315,12 +373,17 @@ impl Actions {
     }
 
     fn toggle_scope(&mut self) -> Flow {
-        self.scope = match (&self.scope, &self.branch) {
-            (Scope::All, Some(b)) => Scope::Branch(b.clone()),
-            (Scope::Branch(_), _) => Scope::All,
-            // A commit scope is narrower than either and `b` widens out of it.
-            (Scope::Commit(_), _) => Scope::All,
-            (Scope::All, None) => {
+        // Which two scopes `b` moves between depends on which question the
+        // screen was opened to answer. Opened on a repo it is every branch or
+        // the one checked out here; opened on a commit it is that commit or
+        // the branch carrying it, because All would be a one-way door.
+        self.scope = match (&self.scope, &self.branch, &self.commit) {
+            (Scope::Commit(_), Some(b), _) => Scope::Branch(b.clone()),
+            (Scope::Commit(_), None, _) => Scope::All,
+            (_, _, Some(sha)) => Scope::Commit(sha.clone()),
+            (Scope::All, Some(b), None) => Scope::Branch(b.clone()),
+            (Scope::Branch(_), _, None) => Scope::All,
+            (Scope::All, None, None) => {
                 self.status = "no branch checked out here to scope to".into();
                 return Flow::Dirty;
             }
@@ -331,6 +394,15 @@ impl Actions {
         self.sel = 0;
         self.list_due = None;
         self.fetch.request(self.list_req());
+        // Read whatever is already on hand for the new scope, rather than
+        // waiting for an arrival that is not coming. `tick` syncs on the
+        // fetcher's EPOCH moving, and toggling back to a scope answered a
+        // moment ago moves nothing -- so without this the screen sat on an
+        // empty list saying "no workflow runs here yet" about a scope that
+        // had six in it. It hid behind the clocks: a live run re-arms the
+        // list timer and that refresh does bump the epoch, so it only showed
+        // on a scope where everything had finished.
+        self.sync();
         Flow::Dirty
     }
 
@@ -557,14 +629,36 @@ impl Screen for Actions {
                 // The HEAD marker is a two-column prefix on every row, present
                 // or blank, so the titles stay aligned. A marker that shifted
                 // the column would be harder to scan than no marker at all.
-                let here = self
-                    .head_sha
-                    .as_deref()
-                    .is_some_and(|sha| sha == run.head_sha);
+                // Inside a commit scope every run IS that commit, so the
+                // marker would sit on every row saying nothing. It earns its
+                // column only where the list holds more than one commit.
+                let here = !matches!(self.scope, Scope::Commit(_))
+                    && self
+                        .head_sha
+                        .as_deref()
+                        .is_some_and(|sha| sha == run.head_sha);
+                // Inside one commit every run carries the SAME display title
+                // -- the pull request's -- so the WORKFLOW is what identifies
+                // a row there, and a column of five identical rows is what
+                // this replaces. It goes in the LABEL rather than the detail
+                // because the detail is the first thing a narrow list
+                // truncates away, and the title is in the pane either way.
+                //
+                // With the run NUMBER, because a workflow can run several
+                // times on one commit -- three `pull_request_target` runs of
+                // the same workflow, measured on the first repo this was
+                // pointed at -- and then the number is all there is. It is
+                // spelt the way the pane's header spells it.
+                let what = match (&self.scope, &run.name) {
+                    (Scope::Commit(_), Some(name)) => {
+                        format!("{name} #{}", run.run_number)
+                    }
+                    _ => run.display_title.clone(),
+                };
                 let label = format!(
                     "{}{}",
                     if here { "\u{25cf} " } else { "  " },
-                    run.display_title.replace(['\t', '\n'], " ")
+                    what.replace(['\t', '\n'], " ")
                 );
                 let mut detail = time::age(run.age());
                 if across {
@@ -699,9 +793,12 @@ impl Screen for Actions {
         if self.pending.is_some() {
             return "y confirm \u{b7} any other key leave it".into();
         }
-        let scope = match (&self.scope, &self.branch) {
-            (Scope::All, Some(b)) => format!("b just {b}"),
-            (Scope::Branch(_), _) => "b all branches".into(),
+        // The footer names the RESULT, the way every toggle here does, so the
+        // key does not have to be pressed to find out which way it goes.
+        let scope = match (&self.scope, &self.branch, &self.commit) {
+            (Scope::Commit(_), Some(b), _) => format!("b all of {b}"),
+            (_, _, Some(sha)) => format!("b just {}", short(sha)),
+            (Scope::All, Some(b), None) => format!("b just {b}"),
             _ => "b all branches".into(),
         };
         format!("enter jobs & steps \u{b7} o browser \u{b7} r refresh \u{b7} {scope}\ne rerun \u{b7} x cancel \u{b7} L whole log")
@@ -743,6 +840,7 @@ mod tests {
             scope: Scope::All,
             branch: Some("main".into()),
             head_sha: Some("sha0".into()),
+            commit: None,
             runs,
             multi: false,
             error: None,
@@ -851,6 +949,121 @@ mod tests {
         assert!(matches!(s.scope, Scope::Branch(_)));
         assert!(s.runs.is_empty(), "showed the old scope's runs");
         assert_eq!(s.sel, 0);
+    }
+
+    /// A screen the pull request menu opened must be able to get BACK. Its
+    /// two scopes are the commit and the branch carrying it; widening to every
+    /// branch would be a door that does not come back, because nothing on
+    /// screen afterwards names the commit again.
+    #[test]
+    fn a_commit_scope_is_reversible() {
+        let mut s = screen(&[("completed", Some("success"))]);
+        s.scope = Scope::Commit("sha0".into());
+        s.commit = Some("sha0".into());
+        s.branch = Some("feat/x".into());
+
+        s.on_action(Action::Key('b'), 0);
+        assert_eq!(s.scope, Scope::Branch("feat/x".into()));
+        assert!(s.footer().contains("b just sha0"), "{}", s.footer());
+
+        s.on_action(Action::Key('b'), 0);
+        assert_eq!(s.scope, Scope::Commit("sha0".into()));
+        assert!(s.footer().contains("b all of feat/x"), "{}", s.footer());
+    }
+
+    /// With no branch to widen to -- a fork whose ref this clone has never
+    /// seen -- `b` still has somewhere to go, and still comes back.
+    #[test]
+    fn a_commit_scope_with_no_branch_widens_to_everything() {
+        let mut s = screen(&[("completed", Some("success"))]);
+        s.scope = Scope::Commit("sha0".into());
+        s.commit = Some("sha0".into());
+        s.branch = None;
+
+        s.on_action(Action::Key('b'), 0);
+        assert_eq!(s.scope, Scope::All);
+        assert!(s.status.is_empty(), "complained instead: {}", s.status);
+
+        s.on_action(Action::Key('b'), 0);
+        assert_eq!(s.scope, Scope::Commit("sha0".into()));
+    }
+
+    /// Inside a commit scope every run is that commit, so a marker saying so
+    /// would be on every row and mean nothing. It comes back as soon as the
+    /// list holds more than one commit.
+    #[test]
+    fn the_head_marker_is_off_inside_a_commit_scope() {
+        let mut s = screen(&[
+            ("completed", Some("success")),
+            ("completed", Some("success")),
+        ]);
+        s.commit = Some("sha0".into());
+        s.scope = Scope::Commit("sha0".into());
+        assert!(
+            s.rows().iter().all(|r| r.label.starts_with("  ")),
+            "marked a row inside its own commit scope"
+        );
+        s.scope = Scope::Branch("main".into());
+        assert!(s.rows()[0].label.starts_with('\u{25cf}'), "lost the marker");
+    }
+
+    /// Inside one commit every run carries the pull request's title, so a
+    /// list of titles is a column of identical rows. The workflow is what
+    /// identifies a row there -- in the LABEL, because the detail is the first
+    /// thing a 52-column list truncates away.
+    #[test]
+    fn a_commit_scope_lists_workflows_rather_than_one_title_five_times() {
+        let mut s = screen(&[
+            ("completed", Some("success")),
+            ("completed", Some("failure")),
+        ]);
+        for r in s.runs.iter_mut() {
+            r.display_title = "Allow installation tokens to attach files".into();
+        }
+        s.runs[0].name = Some("CI".into());
+        s.runs[1].name = Some("PR Triaging".into());
+        s.scope = Scope::Commit("sha0".into());
+        s.commit = Some("sha0".into());
+        let rows = s.rows();
+        assert_eq!(rows[0].label.trim(), "CI #0", "{rows:?}");
+        assert_eq!(rows[1].label.trim(), "PR Triaging #1", "{rows:?}");
+
+        // And the number alone carries it when the workflow does not: a
+        // workflow can run several times on one commit.
+        s.runs[1].name = Some("CI".into());
+        let rows = s.rows();
+        assert_eq!(rows[1].label.trim(), "CI #1", "{rows:?}");
+
+        // Everywhere else the title is what differs between rows and the
+        // workflow is the pane's business.
+        s.scope = Scope::All;
+        let rows = s.rows();
+        assert!(rows[0].label.contains("Allow installation"), "{rows:?}");
+    }
+
+    /// Toggling BACK to a scope the fetcher has already answered has to
+    /// re-read it. Nothing arrives, so nothing bumps the epoch `tick` syncs
+    /// on, and the screen would sit on an empty list over an answer in hand.
+    #[test]
+    fn toggling_back_re_reads_an_answer_already_in_hand() {
+        let mut s = screen(&[("completed", Some("success"))]);
+        let branch = Scope::Branch("main".into());
+        s.fetch.seed(
+            Req::Runs {
+                query: branch.query(),
+            },
+            Got::Runs(Arc::new(runs(&[
+                ("completed", Some("success")),
+                ("completed", Some("failure")),
+            ]))),
+        );
+        s.on_action(Action::Key('b'), 0);
+        assert_eq!(s.scope, branch);
+        assert_eq!(
+            s.runs.len(),
+            2,
+            "sat on an empty list over an answer it had"
+        );
     }
 
     /// A detached HEAD has no branch to scope to, and saying so beats building

@@ -600,6 +600,92 @@ are both only the EFFECTIVE branch rules — the same ruleset API as the dropped
 `rulesets` row, so the honest question is whether they become a third argued
 `dropped` rather than work.
 
+## A commit's runs, and a toggle that comes back (done 2026-10-23)
+
+`screen-actions-for` was the last parity row that was work rather than a
+decision, and it is small: bash's `ctrl-a` on the PR screen wrote the head sha
+to a file and re-entered the same Actions screen, which read the file as its
+scope. Here it is a row in the pull request menu — **Workflow runs for this
+commit** — and a second constructor.
+
+**It takes a slug and a sha, not an `index::Repo`, and that is the whole reason
+a second constructor exists.** `Actions::open` runs `git rev-parse HEAD` and
+reads the clone's checked-out branch, neither of which is available here: a
+pull request's head commit need not be on this disk at all. It is a fork, or a
+branch this clone has never fetched. So `for_commit` reads nothing local and is
+handed the pull request screen's own fetcher, which is the same repo — a run
+list is never cached, but a completed run's jobs and logs are, so drilling in
+from here reuses whatever the Actions tab already fetched.
+
+**The part that was not obvious: `b` had to offer a different pair.** The
+existing arm widened a commit scope to every branch, and that is a door that
+does not come back — nothing on screen afterwards names the commit, so the only
+route back to it is `q` out and open the menu again. A toggle that cannot
+return is not a toggle. So the screen remembers the commit it was *opened* for,
+separately from the scope `b` has got to since, and the pair it offers is that
+commit and the branch carrying it. `scope` is where you are; `commit` is what
+the screen is about, and the second is what makes the first reversible.
+
+Two smaller consequences, both of which read as polish and are really the same
+point — a mark that is always on is not a mark:
+
+- **The HEAD dot switches off inside a commit scope**, where every run is that
+  commit and a dot on every row says nothing. Widen to the branch and it
+  returns, now answering the question you actually have: which of this branch's
+  runs belong to the commit I came from.
+- **The runs are keyed on the head COMMIT, never the head branch.** `gh pr
+  list --json headRefOid` carries it, and a branch name would answer for
+  whatever is on the branch now rather than for what was reviewed — which on a
+  pull request that has been pushed to since is a different answer that looks
+  like the right one.
+
+The row is offered whatever state the pull request is in, including merged: a
+merged pull request's runs are exactly what you go looking for afterwards. It
+is offered only when `headRefOid` came back, so nothing builds a query for a
+commit it does not know.
+
+### Two things only driving it found
+
+Both were invisible to the tests, which is the pattern every screen here has
+repeated.
+
+**The list was five identical rows.** Every run of one commit carries the same
+`display_title` — the pull request's — so pointing it at `cli/cli` drew *Allow
+installation tokens to attac…* five times, truncated, with nothing to tell them
+apart. The workflow name is what identifies a row inside a commit, and it had
+to go in the LABEL rather than the detail: the list column is 52 cells and the
+detail is the first thing to go. With the run NUMBER too, because a workflow
+can run more than once on a commit — the next pull request tried had three
+`pull_request_target` runs of the same workflow, where the number is all there
+is. It is spelt the way the pane's header already spelt it: `PR Triaging #3365`.
+
+**`b` back to the commit showed an empty list.** `tick` syncs when the
+fetcher's epoch moves, which is right for something arriving and wrong for a
+toggle — switching back to a scope answered a moment ago makes nothing arrive,
+so the screen reported "no workflow runs here yet" about a scope holding six
+runs. `toggle_scope` calls `sync()` itself now.
+
+That one is older than this change and reachable from the Actions tab by
+pressing `b` twice; what hid it is a clock. A live run re-arms the list timer
+and that refresh does bump the epoch, so on any repo with something building
+the list came back a second later. It only showed where everything had
+finished — which is every commit scope on a pull request that has stopped
+moving, so the new screen is where it was always going to surface.
+
+Testing it needed a seam: `Fetcher::seed`, `#[cfg(test)]` only, because
+`request` reaches the network and `get` is the only way back out, so a screen's
+behaviour on an answer it ALREADY HAS could not be set up. It does not bump the
+epoch, which is the point rather than a shortcut.
+
+Building the screen inside the menu item fires its run list when the menu
+opens rather than when the row is chosen. That is the same prefetch the
+environment menu's reviewer picker does, it is deduplicated by the fetcher, and
+it is why the list is already drawn when the screen appears.
+
+**Where parity stands: 43 ported, 2 partial, 0 todo, 4 dropped.** Everything
+outstanding is one decision — whether the two `partial` rows become a third
+argued `dropped`, for the same reason `rulesets` is one.
+
 ## Still open
 
 - ~~Filtering.~~ ~~Text input.~~ **Both done (2026-10-23).** `/` narrows any

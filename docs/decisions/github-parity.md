@@ -80,7 +80,7 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `runs-toggle` | ported | `b` on the Actions screen |
 | `screen` | ported | the tab strip dispatches to a screen; `reticle::Host` |
 | `screen-actions` | ported | the 🚀 Actions tab |
-| `screen-actions-for` | todo | `Scope::Commit` is built and query-correct; nothing reaches it until the PR screen's `ctrl-a` exists |
+| `screen-actions-for` | ported | the PR menu's Workflow runs for this commit, which is bash's `ctrl-a` as a row. `runs::Actions::for_commit` takes a slug and a sha, because a pull request's head commit need not be on this disk at all; `b` there pairs the commit with the branch carrying it rather than widening to everything, so the screen can get back to the question it was opened for |
 | `screen-branches` | ported | the 🌿 Branches tab |
 | `screen-envs` | ported | the 🌍 Environments tab |
 | `screen-prs` | ported | the 🔀 Pull Requests tab |
@@ -90,20 +90,19 @@ else. `h github` documents both and will need the `github` half rewritten.
 | `secret-set` | ported | two ways in, both ending in `gh secret set` on the real tty: the secret menu's Set a new value, and the `+ new secret` row in each group. The value is read with echo off by gh and never passes through this program |
 ## Where that leaves it
 
-**42 ported, 2 partial, 1 todo, 4 dropped** (2026-10-23). Secrets and
+**43 ported, 2 partial, 0 todo, 4 dropped** (2026-10-23). Secrets and
 Environments landed together, since an environment secret is a secret and the
-environment list is what tells the Secrets screen its groups.
+environment list is what tells the Secrets screen its groups;
+`screen-actions-for` followed, which was the last row that was work rather than
+a decision.
 
-Two rows are outstanding, and only one of them is plain work:
+One thing is outstanding, and it is not work:
 
-1. **`screen-actions-for`** — the PR menu offering "the runs for this commit".
-   `runs::Scope::Commit` is built and query-correct; what it needs is a way to
-   construct the Actions screen from a slug and a sha rather than from an
-   `index::Repo`.
-2. **The two partials**, `pv-branch` and `branch-menu`. Both are only the
+1. **The two partials**, `pv-branch` and `branch-menu`. Both are only the
    EFFECTIVE branch rules, which is the same ruleset API as the dropped
    `rulesets` row — so the honest question is whether they become a third
-   argued `dropped` rather than work. That is a decision, not a task.
+   argued `dropped` rather than work. That is a decision, not a task, and it
+   is the last thing between here and the swap.
 
 And one gap that is not a parity gap, because bash typed them too: PR
 **labels and reviewers take a typed name** rather than a picker. The

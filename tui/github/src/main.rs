@@ -40,7 +40,7 @@ fn main() -> std::io::Result<()> {
             println!("  ctrl-d/u page · enter open · / filter · q back, out at the top");
             println!();
             println!("  o browser · r refresh, on every screen that fetches");
-            println!("  on the runs list: b branch scope · e rerun · x cancel · L log");
+            println!("  on the runs list: b the other scope · e rerun · x cancel · L log");
         }
         _ => {
             let dir = index::root_dir();

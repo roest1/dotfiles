@@ -739,6 +739,59 @@ pins that.
   easily got wrong: visiting five runs during a build must not leave five
   timers behind.
 
+- **A toggle that cannot come back is not a toggle.** The Actions screen is
+  reachable two ways — the repo's 🚀 tab, and the pull request menu's "Workflow
+  runs for this commit", which is bash's `ctrl-a` as a row — and `b` offers a
+  DIFFERENT pair in each. Opened on a repo it is every branch or the one checked
+  out here. Opened on a commit it is that commit or the branch carrying it,
+  because widening a commit scope to every branch is a door that does not come
+  back: nothing on screen afterwards names the commit again, so the only route
+  to it is `q` out and open the menu a second time.
+
+  So `Actions` remembers the commit it was OPENED for, separately from the
+  scope `b` has got to since. `scope` is where you are; `commit` is what the
+  screen is about, and the second is what makes the first reversible.
+
+  `for_commit` takes a slug and a sha rather than an `index::Repo`, which is
+  the whole reason a second constructor had to exist: a pull request's head
+  commit need not be anywhere on this disk — a fork, or a branch this clone has
+  never fetched — so there is no `git rev-parse` to do and nothing local to
+  read. It is handed the pull request screen's own fetcher, which is the same
+  repo, so a completed run's jobs and logs come from what the Actions tab
+  already has.
+
+  **The HEAD marker switches off inside a commit scope**, because there every
+  run IS that commit and a dot on every row says nothing. Widen to the branch
+  and it comes back, now answering the question you actually have: which of
+  this branch's runs belong to the commit I came from.
+
+  **Inside a commit the row is the WORKFLOW and its run number, not the run
+  title.** Every run of one commit carries the same `display_title` — the pull
+  request's — so a list of titles is a column of identical rows; the first
+  real repo this was pointed at drew five. The workflow is what identifies a
+  row there, with the number because a workflow can run several times on one
+  commit (three `pull_request_target` runs of the same workflow, measured), and
+  it goes in the LABEL rather than the detail because the detail is the first
+  thing a 52-column list truncates away. Spelt as the pane's header spells it.
+
+- **A scope toggle has to RE-READ what the fetcher already has.** `Actions::tick`
+  syncs when the fetcher's epoch moves, which is the right rule for an arrival
+  and the wrong one for a toggle: switching back to a scope answered a moment
+  ago makes nothing arrive, so the screen sat on an empty list saying "no
+  workflow runs here yet" about a scope with six runs in it. `toggle_scope`
+  calls `sync()` itself now.
+
+  Worth keeping because of how it hid. A live run re-arms the list clock and
+  that refresh DOES bump the epoch, so on any repo with something building the
+  list reappeared a second later and the bug was invisible. It only showed on a
+  scope where everything had finished — which is every commit scope on a pull
+  request that has stopped moving, i.e. most of them.
+
+  `Fetcher::seed` exists for this, `#[cfg(test)]` only: `request` reaches the
+  network and `get` is the only way back out, so how a screen behaves on an
+  answer it ALREADY HAS was otherwise untestable. It deliberately does not bump
+  the epoch — that is the condition being tested, not a quirk of the seam.
+
 - **Only what cannot change is cached across sessions.** A completed run's jobs
   and a completed job's log are immutable, so they live in
   `~/.cache/dotfiles-github/<owner>/<name>` and last week's failure opens
