@@ -36,74 +36,21 @@ if command -v fzf &>/dev/null; then
   unset _fd
 fi
 
-# ─── The two fzf shapes ───────────────────────────────────────────────────────
+# ─── The two fzf shapes, and why they are gone ────────────────────────────────
 #
-# Every interactive screen in this repo is one of two things, and the
-# difference is whether typing filters or acts:
+# `__fzf_menu` and `__fzf_list` lived here: the menu/list contract every
+# interactive screen in this repo shared, defined once because it had
+# previously been repeated at 18 call sites as identical strings kept
+# identical by hand.
 #
-#   menu   a fixed set of choices. --disabled turns the query off, so plain
-#          keys are commands: q and - go back, like nvim.
-#   list   an open set to search. Typing filters, esc goes back.
+# All 18 were in bash_github_tui. When `github` became a Rust TUI (tui/github,
+# 2026-10-24) the wrappers were left with ZERO callers -- and a contract with
+# no implementers is not a convention, it is a second description of nothing.
+# `bash_git` never invoked fzf at all; the only fzf left in this file is the
+# shell integration below, which is fzf's own Ctrl+R / Ctrl+T / Alt+C.
 #
-# The keybindings and the header hint live HERE, once, rather than at each
-# call site. They were previously repeated at 18 of them — identical strings
-# that had to be kept identical by hand, which is not a convention so much as
-# an ongoing opportunity to drift. Adding a key to the menu contract is now
-# one edit, and CI checks that no screen hand-rolls its own.
-#
-# Chrome (height, layout, border) is FZF_DEFAULT_OPTS above and applies to
-# Ctrl+R and Ctrl+T too. The binds deliberately are NOT there: --disabled is
-# what makes q mean "quit" rather than the letter q, and forcing that globally
-# would break typing the letter q into history search.
-#
-# Both read choices on stdin. Pass extra fzf flags after the title:
-#   printf '%s\n' a b c | __fzf_menu "Pick one" --height=5
-#
-# Three optional variables, each set for a single call rather than exported.
-# They live here so a screen cannot invent its own spelling of the same idea:
-#
-#   FZF_MENU_BACK   last word of the hint, for a top-level screen that exits
-#                   rather than returns:
-#                     FZF_MENU_BACK=exit __fzf_menu "GitHub — $repo"
-#
-#   FZF_MENU_HELP   path to a file shown by `?`. The binding and the ` ?help`
-#                   hint appear together, so a screen cannot advertise help it
-#                   doesn't have or have help nobody can find:
-#                     FZF_MENU_HELP="$f" __fzf_menu "Pull Requests"
-#
-#   FZF_MENU_EXPECT comma-separated keys that should end the menu and report
-#                   themselves. Output becomes two lines — the key (empty for a
-#                   plain enter) then the selection — so only call sites that
-#                   set it need to handle that. github uses it for `r`, which
-#                   nothing else needs and which the pagers already spell the
-#                   same way.
-__fzf_menu() {
-  local title="$1"; shift
-  local binds='q:abort,-:abort'
-  local hint="↑↓ nav  enter select  -/q ${FZF_MENU_BACK:-back}"
-  local -a extra=()
-
-  if [[ -n "$FZF_MENU_HELP" && -f "$FZF_MENU_HELP" ]]; then
-    # execute() hands fzf's terminal to less and returns to the menu after,
-    # which is what makes ? feel like a peek rather than an exit.
-    binds+=",?:execute(less -R -- '$FZF_MENU_HELP')"
-    hint+="  ?help"
-  fi
-  [[ -n "$FZF_MENU_EXPECT" ]] && extra+=(--expect="$FZF_MENU_EXPECT")
-
-  fzf --disabled --bind "$binds" \
-      --header="${title}  │  ${hint}" \
-      --no-info "${extra[@]}" "$@"
-}
-
-# FZF_LIST_HINT replaces the middle of the hint for lists whose enter key does
-# something more specific than "select" — viewing a diff, opening an action
-# menu. The trailing `esc back` is not overridable: that is the half of the
-# contract that must be identical everywhere.
-__fzf_list() {
-  local title="$1"; shift
-  fzf --header="${title}  │  ${FZF_LIST_HINT:-type to filter  enter select}  esc back" "$@"
-}
+# If an fzf screen is ever wanted again, this is in git history and the
+# argument for centralising it still holds. Do not reintroduce it empty.
 
 # eza: modern ls replacement with git integration and icons.
 if command -v eza &>/dev/null; then
@@ -833,8 +780,10 @@ dtest() {
 #
 #   h deps   defers to `make check`, because deps.conf is the manifest and a
 #            second copy of the tool list here had silently drifted.
-#   screens  the interactive GitHub tools document themselves in their own
-#            fzf headers via __fzf_menu, not here.
+#   screens  the interactive GitHub tools document themselves. They did it in
+#            their own fzf headers; `github` is a Rust TUI now and does it in
+#            each region's footer, with every menu item naming the command it
+#            runs. Either way, not here.
 #
 # What is left is help for plain commands, which is the only genuinely
 # doc-shaped thing. Generating it from structured comments is possible but not

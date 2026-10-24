@@ -826,21 +826,51 @@ the life of the shell. Verified on the wire — `MQ==` at byte 0 of the session,
 The lesson is small and worth keeping: a derivation covers exactly what it
 derives from. The grep is part of the job, not a substitute for the table.
 
-### What the swap left loose
+### The dead layer, and what removing it collapsed (2026-10-24)
 
-**The fzf floor.** `bash/deps.sh` enforces fzf >= 0.65 because `github` needed
-`--listen`, `--style` and `--footer`. Nothing does now: what is left using fzf
-is `__fzf_menu` and `__fzf_list`, whose flags are far older. The number was
-deliberately NOT lowered in the same commit, because choosing the new one means
-knowing which release introduced `--no-info`, and this repo does not infer
-version/feature mappings — `wezterm/MIN_VERSION` was deleted for exactly that.
-Too high costs one unnecessary mise install; too low breaks every menu in the
-shell on an old box.
+Deleting the file did not delete everything that existed for it, and a sweep
+the same day — prompted by exactly the right question, *is all the old code
+gone* — found six functions with **zero callers**:
+
+- `__fzf_menu` and `__fzf_list` (`bash_productivity`). The menu-and-list
+  contract, centralised because it had been 18 copies of the same `--bind`
+  string. **All 18 call sites were in `bash_github_tui`**, and `bash_git` never
+  invoked fzf at all, so the port left the contract with nothing implementing
+  it. CI made it worse: the `fzf menus go through __fzf_menu` row ended with
+  `grep -q '^__fzf_menu()'`, which pinned the dead code in place.
+- `_open_url`, `__gh_check`, `__gh_repo`, `__gh_default_branch`
+  (`bash_github`). The header called these "used by this file and by
+  bash_github_tui"; they were only ever used by the second. `gha` calls exactly
+  one helper, `_gha_rule`.
+
+`__gh_check` deserves its own line: it refused when **fzf** was missing, and
+nothing in `bash_github` has ever needed fzf. By the swap it was a dead guard
+that would have rejected a working `gha`.
+
+**Removing them collapsed the one loose end the swap had left.** The fzf >=
+0.65 floor in `bash/deps.sh` had become inherited rather than derived, and
+lowering it looked like it needed a measurement — which release introduced
+`--no-info`. With the wrappers gone that question evaporates: the only fzf left
+in the shell is fzf's own Ctrl+R / Ctrl+T / Alt+C integration, which already
+falls back to the packaged completion script on an fzf too old for `--bash`.
+So there is no floor at all now, and `deps.conf` is back to `pkg||mise` — one
+binary from the distro, which is this repo's usual preference and which the
+floor had been overriding.
+
+The general shape is worth keeping: **a shared abstraction outlives its last
+caller silently**, and a CI row asserting the abstraction exists will keep it
+alive indefinitely. The wrapper, its contract comment, the CI row and the
+version floor it justified were four things held up by one deleted file.
+
+If an fzf screen is ever wanted again, the argument for centralising the binds
+still holds. Bring the wrapper and its CI row back **together**, not the
+wrapper alone.
+
+### What the swap still leaves
 
 **The old cache directory.** The bash version cached under
 `~/.cache/github/<repo>`; the Rust one uses `~/.cache/dotfiles-github`. The old
-tree is orphaned rather than migrated, and is pruned by nothing now. It is
-yours to delete.
+tree is orphaned rather than migrated, and is pruned by nothing now.
 
 **The per-screen `?` help.** Seven `_gh_help_*` pages went with the file, and
 nothing replaces them as pages. The keys are in each region's footer and each

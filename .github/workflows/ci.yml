@@ -747,6 +747,11 @@ jobs:
       # stays: bash_github is still the plain-gh file, and a screen growing
       # back into it is the drift to catch.
       #
+      # It holds trivially today, which is the point rather than a reason to
+      # drop it: there is no fzf in bash_github at all now that __gh_check is
+      # gone. The row costs nothing and catches the one way this file goes
+      # wrong.
+      #
       # `command -v fzf` is a probe, not an invocation, so it does not count.
       # Comment lines are skipped: this file's own header documents the rule and
       # would otherwise match the pattern that enforces it.
@@ -761,27 +766,16 @@ jobs:
             exit 1
           }
 
-      # The nvim-like menu contract (q and - go back, --disabled so plain keys
-      # are commands) is defined once in __fzf_menu. It was previously spelled
-      # out at 18 call sites as identical strings kept identical by hand; a
-      # screen that hand-rolls it again is how the next one drifts. The wrapper
-      # itself is the sole legitimate --disabled, so it is the only exemption.
-      - name: fzf menus go through __fzf_menu
-        run: |
-          bad=0
-          for f in bash/bash_git bash/bash_github; do
-            awk -v file="$f" '
-              /^[[:space:]]*#/ { next }
-              /fzf .*--disabled|--disabled.*fzf/ { print file ":" FNR ": " $0; found = 1 }
-              END { exit found ? 1 : 0 }
-            ' "$f" || bad=1
-          done
-          if [ "$bad" -ne 0 ]; then
-            echo "hand-rolled fzf menu — use __fzf_menu (bash_productivity)"
-            exit 1
-          fi
-          grep -q '^__fzf_menu()' bash/bash_productivity || {
-            echo "__fzf_menu is missing from bash_productivity"; exit 1; }
+      # The `fzf menus go through __fzf_menu` row lived here. The contract it
+      # policed -- q and - go back, --disabled so plain keys are commands --
+      # was defined once in bash_productivity because it had been spelled out
+      # at 18 call sites as identical strings kept identical by hand.
+      #
+      # All 18 were in bash_github_tui, so when `github` became tui/github the
+      # wrapper lost every caller, and the row's last act was `grep -q
+      # '^__fzf_menu()'` -- which pinned dead code in place. Both are gone. If
+      # an fzf screen is wanted again, the argument for centralising the binds
+      # still holds and this row should come back WITH it, not before it.
 
       # `h` is hand-maintained — the comment above it used to claim it read from
       # the file's own comments and was "always in sync", which was never true.
@@ -1322,12 +1316,12 @@ jobs:
       # `font` would win over the binary on PATH, silently reinstating the fzf
       # picker this replaced.
       # DERIVED from the workspace, not a hand-kept list, and that matters right
-      # now: `gh-tui` has just been renamed to `github`, which is the name the
-      # planned reticle crate will take. The day tui/github/ is added to
-      # members, this check starts covering it and fails until the bash function
-      # is gone -- which is exactly the handover it should force. A hardcoded
+      # now: `gh-tui` was renamed to `github` ahead of the rewrite, and the day
+      # tui/github/ was added to members this check started covering it and
+      # failed until the bash function was gone -- which is exactly the
+      # handover it was written to force. It did, on 2026-10-24. A hardcoded
       # list would simply have stayed quiet and let both exist, with PATH order
-      # deciding which one runs.
+      # deciding which one ran.
       #
       # reticle is excluded because it is the framework and ships no binary.
       # The parity table that gated this is now a RECORD, not a check, and the
