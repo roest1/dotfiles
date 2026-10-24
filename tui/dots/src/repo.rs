@@ -180,6 +180,19 @@ pub const INDIRECT: [(&str, &str); 1] = [("lib/pkg.sh", "install")];
 /// `sudo.exe` and gsudo are a different mechanism on a different machine that
 /// `dots` never invokes — and skips comments, so a note ABOUT sudo does not
 /// read as a call to it.
+///
+/// It also skips QUOTED sudo, which is the same distinction one step further
+/// out: `uv/deps.sh` prints `sudo dnf remove uv` as advice for a human to
+/// copy, and printing a command is not running one. Adding that file to
+/// `INDIRECT` instead would have silenced the test by recording something
+/// false -- `make install` already escalates through `lib/pkg.sh`, so it would
+/// have changed no behaviour and cost the table its meaning.
+///
+/// The limit, stated because the rule cannot see past it: a sudo hidden
+/// ENTIRELY inside a string that is then executed -- `bash -c "sudo apt
+/// install x"` -- reads as quoted and would be missed. No such line exists
+/// here, and every one that does survives the rule: `| sudo tee` keeps both
+/// the pipe and the command outside the quotes in all four of its uses.
 pub fn sudo_files(root: &Path) -> Vec<String> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
         let Ok(entries) = fs::read_dir(dir) else {
@@ -215,7 +228,11 @@ pub fn sudo_files(root: &Path) -> Vec<String> {
             };
             let hit = text.lines().any(|l| {
                 let t = l.trim_start();
-                !t.starts_with('#') && (t.contains("sudo ") || t.contains("| sudo"))
+                if t.starts_with('#') {
+                    return false;
+                }
+                let t = unquoted(t);
+                t.contains("sudo ") || t.contains("| sudo")
             });
             if hit {
                 if let Ok(rel) = path.strip_prefix(root) {
@@ -227,6 +244,27 @@ pub fn sudo_files(root: &Path) -> Vec<String> {
     let mut out = Vec::new();
     walk(root, root, &mut out);
     out.sort();
+    out
+}
+
+/// A line with its quoted spans removed, so a printed command does not read
+/// as an executed one.
+///
+/// Both quote characters, and deliberately NOT a real shell parser: escapes
+/// and nesting are not handled because the question is only whether `sudo`
+/// appears outside quotes, and every way of getting that wrong here is
+/// visible in `sudo_files`'s own test against the real tree.
+fn unquoted(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut quote: Option<char> = None;
+    for c in line.chars() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None => out.push(c),
+        }
+    }
     out
 }
 
@@ -288,6 +326,42 @@ mod tests {
     // quietly losing a page.
     fn repo() -> PathBuf {
         root().expect("tests run inside the repo")
+    }
+
+    /// A PRINTED command is not a run one, and the distinction decides whether
+    /// a target streams or detaches. `uv/deps.sh` echoes `sudo dnf remove uv`
+    /// as advice; `lib/pkg.sh` and the Makefile actually escalate.
+    ///
+    /// Asserted against the real tree for the same reason everything else here
+    /// is: the thing that breaks is not the parser, it is a file arriving with
+    /// a `sudo` in it that nobody classified.
+    #[test]
+    fn a_printed_sudo_is_not_an_invoked_one() {
+        let files = sudo_files(&repo());
+        assert!(
+            !files.iter().any(|f| f == "uv/deps.sh"),
+            "a hint string read as a call site: {files:?}"
+        );
+        assert!(
+            files.iter().any(|f| f == "lib/pkg.sh"),
+            "lost the real escalation in lib/pkg.sh: {files:?}"
+        );
+        // `echo "$$bash_path" | sudo tee -a /etc/shells` -- the quoted part is
+        // the argument, and both the pipe and `sudo` stay outside it.
+        assert!(
+            files.iter().any(|f| f == "Makefile"),
+            "lost the piped sudo in the Makefile: {files:?}"
+        );
+
+        assert_eq!(
+            unquoted(r#"dnf)  echo "sudo dnf remove uv" ;;"#),
+            "dnf)  echo  ;;"
+        );
+        assert_eq!(
+            unquoted("sudo apt install -y make"),
+            "sudo apt install -y make"
+        );
+        assert!(unquoted(r#"printf '%s' "$RULE" | sudo tee "$CONF""#).contains("| sudo"));
     }
 
     #[test]
