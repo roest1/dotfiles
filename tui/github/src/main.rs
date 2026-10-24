@@ -58,6 +58,11 @@ fn main() -> std::io::Result<()> {
                 Some(repo) => root.focused_on(repo),
                 None => root,
             };
+            // The tab mark goes up before the first frame and comes down in
+            // its `Drop`, which is the bash version's RETURN trap: a mark
+            // left set leaves the pane wearing the GitHub glyph for the life
+            // of the shell.
+            let _mark = github::TabMark::set();
             let fetch = std::sync::Arc::new(github::gh::Fetcher::new(""));
             let me = github::user::login();
             let user = github::user::screen(fetch, root.as_me(&me), &me);

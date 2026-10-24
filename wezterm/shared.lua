@@ -312,7 +312,7 @@ function M.apply(config)
 	--
 	-- The ANSI 16 are DELIBERATELY not set, and that is the whole point of writing
 	-- it this way instead of `config.color_scheme = 'rose-pine'`. Everything that
-	-- colors its own output -- gh, git, grep, and so the whole bash_github_tui --
+	-- colors its own output -- gh, git, grep, and so the whole github TUI --
 	-- speaks in those 16 slots, and bash_theme/EZA_COLORS speak in 256-colour
 	-- codes layered on the same palette. Remapping them would re-tint all of it:
 	-- semantics would survive (green is still "added") but the hues you already
@@ -501,10 +501,12 @@ local STATES = {
 	complete = { glyph = "⚡️", cols = 2, color = "#a6e3a1" }, -- typed with VS16 attached directly
 
 	-- A `github` session, which announces itself over the same user-var channel
-	-- (bash/bash_github_tui's `_gh_tab_var`). The var is still named `gh_tui`
-	-- after the command's old name: it is read HERE, on the Windows host, out of
-	-- a different clone than the bash that writes it, so renaming it goes dark
-	-- until `make windows` has run. Not worth it for a name nobody types.
+	-- (`TabMark` in tui/github/src/lib.rs, previously bash_github_tui's
+	-- `_gh_tab_var` -- the writer moved from bash to Rust and the wire format
+	-- did not). The var is still named `gh_tui` after the command's old name:
+	-- it is read HERE, on the Windows host, out of a different clone than the
+	-- thing that writes it, so renaming it goes dark until `make windows` has
+	-- run. Not worth it for a name nobody types.
 	--
 	-- U+F408 is `oct-mark_github` — GitHub's own Octicons mark, patched into
 	-- 0xProto Nerd Font. NOT an emoji: Unicode has no GitHub logo at any

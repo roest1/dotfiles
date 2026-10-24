@@ -882,9 +882,9 @@ h() {
     gfetcho / gpullo   fetch origin / pull origin
     gprune             Fetch + delete branches with gone remotes
 
-  GitHub TUI                                              [gh, fzf, jq]
+  GitHub TUI                                                   [gh, jq]
     github             The repo on GitHub, live: actions · PRs · branches ·
-                       secrets · environments  (ctrl-/ or ? for help)
+                       secrets · environments  (hjkl everywhere)
 
   GitHub Actions (one-shot, no TUI)                        [gh, jq]
     gha                Workflow status for HEAD
@@ -1247,11 +1247,17 @@ HELP
       cat <<'HELP'
 GitHub — one TUI, plus one one-shot
 
-  github      The current repo on GitHub, in one TUI: Actions, Pull
-              Requests, Branches, Secrets, Environments. Every screen is a
-              list with a live preview — hover a workflow run and its jobs
-              appear with only the failed steps expanded, log tail inline;
-              a running one refreshes under the cursor by itself.
+  github      Your repos, and everything about one. Run anywhere it lists
+              every clone under ~/github, grouped by where you filed them,
+              read from disk — so it opens instantly and works offline.
+              Run inside a repo it opens on that one with the list still
+              underneath. Enter on a repo gives five tabs: Branches, Pull
+              Requests, Actions, Secrets, Environments. Hover a workflow
+              run and its jobs appear with only the failed steps expanded
+              and the log tail inline; a running one refreshes under the
+              cursor by itself, and a finished one is cached across
+              sessions, so last week's failure opens instantly in a shell
+              that has never seen it.
 
   gha         Workflow status for HEAD — a bordered table of every
               check with its status and how long it took, plus a
@@ -1268,24 +1274,35 @@ GitHub — one TUI, plus one one-shot
   plain status/name/url columns, so `gha | grep ❌` is still the
   answer gha-fail used to give.
 
-  Press ? in any github screen for that screen's help — what each action
-  does, what the preview pane shows, and the keys it accepts. That help
-  used to live here, which meant reading it required already knowing to
-  type `h github`, and kept it drifting out of step with the screens it
-  described. It now sits next to what it documents.
+  There is no per-screen help page any more, and nothing to press ? for.
+  Each region states its own keys in the footer, and a menu item carries
+  what it does and the exact command it runs beside its name — so the
+  documentation is next to the thing rather than one keystroke away from
+  it, which is where the fzf version had already been moving it.
 
-  Navigation, everywhere:
-    Lists:  type to filter   enter select   esc back   ctrl-r refresh
-            ctrl-o browser   ctrl-/ help   (the footer lists the rest)
-    Menus:  ↑↓ / jk   enter select   -/q back   ? help
-    Preview: shift-↑↓ · alt-j/k scroll   alt-p hide/show
+  Navigation, everywhere — hjkl, and nothing else to learn:
+    j/k        move
+    h/l        close/open, or across: the EDGE of a region is the door to
+               the next one. k off the top row reaches the tab strip, h/l
+               move along it, j drops back in. l on a row with nothing to
+               expand goes right into the preview, where j/k scroll it.
+    gg/G       ends        ctrl-d/u    page
+    enter      open it, or open what you can do to it
+    /          filter the list (substring, case-insensitive, order kept)
+    q          back, and out at the top
+    o          browser     r           refresh
 
-  Back is back: a screen opens inside the one below it, so esc returns to
-  the row you left, filter and all. The hub's panes fill in behind the
-  menu as they load; r refetches them.
+  Tab is bound to nothing, deliberately: a key whose only job is reaching
+  a region is a mode by another name.
 
-  Needs fzf ≥ 0.65 (deps.conf installs it through mise for that reason);
-  the shell's other fzf uses don't care.
+  One repo is five tabs — branches, pull requests, actions, secrets,
+  environments — and there is one root, the user level, even when you
+  started inside a repo. So q walks up from a workflow run to the repo
+  list to the account and quits there, rather than out of context.
+
+  Enter on a row opens that row's actions, named, with the command each
+  one runs shown before you confirm it. Anything that cannot be undone
+  says so and asks.
 
   Your prompt also shows CI status on the right:
     [5/5 ✅ 1d]  5 of 5 passed, last run a day ago
@@ -1308,7 +1325,10 @@ GitHub — one TUI, plus one one-shot
   detached (a sha cannot have protection rules), or where gh cannot see
   the repo.
 
-  Depends on: gh, fzf, jq
+  Depends on: gh. Not fzf, and not jq: github is a Rust binary now
+  (tui/github, installed by `make install tui`, the same way `dots` and
+  `font` are), and the 2500-line fzf implementation it replaced is gone.
+  gha is still shell and still needs jq.
 HELP
       ;;
     clear)

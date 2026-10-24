@@ -1,39 +1,65 @@
 # `github`: parity before the swap
 
-The bash implementation gets deleted in ONE commit, and this file is the
-precondition for writing it. It exists because "don't lose any functionality"
-is a claim nobody can check from memory — the fzf implementation is 2500 lines
-with 49 worker verbs, seven screens and four menus, and most of it is behind a
-keystroke nobody has typed in months.
+**The swap happened on 2026-10-24.** `bash/bash_github_tui` is deleted,
+`github` is `tui/github`, and this file is now a RECORD rather than a gate.
+What it still answers is the only question that outlives the port: what did
+this deliberately not carry, and why. That is the four `dropped` rows, each
+with its argument in its own row.
 
-## How this stays honest
+It existed because "don't lose any functionality" is a claim nobody can check
+from memory — the fzf implementation was 2500 lines with 49 worker verbs, seven
+screens and four menus, and most of it was behind a keystroke nobody had typed
+in months.
 
-The left column is **derived from the tree, not hand-kept**: every verb in
-`_ghw_main`'s dispatcher in `bash/bash_github_tui` must appear here. A CI step
-asserts that, so adding a verb to the bash file — or renaming one — fails until
-this table says what happened to it.
+## How it stayed honest, while it was a gate
 
-The gate is the other half: **CI refuses the swap while any row says `todo`.**
-If `github` appears in `tui/deps.sh`'s `crates=(...)`, every row must be
-`ported` or `dropped`. So the condition cannot be met by deciding it has been.
+The left column was **derived from the tree, not hand-kept**: every verb in
+`_ghw_main`'s dispatcher had to appear here, asserted by a CI step, so adding
+or renaming a verb in the bash file failed until this table said what happened
+to it. The gate was the other half: CI refused `github` entering
+`tui/deps.sh`'s `crates=(...)` while any row said `todo` or `partial`, so the
+condition could not be met by deciding it had been.
+
+Both are gone with the file they read — the derivation is impossible now, not
+merely moot.
+
+## What a derived table cannot see, which is worth knowing next time
+
+It was derived from the **dispatcher**, and three things the swap needed were
+not dispatcher verbs:
+
+- `bashrc` sourced `~/.bash_github_tui`, and `deps.conf` linked it. Mechanical,
+  and CI would have caught both.
+- **`_gh_tab_var`** — the OSC 1337 `gh_tui` user var that `wezterm/shared.lua`
+  reads to put GitHub's mark on the tab while a session is running. Nothing
+  would have caught this. It is real, user-visible functionality that the gate
+  was built to protect and could not see, and it was found by grepping for
+  every mention of the file about to be deleted rather than by the table. It
+  now lives in `TabMark` (`tui/github/src/lib.rs`), with the wire format
+  pinned by a test.
+
+A derivation covers exactly what it derives from. If the next table of this
+shape is derived from one entry point, the grep is still part of the job.
 
 Statuses:
 
 - **ported** — the Rust screens do this. Not necessarily identically; where the
   shape changed deliberately, `github-tui.md` says why.
-- **partial** — some of it. The missing part is named in the row, and a partial
-  row blocks the swap exactly as a `todo` does.
-- **todo** — not there yet.
+- **partial** — some of it. The missing part was named in the row, and a
+  partial row blocked the swap exactly as a `todo` did. None are left.
+- **todo** — not there yet. None are left.
 - **dropped** — deliberately not carried over, with the reasoning in the row.
   This is the only status that is a decision rather than a measurement, so each
-  one needs an argument, not a shrug.
+  one needs an argument, not a shrug — and it is the only one that still means
+  anything now that the table is a record.
 
 ## What is NOT in scope
 
 `gha` is a separate one-shot command in `bash/bash_github`, not part of the
-TUI, and it stays. So does everything else in `bash_github` and `bash_git` —
-the swap deletes `bash_github_tui` and the `github()` function in it, nothing
-else. `h github` documents both and will need the `github` half rewritten.
+TUI, and it stayed. So did everything else in `bash_github` and `bash_git` —
+the swap deleted `bash_github_tui` and the `github()` function in it, nothing
+else, which is what the file split was enforced for. `h github`'s `github`
+half was rewritten in the same commit; its `gha` half is unchanged.
 
 ## The table
 

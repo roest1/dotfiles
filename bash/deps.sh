@@ -53,18 +53,31 @@ ensure_wsl_interop || true
 
 # ── fzf version floor ────────────────────────────────────────────────────────
 #
-# Same shape as the neovim floor in nvim/deps.sh, for the same reason. github
-# (bash_github_tui) is built on fzf features that arrived between 0.36 and
-# 0.65 — --listen for live previews, the start/focus events, --style and
-# --footer for the chrome — and apt carries 0.29 (Ubuntu 22.04) and 0.44
-# (24.04). deps.conf now says `mise||pkg`, which lands a current fzf on a
-# fresh box, but provider_install's `command -v` short-circuit means a box
-# that ALREADY has the distro's fzf keeps it. This is where that gets caught:
-# upgrade through the distro if it can reach the floor (one binary, the
-# whole point), else install a current one through mise over the top.
+# Same shape as the neovim floor in nvim/deps.sh, for the same reason: apt
+# carries 0.29 (Ubuntu 22.04) and 0.44 (24.04), deps.conf says `mise||pkg` so
+# a fresh box lands a current fzf, but provider_install's `command -v`
+# short-circuit means a box that ALREADY has the distro's keeps it. This is
+# where that gets caught: upgrade through the distro if it can reach the floor
+# (one binary, the whole point), else install a current one through mise over
+# the top.
 #
-# The floor is 0.65 (Aug 2025). github checks it too and refuses with the
-# same instruction, so a stale machine says why rather than half-working.
+# THE NUMBER IS NOW INHERITED, NOT DERIVED, and that is a loose end rather
+# than a decision. 0.65 was the floor because `github` needed it — --listen
+# for live previews, the start/focus events, --style and --footer for the
+# chrome. That github is gone; it is a Rust binary (tui/github) and needs no
+# fzf at all. What is left using fzf is `__fzf_menu` and `__fzf_list` in
+# bash_productivity, and between them they use --disabled, --bind, --header,
+# --no-info and --expect — all far older flags, so the real floor is far
+# lower, and `--no-info` is probably the binding one.
+#
+# It is deliberately NOT lowered in the same commit that removed the reason
+# for it. Picking the new number means knowing which release introduced
+# `--no-info`, and this repo does not guess at version/feature mappings --
+# `wezterm/MIN_VERSION` was deleted for inferring render behaviour from a
+# build stamp. Until that is measured, the cost of being too high is one
+# unnecessary mise install on a box whose distro fzf would have done; the cost
+# of guessing too low is every menu in the shell breaking on an old box, which
+# is the wrong direction to be wrong in.
 FZF_MIN_MAJOR=0
 FZF_MIN_MINOR=65
 
@@ -86,7 +99,7 @@ fzf_below_floor() {
 }
 
 echo ""
-echo "  fzf (github needs >= $FZF_MIN_MAJOR.$FZF_MIN_MINOR):"
+echo "  fzf (menus need >= $FZF_MIN_MAJOR.$FZF_MIN_MINOR):"
 _fzf_v="$(fzf_version)"
 if [ -z "$_fzf_v" ]; then
   echo "  ⚠️  fzf not installed — the [bash] tools should have provided it"
@@ -101,7 +114,7 @@ elif fzf_below_floor "$_fzf_v"; then
   if fzf_below_floor "$(fzf_version)"; then
     echo "  ➡️  $PM can't reach the floor — installing a current fzf via mise"
     mise_install_forced fzf || {
-      echo "  ❌ could not upgrade fzf. github will refuse to start on $_fzf_v;"
+      echo "  ❌ could not upgrade fzf. The fzf menus may misbehave on $_fzf_v;"
       echo "     the rest of the shell is unaffected. By hand: mise use -g fzf@latest"
     }
   fi

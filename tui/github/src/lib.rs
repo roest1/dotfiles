@@ -73,6 +73,82 @@ pub fn browse(url: &str) -> String {
     }
 }
 
+/// The tab mark: `gh_tui`, an OSC 1337 user var that wezterm reads.
+///
+/// `wezterm/shared.lua`'s `format-tab-title` puts GitHub's Octicons mark on
+/// the tab while a github session is running, and it learns that a session is
+/// running from this variable and nothing else. The bash implementation set it
+/// in `_gh_tab_var`, which is NOT one of `_ghw_main`'s verbs -- so the parity
+/// table, derived from that dispatcher, could not see it. It was found by
+/// grepping for every mention of the file about to be deleted.
+///
+/// Two things make this worth a type rather than two calls. The variable is
+/// process-scoped state inside somebody else's program: a mark left set
+/// leaves the pane wearing the GitHub glyph for the life of the shell, which
+/// is why the bash version hung the clear on a `RETURN` trap rather than
+/// putting it at the bottom of the function. `Drop` is that trap -- it runs on
+/// the way out of `main` and on an unwinding panic alike.
+///
+/// It writes to `/dev/tty` rather than stdout, for the same reason
+/// `_gh_tab_var` did: the escape is addressed to the terminal, so it must not
+/// land in a pipe when the output is redirected.
+pub struct TabMark;
+
+/// base64 of `1` and `0`. The var is a string and the Lua compares it to
+/// `"1"`, so the value is encoded exactly as `_gh_tab_var` encoded it.
+const MARK_ON: &str = "MQ==";
+const MARK_OFF: &str = "MA==";
+
+impl TabMark {
+    pub fn set() -> Self {
+        write_tty(&var_escape(MARK_ON));
+        TabMark
+    }
+}
+
+impl Drop for TabMark {
+    fn drop(&mut self) {
+        write_tty(&var_escape(MARK_OFF));
+    }
+}
+
+/// The wire format wezterm parses, split out so a test can pin it.
+fn var_escape(value: &str) -> String {
+    format!("\u{1b}]1337;SetUserVar=gh_tui={value}\u{7}")
+}
+
+/// Best-effort: no tty, or one that cannot be opened for writing, means no
+/// mark. There is nothing to report and nobody to report it to.
+fn write_tty(s: &str) {
+    use std::io::Write;
+    if let Ok(mut tty) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
+        let _ = tty.write_all(s.as_bytes());
+        let _ = tty.flush();
+    }
+}
+
 pub use root::Root;
 pub use runs::Actions;
 pub use steps::Steps;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The wire format, pinned. `wezterm/shared.lua` reads it on the WINDOWS
+    /// host, out of a different clone than the one that writes it, so a change
+    /// here goes dark rather than failing: the config still loads, the tab
+    /// still draws, and there is simply no icon with nothing to say why. The
+    /// var is still named after the command's old name for that same reason.
+    #[test]
+    fn the_tab_mark_is_the_escape_wezterm_reads() {
+        assert_eq!(
+            var_escape(MARK_ON),
+            "\u{1b}]1337;SetUserVar=gh_tui=MQ==\u{7}"
+        );
+        assert_eq!(
+            var_escape(MARK_OFF),
+            "\u{1b}]1337;SetUserVar=gh_tui=MA==\u{7}"
+        );
+    }
+}

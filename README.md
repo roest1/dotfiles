@@ -284,7 +284,7 @@ aren't (fork instead — the layout is built for it). See
 
 ## GitHub Terminal Tools
 
-**[Full walkthrough → git/GITHUB_TOOLS.md](git/GITHUB_TOOLS.md)** — walkthroughs and demos for the interactive GitHub tools.
+**`h github`** has the current command's keys and shape; `github` is a Rust TUI (`tui/github`) as of 2026-10-24. **[git/GITHUB_TOOLS.md](git/GITHUB_TOOLS.md)** is the walkthrough of the fzf implementation it replaced, kept as a record.
 
 `github` is the way in. `ctrl-/` in any list, `?` in any menu, for that
 screen's help.
@@ -350,7 +350,7 @@ for that reason).
 ├── git/
 │   ├── gitconfig                       → ~/.gitconfig
 │   ├── README.md                         GitHub tips and tricks
-│   ├── GITHUB_TOOLS.md                   Interactive tools walkthrough
+│   ├── GITHUB_TOOLS.md                   The fzf github, as a record
 │   └── GITHUB_SETUP.md                   New-repo settings + ruleset reference
 ├── podman/
 │   └── README.md                         podman container-engine reference (Linux)
@@ -372,7 +372,6 @@ still stands alone.
 | `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
 | `bash/bash_git`               | Git aliases and `gprune`                                             |
 | `bash/bash_github`            | Plain `gh` (`gha`) + the helpers shared with the TUI                  |
-| `bash/bash_github_tui`        | `github` and its screens — the only file that may invoke fzf         |
 | `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
 | `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
 | `wezterm/wezterm.lua`         | Terminal on Linux/macOS — declares the `mux` domain                   |

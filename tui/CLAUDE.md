@@ -701,14 +701,21 @@ pins that.
   for something that cannot exist is maintenance for nothing. If one ever
   appears it is a level above `orgs` and the seeded stack already takes it.
 
-- **`github` builds but does not install, and that is the whole plan.** A bash
-  function beats PATH and `github()` is still defined in `bash_github_tui`, so
-  a `github` binary installed now could not win anyway. It is therefore absent
-  from `deps.conf` and `tui/deps.sh` until the commit that deletes the bash
-  function adds it to both. Develop with `cargo run -p github`. Do NOT wire up
-  a half-ported `github` that dispatches to both halves; replacing that file as
-  a unit is exactly what the CI rule "only bash_github_tui may invoke fzf" was
-  built to allow.
+- **`github` is installed, and the swap is done** (2026-10-24).
+  `bash/bash_github_tui` and the `github()` function in it are deleted,
+  `deps.conf`'s `[tui]` declares `tool manual github`, and `tui/deps.sh` has it
+  in `crates=()`. For most of the port it deliberately did NOT install: a bash
+  function beats PATH, so a binary installed alongside `github()` could not
+  have won anyway, and wiring up a half-ported dispatcher would have thrown
+  away the one thing that made this a deletion rather than a rewrite -- the CI
+  rule that only `bash_github_tui` could invoke fzf.
+
+  Three things the swap needed that the parity table did not cover, all found
+  by grepping for every mention of the file rather than by the gate:
+  `bashrc` sourced `~/.bash_github_tui`; `deps.conf` linked it; and
+  `_gh_tab_var` wrote the `gh_tui` user var that wezterm reads to mark the tab
+  (see `TabMark` below). A table derived from a dispatcher covers exactly what
+  it derives from.
 
   **The precondition for the swap is a table, not a judgement.**
   [`docs/decisions/github-parity.md`](../docs/decisions/github-parity.md) has a
@@ -718,15 +725,30 @@ pins that.
   statuses are a measurement except `dropped`, which is a decision and needs an
   argument in the row.
 
-  **The `No bash function shadows a tui binary` CI row is RED for the duration
-  of the port, and that is the forcing function it was written to be.** It
-  derives the binary names from `tui/Cargo.toml`'s `members`, so adding
-  `tui/github/` to the workspace — which building and testing it requires —
-  starts it covering `github` while `github()` still exists. Its own comment
-  predicted this: *"fails until the bash function is gone, which is exactly the
-  handover it should force."* Do not narrow it to the installed set to get a
-  green tick; the red row is the deadline. It goes green in the commit that
-  deletes the bash function.
+  **The `No bash function shadows a tui binary` CI row was RED for the
+  duration of the port, deliberately, and it is green now.** It derives the
+  binary names from `tui/Cargo.toml`'s `members`, so adding `tui/github/` to
+  the workspace — which building and testing it required — started it covering
+  `github` while `github()` still existed. Its own comment predicted this:
+  *"fails until the bash function is gone, which is exactly the handover it
+  should force."* It was never narrowed to the installed set to buy a green
+  tick, and it should not be: the next binary added here gets the same
+  deadline.
+
+- **`TabMark` is the one piece of this that talks to wezterm.** `github` sets
+  the `gh_tui` user var (OSC 1337) on startup and clears it on the way out, and
+  `wezterm/shared.lua`'s `format-tab-title` reads it to put GitHub's Octicons
+  mark on the tab. It is a `Drop` guard rather than two calls for the reason
+  the bash version hung the clear on a `RETURN` trap: the variable is state
+  inside somebody else's process, and one left set leaves the pane wearing the
+  mark for the life of the shell. `Drop` runs on the way out of `main` and on
+  an unwinding panic alike — `reticle`'s panic hook restores the terminal and
+  then calls the previous hook, so unwinding continues and the guard fires.
+
+  It writes to `/dev/tty`, not stdout: the escape is addressed to the terminal
+  and must not land in a pipe. The var name and the base64 values are the wire
+  format, read on the WINDOWS host out of a different clone, so a change here
+  goes dark rather than failing — `lib.rs`'s test pins the exact bytes.
 
 - **`index` groups by PATH and identifies by REMOTE, because on the real tree
   neither can do both.** Measured before the reader was written:

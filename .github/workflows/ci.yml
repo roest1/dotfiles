@@ -682,14 +682,15 @@ jobs:
           exit $bad
 
       # A stray line that lost its leading `#` parses fine and only shows up as
-      # noise at runtime — bash_github_tui once ran `-` and `q` as commands from
-      # inside a comment block, printing three "command not found" errors on
-      # every interactive shell. `bash -n` cannot see this; only running it can.
+      # noise at runtime — the since-deleted bash_github_tui once ran `-` and
+      # `q` as commands from inside a comment block, printing three "command not
+      # found" errors on every interactive shell. `bash -n` cannot see this;
+      # only running it can, which is why the check outlived the file.
       - name: Bash configs source without emitting output
         run: |
           bad=0
           for f in bash/bash_theme bash/bash_productivity bash/bash_git \
-                   bash/bash_github bash/bash_github_tui; do
+                   bash/bash_github; do
             # expand_aliases because that is how these files are really read.
             # Without it bash skips alias expansion entirely, which is a
             # different parser and hides a whole class of failure — see the
@@ -738,33 +739,15 @@ jobs:
       # next to it as top-level commands, which left six names competing for
       # one job and meant the hub had to be discovered rather than being the
       # obvious door.
+      # The [bash] file split was a rule, not a preference: bash_github held
+      # plain gh commands and shared helpers, bash_github_tui held everything
+      # interactive, and keeping fzf on one side of that line is what let the
+      # TUI be deleted as a unit. It has now been — `github` is tui/github —
+      # and this row is what made that a deletion rather than a rewrite, so it
+      # stays: bash_github is still the plain-gh file, and a screen growing
+      # back into it is the drift to catch.
       #
-      # This also keeps the prefix rule true: `__` is a helper shared across
-      # files, `_` is private to this one. Every screen is now `_`-prefixed,
-      # which is what stops the help check above from demanding an `h` entry
-      # for something you cannot type.
-      - name: bash_github_tui exposes only github
-        run: |
-          public=$(grep -oE '^[a-zA-Z][a-zA-Z0-9_-]*\(\)' bash/bash_github_tui | tr -d '()')
-          if [ "$public" != "github" ]; then
-            echo "bash_github_tui must define exactly one public function (github); found:"
-            echo "$public"
-            exit 1
-          fi
-          # Every double-underscore name it uses must come from another file.
-          bad=0
-          for n in $(grep -ohE '__[a-z_]+' bash/bash_github_tui | sort -u); do
-            if grep -q "^$n()" bash/bash_github_tui; then
-              echo "$n is private to bash_github_tui but uses the shared '__' prefix"; bad=1
-            fi
-          done
-          exit $bad
-
-      # The [bash] file split is a rule, not a preference: bash_github holds
-      # plain gh commands and shared helpers, bash_github_tui holds everything
-      # interactive. Keeping fzf on one side of that line is what lets the TUI
-      # be deleted or replaced as a unit. `command -v fzf` is a probe, not an
-      # invocation, so it does not count.
+      # `command -v fzf` is a probe, not an invocation, so it does not count.
       # Comment lines are skipped: this file's own header documents the rule and
       # would otherwise match the pattern that enforces it.
       - name: bash_github invokes no fzf
@@ -774,7 +757,7 @@ jobs:
             /\| *fzf|^[[:space:]]*fzf / { print FILENAME ":" FNR ": " $0; found = 1 }
             END { exit found ? 1 : 0 }
           ' bash/bash_github || {
-            echo "bash_github must not invoke fzf — that belongs in bash_github_tui"
+            echo "bash_github must not invoke fzf — it is the plain-gh file"
             exit 1
           }
 
@@ -786,7 +769,7 @@ jobs:
       - name: fzf menus go through __fzf_menu
         run: |
           bad=0
-          for f in bash/bash_git bash/bash_github bash/bash_github_tui; do
+          for f in bash/bash_git bash/bash_github; do
             awk -v file="$f" '
               /^[[:space:]]*#/ { next }
               /fzf .*--disabled|--disabled.*fzf/ { print file ":" FNR ": " $0; found = 1 }
@@ -818,9 +801,9 @@ jobs:
 
           defined=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
                          bash/bash_productivity bash/bash_git bash/bash_github \
-                         bash/bash_github_tui | tr -d '()'
+                         | tr -d '()'
                        grep -hE '^alias ' bash/bash_productivity bash/bash_git \
-                         bash/bash_github_tui | sed 's/alias //;s/=.*//'
+                         | sed 's/alias //;s/=.*//'
                      } | grep -vE '^_' | sort -u )
           hbody=$(sed -n '/^h() {/,/^}/p' bash/bash_productivity)
           bad=0
@@ -847,9 +830,9 @@ jobs:
           # as a tool, which covers the external commands h explains, like fzf.
           defines=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
                          bash/bash_productivity bash/bash_git bash/bash_github \
-                         bash/bash_github_tui | tr -d '()'
+                         | tr -d '()'
                        grep -hE '^[[:space:]]*alias ' \
-                         bash/bash_productivity bash/bash_git bash/bash_github_tui \
+                         bash/bash_productivity bash/bash_git bash/bash_github \
                          | sed 's/.*alias //;s/=.*//'
                        manifest_lines tool | cut -f3
                      } | sort -u )
@@ -1347,58 +1330,23 @@ jobs:
       # deciding which one runs.
       #
       # reticle is excluded because it is the framework and ships no binary.
-      # The precondition for deleting bash_github_tui, enforced rather than
-      # asserted. "We won't lose any functionality" is a claim nobody can check
-      # from memory -- 2500 lines, 49 worker verbs, seven screens, four menus,
-      # most of it behind a keystroke nobody has typed in months. So the table
-      # is DERIVED from the dispatcher (a verb added or renamed in the bash file
-      # fails this until the table says what happened to it), and the swap is
-      # blocked while anything is still outstanding.
+      # The parity table that gated this is now a RECORD, not a check, and the
+      # step that enforced it is gone with the file it read. It derived the
+      # verb list from `_ghw_main` in bash/bash_github_tui, so once that file
+      # was deleted the derivation was impossible rather than merely moot --
+      # there is nothing left to compare the table against.
       #
-      # The second half is the part that matters: the condition cannot be met
-      # by deciding it has been.
-      - name: github parity table covers the bash implementation
-        run: |
-          fail=0
-          table=docs/decisions/github-parity.md
-          [ -s "$table" ] || { echo "$table is missing"; exit 1; }
-          verbs=$(sed -n '/^_ghw_main()/,/^}/p' bash/bash_github_tui \
-                  | grep -oE '^[[:space:]]+[a-z-]+\)' | tr -d ' )' | sort -u)
-          [ -n "$verbs" ] || { echo "could not read the _ghw_main dispatcher"; exit 1; }
-          echo "dispatcher verbs: $(echo "$verbs" | wc -l | tr -d ' ')"
-          for v in $verbs; do
-            row=$(grep -E "^\| \`$v\` *\|" "$table" || true)
-            if [ -z "$row" ]; then
-              echo "verb '$v' is not in $table"; fail=1; continue
-            fi
-            st=$(printf '%s' "$row" | awk -F'|' '{gsub(/ /,"",$3); print $3}')
-            case "$st" in
-              ported|partial|todo|dropped) ;;
-              *) echo "verb '$v' has an unknown status '$st'"; fail=1 ;;
-            esac
-          done
-          # A row for a verb that no longer exists is drift in the other
-          # direction, and means the table is describing a file that changed.
-          for v in $(grep -oE '^\| `[a-z-]+`' "$table" | tr -d '|` '); do
-            printf '%s\n' "$verbs" | grep -qx "$v" \
-              || { echo "$table lists '$v', which is not a dispatcher verb"; fail=1; }
-          done
-          # The gate. `crates=(...)` in tui/deps.sh is what installs the binary,
-          # so its gaining `github` IS the swap.
-          if grep -qE '^crates=\(.*[( ]github[ )]' tui/deps.sh; then
-            left=$(grep -cE "^\| \`[a-z-]+\` *\| *(todo|partial)" "$table" || true)
-            if [ "$left" -gt 0 ]; then
-              echo "github is installed, but $left parity row(s) are still todo/partial"
-              grep -E "^\| \`[a-z-]+\` *\| *(todo|partial)" "$table" | head -30
-              fail=1
-            else
-              echo "parity table is green and github is installed -- the swap is done"
-            fi
-          else
-            left=$(grep -cE "^\| \`[a-z-]+\` *\| *(todo|partial)" "$table" || true)
-            echo "github not installed yet; $left row(s) outstanding"
-          fi
-          exit $fail
+      # docs/decisions/github-parity.md stays, because what it still answers is
+      # "what did the port decide not to carry, and why": four dropped rows,
+      # each with its argument. The gate did its job -- 45 of 49 verbs ported,
+      # and the four that were not are argued rather than forgotten.
+      #
+      # One thing it could not see, worth knowing before trusting the next
+      # table of this shape: the table was derived from the DISPATCHER, and
+      # `_gh_tab_var` -- the OSC 1337 user var wezterm reads to mark the tab --
+      # was not a dispatcher verb. It was found by grepping for every mention
+      # of the file about to be deleted, not by the gate. A derivation covers
+      # exactly what it derives from.
 
       - name: No bash function shadows a tui binary
         run: |

@@ -1,21 +1,27 @@
 # The GitHub TUI
 
-**Status:** active. `github` is the single entry point.
+**Status:** active, and the port is done. `github` is a Rust binary built from
+`tui/github`, installed by `make install tui`. The fzf implementation it
+replaced — `bash/bash_github_tui`, 2500 lines — was **deleted on 2026-10-24**,
+in one commit, which is what the whole of this file was written to make
+possible.
 
 **Renamed from `gh-tui`** (2026-08-24). The name moved ahead of the
-implementation on purpose: this is planned to become a `reticle` crate
-alongside `font`, and renaming at the rewrite would have cost two flag days of
-muscle memory instead of one. The command you type is now stable across the
-port; what runs underneath is not.
+implementation on purpose: it was planned to become a `reticle` crate alongside
+`font`, and renaming at the rewrite would have cost two flag days of muscle
+memory instead of one. That paid off exactly as intended — the command you type
+did not change on the day the thing underneath it did.
 
-Two names deliberately did NOT move with it. The file is still
-`bash/bash_github_tui`, because it is named for its role — the interactive
-layer of the github commands — and that is still what it is. The wezterm
-user-var is still `gh_tui`, because it is a WIRE name: bash writes it in the
-WSL guest and `wezterm/shared.lua` reads it on the Windows host, out of a
-separate clone, so renaming it leaves the tab mark dark until `make windows`
-has pulled the other side. Neither is typed by anyone.
-**Code:** `bash/bash_github_tui` · **Walkthrough:** `git/GITHUB_TOOLS.md`
+The wezterm user-var is still `gh_tui`, and that reasoning outlived the file
+too. It is a WIRE name: the TUI writes it in the WSL guest and
+`wezterm/shared.lua` reads it on the Windows host, out of a separate clone, so
+renaming it leaves the tab mark dark until `make windows` has pulled the other
+side. The writer moved from bash's `_gh_tab_var` to Rust's `TabMark`; the name
+and the bytes did not.
+
+**Code:** `tui/github/` · **Parity record:** `docs/decisions/github-parity.md`
+· **Walkthrough:** `git/GITHUB_TOOLS.md` (describes the fzf version, and is
+now history)
 
 ## What it is
 
@@ -780,6 +786,67 @@ The test that now covers it is structural rather than about this item: every
 `gh` command a branch menu offers must name the repo somewhere, and every `git`
 command must carry `-C`. It fails on the old argv, which is the only version
 of this test worth having.
+
+## The swap (done 2026-10-24)
+
+One commit: `bash/bash_github_tui` deleted, `github()` with it, `tool manual
+github` added to `deps.conf`'s `[tui]`, `github` added to `tui/deps.sh`'s
+`crates=()`, and `h github` rewritten. The parity table said 45 ported, 0
+partial, 0 todo, 4 dropped, which is the condition CI had been holding.
+
+**It was a deletion rather than a rewrite, and that was bought years earlier**
+by the `[bash]` file split. Nothing outside `bash_github_tui` referenced any of
+its functions — every `_gh_*`, `_ghw_*` and `_ghbranch_*` lived inside it, and
+the `__gh_*` hits elsewhere are a different namespace belonging to
+`bash_github`'s `gha` and `bash_theme`'s prompt segment. So `gha`, the prompt's
+CI segment, `bash_git` and `bash_github` were untouched. The CI rule that only
+`bash_github_tui` could invoke fzf is what kept that true for the whole port,
+and it survives the file: `bash_github` is still the plain-`gh` file, and a
+screen growing back into it is the drift to catch.
+
+### Three things the gate could not see
+
+All three were found by grepping for every mention of the file about to be
+deleted, not by the parity table — which was derived from `_ghw_main`'s
+dispatcher, so it covered exactly the dispatcher.
+
+Two were mechanical and CI would have caught them: `bashrc` sourced
+`~/.bash_github_tui`, and `deps.conf` linked it.
+
+The third would have shipped silently. **`_gh_tab_var` wrote the `gh_tui` user
+var** that `wezterm/shared.lua` reads to put GitHub's Octicons mark on the tab
+while a session is running — real, user-visible functionality, with no row in
+the table because it is not a verb. It is now `TabMark` in
+`tui/github/src/lib.rs`: a `Drop` guard rather than two calls, for the same
+reason bash hung the clear on a `RETURN` trap. The variable is state inside
+somebody else's process, and one left set leaves the pane wearing the mark for
+the life of the shell. Verified on the wire — `MQ==` at byte 0 of the session,
+`MA==` on the way out.
+
+The lesson is small and worth keeping: a derivation covers exactly what it
+derives from. The grep is part of the job, not a substitute for the table.
+
+### What the swap left loose
+
+**The fzf floor.** `bash/deps.sh` enforces fzf >= 0.65 because `github` needed
+`--listen`, `--style` and `--footer`. Nothing does now: what is left using fzf
+is `__fzf_menu` and `__fzf_list`, whose flags are far older. The number was
+deliberately NOT lowered in the same commit, because choosing the new one means
+knowing which release introduced `--no-info`, and this repo does not infer
+version/feature mappings — `wezterm/MIN_VERSION` was deleted for exactly that.
+Too high costs one unnecessary mise install; too low breaks every menu in the
+shell on an old box.
+
+**The old cache directory.** The bash version cached under
+`~/.cache/github/<repo>`; the Rust one uses `~/.cache/dotfiles-github`. The old
+tree is orphaned rather than migrated, and is pruned by nothing now. It is
+yours to delete.
+
+**The per-screen `?` help.** Seven `_gh_help_*` pages went with the file, and
+nothing replaces them as pages. The keys are in each region's footer and each
+menu item carries what it does and the command it runs, which is the same
+information closer to the thing — but it is a change in kind, not a port, and
+it has no parity row because it was never a verb.
 
 ## Still open
 

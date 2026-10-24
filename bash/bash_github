@@ -17,11 +17,17 @@
 # see the comments at each padding site for why printf cannot do it.
 #
 # THE RULE FOR THIS FILE: nothing here invokes fzf. Anything interactive
-# belongs in bash_github_tui, which is sourced after this one and may use
-# everything defined here. That split is what keeps the TUI deletable as a
-# unit — and it is greppable (`| fzf` or a bare `fzf` call), so CI enforces
-# it rather than trusting the convention. Probing for fzf with `command -v`
-# is not an invocation and is fine.
+# used to belong in bash_github_tui, which was sourced after this one and
+# could use everything defined here. That split is what made the TUI
+# DELETABLE as a unit, and on 2026-10-24 it was deleted — `github` is a Rust
+# binary (tui/github) and the 2500 lines went in one commit, leaving this
+# file and `gha` untouched.
+#
+# The rule outlives the file it was written for. This is still the plain-gh
+# file, and a screen growing back into it is the drift to catch. It is
+# greppable (`| fzf` or a bare `fzf` call), so CI enforces it rather than
+# trusting the convention. Probing for fzf with `command -v` is not an
+# invocation and is fine.
 #
 # Dependencies: gh, jq
 
@@ -37,10 +43,11 @@ _open_url() {
 }
 
 # ─── Shared helpers ───────────────────────────────────────────────
-# Used by this file and by bash_github_tui. They live here, not there,
-# because the load order runs this file first — a helper defined in the
-# TUI and called from here would work only by accident of when the
-# prompt happens to fire.
+# Used by this file, and formerly by bash_github_tui. They lived here rather
+# than there because the load order runs this file first — a helper defined
+# in the TUI and called from here would have worked only by accident of when
+# the prompt happened to fire. The TUI is gone and they stay here, which is
+# where they belonged anyway.
 
 __gh_check() {
   if ! git rev-parse --is-inside-work-tree &>/dev/null; then
