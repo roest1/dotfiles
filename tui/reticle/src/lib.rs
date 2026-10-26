@@ -11,12 +11,15 @@
 //! and no binary, which is the machine `make it` exists for.
 
 pub mod app;
+pub mod filter;
+pub mod host;
 pub mod image;
 pub mod nav;
 pub mod probe;
 pub mod reticle;
 pub mod screen;
 pub mod term;
+pub mod width;
 
 use std::sync::OnceLock;
 
@@ -36,5 +39,6 @@ pub(crate) fn set_term_info(info: probe::TermInfo) {
     let _ = TERM_INFO.set(info);
 }
 
+pub use host::Host;
 pub use nav::Action;
-pub use screen::{Flow, Image, Pane, Row, Screen, Tick};
+pub use screen::{Flow, Image, Pane, Row, Screen, Split, Tabs, Tick};

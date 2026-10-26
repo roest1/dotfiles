@@ -1,5 +1,20 @@
 # GitHub Terminal Tools
 
+> **This describes the fzf implementation, which was deleted on 2026-10-24.**
+> It is kept as a record, the same way `docs/decisions/github-parity.md` is:
+> every key and every screen below is how `github` worked for its first year,
+> and none of it is how `github` works now.
+>
+> `github` is a Rust TUI (`tui/github`). For the current command, run
+> `h github` — hjkl between regions, `q` back, each region stating its own keys
+> in its footer, and no per-screen `?` page because a menu item carries what it
+> does beside its name. Why it was rebuilt, what the port decided not to carry,
+> and what the swap left loose: `docs/decisions/github-tui.md` and
+> `docs/decisions/github-parity.md`.
+>
+> `gha`, documented at the end, is the one part still written in shell and is
+> unchanged.
+
 The current repo on GitHub, from the terminal — one TUI for the things you'd
 otherwise open a browser tab for.
 

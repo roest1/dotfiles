@@ -36,74 +36,21 @@ if command -v fzf &>/dev/null; then
   unset _fd
 fi
 
-# ─── The two fzf shapes ───────────────────────────────────────────────────────
+# ─── The two fzf shapes, and why they are gone ────────────────────────────────
 #
-# Every interactive screen in this repo is one of two things, and the
-# difference is whether typing filters or acts:
+# `__fzf_menu` and `__fzf_list` lived here: the menu/list contract every
+# interactive screen in this repo shared, defined once because it had
+# previously been repeated at 18 call sites as identical strings kept
+# identical by hand.
 #
-#   menu   a fixed set of choices. --disabled turns the query off, so plain
-#          keys are commands: q and - go back, like nvim.
-#   list   an open set to search. Typing filters, esc goes back.
+# All 18 were in bash_github_tui. When `github` became a Rust TUI (tui/github,
+# 2026-10-24) the wrappers were left with ZERO callers -- and a contract with
+# no implementers is not a convention, it is a second description of nothing.
+# `bash_git` never invoked fzf at all; the only fzf left in this file is the
+# shell integration below, which is fzf's own Ctrl+R / Ctrl+T / Alt+C.
 #
-# The keybindings and the header hint live HERE, once, rather than at each
-# call site. They were previously repeated at 18 of them — identical strings
-# that had to be kept identical by hand, which is not a convention so much as
-# an ongoing opportunity to drift. Adding a key to the menu contract is now
-# one edit, and CI checks that no screen hand-rolls its own.
-#
-# Chrome (height, layout, border) is FZF_DEFAULT_OPTS above and applies to
-# Ctrl+R and Ctrl+T too. The binds deliberately are NOT there: --disabled is
-# what makes q mean "quit" rather than the letter q, and forcing that globally
-# would break typing the letter q into history search.
-#
-# Both read choices on stdin. Pass extra fzf flags after the title:
-#   printf '%s\n' a b c | __fzf_menu "Pick one" --height=5
-#
-# Three optional variables, each set for a single call rather than exported.
-# They live here so a screen cannot invent its own spelling of the same idea:
-#
-#   FZF_MENU_BACK   last word of the hint, for a top-level screen that exits
-#                   rather than returns:
-#                     FZF_MENU_BACK=exit __fzf_menu "GitHub — $repo"
-#
-#   FZF_MENU_HELP   path to a file shown by `?`. The binding and the ` ?help`
-#                   hint appear together, so a screen cannot advertise help it
-#                   doesn't have or have help nobody can find:
-#                     FZF_MENU_HELP="$f" __fzf_menu "Pull Requests"
-#
-#   FZF_MENU_EXPECT comma-separated keys that should end the menu and report
-#                   themselves. Output becomes two lines — the key (empty for a
-#                   plain enter) then the selection — so only call sites that
-#                   set it need to handle that. github uses it for `r`, which
-#                   nothing else needs and which the pagers already spell the
-#                   same way.
-__fzf_menu() {
-  local title="$1"; shift
-  local binds='q:abort,-:abort'
-  local hint="↑↓ nav  enter select  -/q ${FZF_MENU_BACK:-back}"
-  local -a extra=()
-
-  if [[ -n "$FZF_MENU_HELP" && -f "$FZF_MENU_HELP" ]]; then
-    # execute() hands fzf's terminal to less and returns to the menu after,
-    # which is what makes ? feel like a peek rather than an exit.
-    binds+=",?:execute(less -R -- '$FZF_MENU_HELP')"
-    hint+="  ?help"
-  fi
-  [[ -n "$FZF_MENU_EXPECT" ]] && extra+=(--expect="$FZF_MENU_EXPECT")
-
-  fzf --disabled --bind "$binds" \
-      --header="${title}  │  ${hint}" \
-      --no-info "${extra[@]}" "$@"
-}
-
-# FZF_LIST_HINT replaces the middle of the hint for lists whose enter key does
-# something more specific than "select" — viewing a diff, opening an action
-# menu. The trailing `esc back` is not overridable: that is the half of the
-# contract that must be identical everywhere.
-__fzf_list() {
-  local title="$1"; shift
-  fzf --header="${title}  │  ${FZF_LIST_HINT:-type to filter  enter select}  esc back" "$@"
-}
+# If an fzf screen is ever wanted again, this is in git history and the
+# argument for centralising it still holds. Do not reintroduce it empty.
 
 # eza: modern ls replacement with git integration and icons.
 if command -v eza &>/dev/null; then
@@ -833,8 +780,10 @@ dtest() {
 #
 #   h deps   defers to `make check`, because deps.conf is the manifest and a
 #            second copy of the tool list here had silently drifted.
-#   screens  the interactive GitHub tools document themselves in their own
-#            fzf headers via __fzf_menu, not here.
+#   screens  the interactive GitHub tools document themselves. They did it in
+#            their own fzf headers; `github` is a Rust TUI now and does it in
+#            each region's footer, with every menu item naming the command it
+#            runs. Either way, not here.
 #
 # What is left is help for plain commands, which is the only genuinely
 # doc-shaped thing. Generating it from structured comments is possible but not
@@ -882,9 +831,9 @@ h() {
     gfetcho / gpullo   fetch origin / pull origin
     gprune             Fetch + delete branches with gone remotes
 
-  GitHub TUI                                              [gh, fzf, jq]
+  GitHub TUI                                                   [gh, jq]
     github             The repo on GitHub, live: actions · PRs · branches ·
-                       secrets · environments  (ctrl-/ or ? for help)
+                       secrets · environments  (hjkl everywhere)
 
   GitHub Actions (one-shot, no TUI)                        [gh, jq]
     gha                Workflow status for HEAD
@@ -919,6 +868,10 @@ h() {
                        (font show — also checks the lanes are live)
 
   Dotfiles
+    dots               The console: every target and section, navigable  [tui]
+                       Reads the Makefile and deps.conf — nothing to keep
+                       in sync, and nothing to remember. space picks which
+                       sections THIS machine sweeps
     dotfiles           Open dotfiles dir in nvim
     reload             Re-source ~/.bashrc
 
@@ -1243,11 +1196,17 @@ HELP
       cat <<'HELP'
 GitHub — one TUI, plus one one-shot
 
-  github      The current repo on GitHub, in one TUI: Actions, Pull
-              Requests, Branches, Secrets, Environments. Every screen is a
-              list with a live preview — hover a workflow run and its jobs
-              appear with only the failed steps expanded, log tail inline;
-              a running one refreshes under the cursor by itself.
+  github      Your repos, and everything about one. Run anywhere it lists
+              every clone under ~/github, grouped by where you filed them,
+              read from disk — so it opens instantly and works offline.
+              Run inside a repo it opens on that one with the list still
+              underneath. Enter on a repo gives five tabs: Branches, Pull
+              Requests, Actions, Secrets, Environments. Hover a workflow
+              run and its jobs appear with only the failed steps expanded
+              and the log tail inline; a running one refreshes under the
+              cursor by itself, and a finished one is cached across
+              sessions, so last week's failure opens instantly in a shell
+              that has never seen it.
 
   gha         Workflow status for HEAD — a bordered table of every
               check with its status and how long it took, plus a
@@ -1264,24 +1223,35 @@ GitHub — one TUI, plus one one-shot
   plain status/name/url columns, so `gha | grep ❌` is still the
   answer gha-fail used to give.
 
-  Press ? in any github screen for that screen's help — what each action
-  does, what the preview pane shows, and the keys it accepts. That help
-  used to live here, which meant reading it required already knowing to
-  type `h github`, and kept it drifting out of step with the screens it
-  described. It now sits next to what it documents.
+  There is no per-screen help page any more, and nothing to press ? for.
+  Each region states its own keys in the footer, and a menu item carries
+  what it does and the exact command it runs beside its name — so the
+  documentation is next to the thing rather than one keystroke away from
+  it, which is where the fzf version had already been moving it.
 
-  Navigation, everywhere:
-    Lists:  type to filter   enter select   esc back   ctrl-r refresh
-            ctrl-o browser   ctrl-/ help   (the footer lists the rest)
-    Menus:  ↑↓ / jk   enter select   -/q back   ? help
-    Preview: shift-↑↓ · alt-j/k scroll   alt-p hide/show
+  Navigation, everywhere — hjkl, and nothing else to learn:
+    j/k        move
+    h/l        close/open, or across: the EDGE of a region is the door to
+               the next one. k off the top row reaches the tab strip, h/l
+               move along it, j drops back in. l on a row with nothing to
+               expand goes right into the preview, where j/k scroll it.
+    gg/G       ends        ctrl-d/u    page
+    enter      open it, or open what you can do to it
+    /          filter the list (substring, case-insensitive, order kept)
+    q          back, and out at the top
+    o          browser     r           refresh
 
-  Back is back: a screen opens inside the one below it, so esc returns to
-  the row you left, filter and all. The hub's panes fill in behind the
-  menu as they load; r refetches them.
+  Tab is bound to nothing, deliberately: a key whose only job is reaching
+  a region is a mode by another name.
 
-  Needs fzf ≥ 0.65 (deps.conf installs it through mise for that reason);
-  the shell's other fzf uses don't care.
+  One repo is five tabs — branches, pull requests, actions, secrets,
+  environments — and there is one root, the user level, even when you
+  started inside a repo. So q walks up from a workflow run to the repo
+  list to the account and quits there, rather than out of context.
+
+  Enter on a row opens that row's actions, named, with the command each
+  one runs shown before you confirm it. Anything that cannot be undone
+  says so and asks.
 
   Your prompt also shows CI status on the right:
     [5/5 ✅ 1d]  5 of 5 passed, last run a day ago
@@ -1304,7 +1274,10 @@ GitHub — one TUI, plus one one-shot
   detached (a sha cannot have protection rules), or where gh cannot see
   the repo.
 
-  Depends on: gh, fzf, jq
+  Depends on: gh. Not fzf, and not jq: github is a Rust binary now
+  (tui/github, installed by `make install tui`, the same way `dots` and
+  `font` are), and the 2500-line fzf implementation it replaced is gone.
+  gha is still shell and still needs jq.
 HELP
       ;;
     clear)
@@ -1384,6 +1357,63 @@ loop — repeat a command (like watch)
 
   Clears the screen each iteration and shows a timestamp.
   Ctrl+C to stop.
+HELP
+      ;;
+    dots)
+      cat <<'HELP'
+dots — the dotfiles console
+
+  A tree of everything this repo can do on the left, what the thing
+  under the cursor actually IS on the right.
+
+  The point is not saved keystrokes — `make status` is nine characters.
+  It is not having to already know that `make status` exists, what it
+  answers, and how it differs from `make check`.
+
+  Three kinds of row:
+
+    targets     Every target `make help` lists. Enter runs it on the
+                REAL terminal, so sudo can prompt and the output is
+                exactly what you would have seen typing the command.
+    sections    Every section in deps.conf. Enter OPENS it rather than
+                running anything: a section is an argument, not a
+                target — `make nvim` is a no-op stub — so the three
+                verbs that do take one are rows underneath.
+                SPACE toggles whether this machine sweeps a section,
+                writing ~/.config/dotfiles/sections. Not deps.conf,
+                which every machine reads — the skip stays outside the
+                work tree, so it never becomes a diff you carry.
+    fonts       Opens `font`'s own picker. Not a copy of it: the same
+                screen its binary runs, pushed onto this one.
+
+  Watch the sections header, because the two states differ in a way
+  a row of ticks cannot show:
+
+    following deps.conf    no file. Every section, including ones
+                           added to deps.conf later.
+    N of M on this machine a file exists. Exactly these names, so a
+                           section added later arrives OFF.
+
+  The `follow deps.conf` row goes back to the first state by deleting
+  the file. Ticking everything is NOT the same thing.
+
+  Either way `make install <section>` still installs it: naming a
+  section explicitly wins, which is what makes this a preference
+  rather than a wall.
+
+  Nothing in it is authored twice. Target summaries are the `##` text
+  `make help` already shows; the long form of a target is the comment
+  block above its rule in the Makefile; sections come from deps.conf.
+  Which means a comment above a rule is user-facing documentation now
+  — write it for someone deciding whether to run the thing.
+
+  It is not a make target, on purpose. `make font` does not exist
+  either, and a second name for one thing is drift. `make help` points
+  at it so it is still discoverable from the place you look when lost.
+
+  in the console: j/k move · h/l close/open · gg/G ends
+                  ctrl-d/u page · enter run or open · space toggle
+                  a section on this machine · q quit
 HELP
       ;;
     font)

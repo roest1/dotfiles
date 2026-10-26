@@ -219,6 +219,5 @@ source ~/.bash_theme
 source ~/.bash_productivity
 source ~/.bash_git
 source ~/.bash_github
-source ~/.bash_github_tui
 
 export PATH="$HOME/.local/bin:$PATH"

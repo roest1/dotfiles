@@ -17,53 +17,36 @@
 # see the comments at each padding site for why printf cannot do it.
 #
 # THE RULE FOR THIS FILE: nothing here invokes fzf. Anything interactive
-# belongs in bash_github_tui, which is sourced after this one and may use
-# everything defined here. That split is what keeps the TUI deletable as a
-# unit — and it is greppable (`| fzf` or a bare `fzf` call), so CI enforces
-# it rather than trusting the convention. Probing for fzf with `command -v`
-# is not an invocation and is fine.
+# used to belong in bash_github_tui, which was sourced after this one and
+# could use everything defined here. That split is what made the TUI
+# DELETABLE as a unit, and on 2026-10-24 it was deleted — `github` is a Rust
+# binary (tui/github) and the 2500 lines went in one commit, leaving this
+# file and `gha` untouched.
+#
+# The rule outlives the file it was written for. This is still the plain-gh
+# file, and a screen growing back into it is the drift to catch. It is
+# greppable (`| fzf` or a bare `fzf` call), so CI enforces it rather than
+# trusting the convention -- a cheap guard that now holds trivially, since
+# with __gh_check gone there is no mention of fzf in here at all. Probing for
+# fzf with `command -v` would not be an invocation and would still be fine.
 #
 # Dependencies: gh, jq
 
-# ─── Portable browser open ───────────────────────────────────────
-_open_url() {
-  if command -v xdg-open &>/dev/null; then
-    xdg-open "$1" >/dev/null 2>&1
-  elif command -v open &>/dev/null; then
-    open "$1"
-  else
-    echo "Open: $1"
-  fi
-}
+# ─── Shared helpers: gone, and why ───────────────────────────────────────────
+#
+# `_open_url`, `__gh_check`, `__gh_repo` and `__gh_default_branch` lived here.
+# The header above used to say they were "used by this file and by
+# bash_github_tui"; they were only ever used by the second. When `github`
+# became a Rust TUI (tui/github, 2026-10-24) all four were left with zero
+# callers -- `gha` calls exactly one helper, `_gha_rule`, below.
+#
+# `__gh_check` is worth one more line, because by then it was also WRONG: it
+# refused when fzf was missing, and nothing in this file has ever needed fzf.
+# A dead guard that would have rejected a working `gha`.
+#
+# They are in git history, and the browser opener has a live equivalent --
+# `browse()` in tui/github/src/lib.rs, the same xdg-open/open pair.
 
-# ─── Shared helpers ───────────────────────────────────────────────
-# Used by this file and by bash_github_tui. They live here, not there,
-# because the load order runs this file first — a helper defined in the
-# TUI and called from here would work only by accident of when the
-# prompt happens to fire.
-
-__gh_check() {
-  if ! git rev-parse --is-inside-work-tree &>/dev/null; then
-    echo "❌ Not in a git repository" >&2
-    return 1
-  fi
-  if ! command -v gh &>/dev/null; then
-    echo "❌ gh CLI not installed (make install bash)" >&2
-    return 1
-  fi
-  if ! command -v fzf &>/dev/null; then
-    echo "❌ fzf not installed (make install bash)" >&2
-    return 1
-  fi
-}
-
-__gh_repo() {
-  gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null
-}
-
-__gh_default_branch() {
-  gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null
-}
 
 # ─── Quick status ─────────────────────────────────────────────────
 #
