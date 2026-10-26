@@ -682,14 +682,15 @@ jobs:
           exit $bad
 
       # A stray line that lost its leading `#` parses fine and only shows up as
-      # noise at runtime — bash_github_tui once ran `-` and `q` as commands from
-      # inside a comment block, printing three "command not found" errors on
-      # every interactive shell. `bash -n` cannot see this; only running it can.
+      # noise at runtime — the since-deleted bash_github_tui once ran `-` and
+      # `q` as commands from inside a comment block, printing three "command not
+      # found" errors on every interactive shell. `bash -n` cannot see this;
+      # only running it can, which is why the check outlived the file.
       - name: Bash configs source without emitting output
         run: |
           bad=0
           for f in bash/bash_theme bash/bash_productivity bash/bash_git \
-                   bash/bash_github bash/bash_github_tui; do
+                   bash/bash_github; do
             # expand_aliases because that is how these files are really read.
             # Without it bash skips alias expansion entirely, which is a
             # different parser and hides a whole class of failure — see the
@@ -738,33 +739,20 @@ jobs:
       # next to it as top-level commands, which left six names competing for
       # one job and meant the hub had to be discovered rather than being the
       # obvious door.
+      # The [bash] file split was a rule, not a preference: bash_github held
+      # plain gh commands and shared helpers, bash_github_tui held everything
+      # interactive, and keeping fzf on one side of that line is what let the
+      # TUI be deleted as a unit. It has now been — `github` is tui/github —
+      # and this row is what made that a deletion rather than a rewrite, so it
+      # stays: bash_github is still the plain-gh file, and a screen growing
+      # back into it is the drift to catch.
       #
-      # This also keeps the prefix rule true: `__` is a helper shared across
-      # files, `_` is private to this one. Every screen is now `_`-prefixed,
-      # which is what stops the help check above from demanding an `h` entry
-      # for something you cannot type.
-      - name: bash_github_tui exposes only github
-        run: |
-          public=$(grep -oE '^[a-zA-Z][a-zA-Z0-9_-]*\(\)' bash/bash_github_tui | tr -d '()')
-          if [ "$public" != "github" ]; then
-            echo "bash_github_tui must define exactly one public function (github); found:"
-            echo "$public"
-            exit 1
-          fi
-          # Every double-underscore name it uses must come from another file.
-          bad=0
-          for n in $(grep -ohE '__[a-z_]+' bash/bash_github_tui | sort -u); do
-            if grep -q "^$n()" bash/bash_github_tui; then
-              echo "$n is private to bash_github_tui but uses the shared '__' prefix"; bad=1
-            fi
-          done
-          exit $bad
-
-      # The [bash] file split is a rule, not a preference: bash_github holds
-      # plain gh commands and shared helpers, bash_github_tui holds everything
-      # interactive. Keeping fzf on one side of that line is what lets the TUI
-      # be deleted or replaced as a unit. `command -v fzf` is a probe, not an
-      # invocation, so it does not count.
+      # It holds trivially today, which is the point rather than a reason to
+      # drop it: there is no fzf in bash_github at all now that __gh_check is
+      # gone. The row costs nothing and catches the one way this file goes
+      # wrong.
+      #
+      # `command -v fzf` is a probe, not an invocation, so it does not count.
       # Comment lines are skipped: this file's own header documents the rule and
       # would otherwise match the pattern that enforces it.
       - name: bash_github invokes no fzf
@@ -774,31 +762,20 @@ jobs:
             /\| *fzf|^[[:space:]]*fzf / { print FILENAME ":" FNR ": " $0; found = 1 }
             END { exit found ? 1 : 0 }
           ' bash/bash_github || {
-            echo "bash_github must not invoke fzf — that belongs in bash_github_tui"
+            echo "bash_github must not invoke fzf — it is the plain-gh file"
             exit 1
           }
 
-      # The nvim-like menu contract (q and - go back, --disabled so plain keys
-      # are commands) is defined once in __fzf_menu. It was previously spelled
-      # out at 18 call sites as identical strings kept identical by hand; a
-      # screen that hand-rolls it again is how the next one drifts. The wrapper
-      # itself is the sole legitimate --disabled, so it is the only exemption.
-      - name: fzf menus go through __fzf_menu
-        run: |
-          bad=0
-          for f in bash/bash_git bash/bash_github bash/bash_github_tui; do
-            awk -v file="$f" '
-              /^[[:space:]]*#/ { next }
-              /fzf .*--disabled|--disabled.*fzf/ { print file ":" FNR ": " $0; found = 1 }
-              END { exit found ? 1 : 0 }
-            ' "$f" || bad=1
-          done
-          if [ "$bad" -ne 0 ]; then
-            echo "hand-rolled fzf menu — use __fzf_menu (bash_productivity)"
-            exit 1
-          fi
-          grep -q '^__fzf_menu()' bash/bash_productivity || {
-            echo "__fzf_menu is missing from bash_productivity"; exit 1; }
+      # The `fzf menus go through __fzf_menu` row lived here. The contract it
+      # policed -- q and - go back, --disabled so plain keys are commands --
+      # was defined once in bash_productivity because it had been spelled out
+      # at 18 call sites as identical strings kept identical by hand.
+      #
+      # All 18 were in bash_github_tui, so when `github` became tui/github the
+      # wrapper lost every caller, and the row's last act was `grep -q
+      # '^__fzf_menu()'` -- which pinned dead code in place. Both are gone. If
+      # an fzf screen is wanted again, the argument for centralising the binds
+      # still holds and this row should come back WITH it, not before it.
 
       # `h` is hand-maintained — the comment above it used to claim it read from
       # the file's own comments and was "always in sync", which was never true.
@@ -818,9 +795,9 @@ jobs:
 
           defined=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
                          bash/bash_productivity bash/bash_git bash/bash_github \
-                         bash/bash_github_tui | tr -d '()'
+                         | tr -d '()'
                        grep -hE '^alias ' bash/bash_productivity bash/bash_git \
-                         bash/bash_github_tui | sed 's/alias //;s/=.*//'
+                         | sed 's/alias //;s/=.*//'
                      } | grep -vE '^_' | sort -u )
           hbody=$(sed -n '/^h() {/,/^}/p' bash/bash_productivity)
           bad=0
@@ -847,9 +824,9 @@ jobs:
           # as a tool, which covers the external commands h explains, like fzf.
           defines=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
                          bash/bash_productivity bash/bash_git bash/bash_github \
-                         bash/bash_github_tui | tr -d '()'
+                         | tr -d '()'
                        grep -hE '^[[:space:]]*alias ' \
-                         bash/bash_productivity bash/bash_git bash/bash_github_tui \
+                         bash/bash_productivity bash/bash_git bash/bash_github \
                          | sed 's/.*alias //;s/=.*//'
                        manifest_lines tool | cut -f3
                      } | sort -u )
@@ -1339,14 +1316,32 @@ jobs:
       # `font` would win over the binary on PATH, silently reinstating the fzf
       # picker this replaced.
       # DERIVED from the workspace, not a hand-kept list, and that matters right
-      # now: `gh-tui` has just been renamed to `github`, which is the name the
-      # planned reticle crate will take. The day tui/github/ is added to
-      # members, this check starts covering it and fails until the bash function
-      # is gone -- which is exactly the handover it should force. A hardcoded
+      # now: `gh-tui` was renamed to `github` ahead of the rewrite, and the day
+      # tui/github/ was added to members this check started covering it and
+      # failed until the bash function was gone -- which is exactly the
+      # handover it was written to force. It did, on 2026-10-24. A hardcoded
       # list would simply have stayed quiet and let both exist, with PATH order
-      # deciding which one runs.
+      # deciding which one ran.
       #
       # reticle is excluded because it is the framework and ships no binary.
+      # The parity table that gated this is now a RECORD, not a check, and the
+      # step that enforced it is gone with the file it read. It derived the
+      # verb list from `_ghw_main` in bash/bash_github_tui, so once that file
+      # was deleted the derivation was impossible rather than merely moot --
+      # there is nothing left to compare the table against.
+      #
+      # docs/decisions/github-parity.md stays, because what it still answers is
+      # "what did the port decide not to carry, and why": four dropped rows,
+      # each with its argument. The gate did its job -- 45 of 49 verbs ported,
+      # and the four that were not are argued rather than forgotten.
+      #
+      # One thing it could not see, worth knowing before trusting the next
+      # table of this shape: the table was derived from the DISPATCHER, and
+      # `_gh_tab_var` -- the OSC 1337 user var wezterm reads to mark the tab --
+      # was not a dispatcher verb. It was found by grepping for every mention
+      # of the file about to be deleted, not by the gate. A derivation covers
+      # exactly what it derives from.
+
       - name: No bash function shadows a tui binary
         run: |
           fail=0
