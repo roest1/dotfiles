@@ -112,7 +112,7 @@ prune_orphans() {
 }
 
 echo ""
-echo "Linking dotfiles from $DOTFILES_DIR ($_OS)"
+echo "Linking dotfiles from $DOTFILES_DIR"
 if [[ ${#SECTIONS[@]} -gt 0 ]]; then
   echo "Sections: ${SECTIONS[*]}"
 else
