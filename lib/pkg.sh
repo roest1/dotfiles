@@ -487,10 +487,18 @@ mise_install_forced() {
   # -g so the tool is on PATH everywhere, not only inside this repo. The repo's
   # mise.toml is the source of the version; the global config is where it's
   # applied.
-  mise use -g "$spec" 2>/dev/null || {
+  # stderr is kept, and printed only when mise fails. The old `2>/dev/null`
+  # here cost a full investigation (issue #12): the nvim-floor job went red
+  # with "mise use -g neovim@... failed" and nothing else, when mise had said
+  # exactly what was wrong -- GitHub's API returning 429 to an anonymous
+  # runner. Silence on success is still right; mise's progress output is noise
+  # in `make install`. Silence on failure is what hid the cause.
+  local err
+  if ! err="$(mise use -g "$spec" 2>&1 >/dev/null)"; then
     echo "  ⚠️  mise use -g $spec failed"
+    [ -n "$err" ] && printf '%s\n' "$err" | sed 's/^/      /'
     return 1
-  }
+  fi
   export PATH="$HOME/.local/share/mise/shims:$PATH"
 }
 
