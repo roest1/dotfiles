@@ -53,7 +53,22 @@ is_wsl() {
 tool_applies_here() {
   case "$1" in
     wezterm) ! is_wsl ;;
+    # A dotnet global tool applies exactly where dotnet does. dotnet itself is
+    # a project toolchain this repo does not install, so on a box without it
+    # the C# server is n/a rather than MISSING -- roslyn.nvim cannot attach
+    # there either way, and MISSING would send `make install nvim` to fetch
+    # something it has no runtime for.
+    roslyn-language-server) command -v dotnet >/dev/null 2>&1 ;;
     *)       true ;;
+  esac
+}
+
+# Why tool_applies_here said no, for the two status lines that print it.
+tool_na_reason() {
+  case "$1" in
+    wezterm) echo "Windows host — see windows/README.md" ;;
+    roslyn-language-server) echo "no dotnet on this machine" ;;
+    *) echo "not applicable here" ;;
   esac
 }
 

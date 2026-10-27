@@ -1,72 +1,37 @@
 *dotfiles-harpoon.txt*    Harpoon Notes
-                      Last Updated: 2025-01-01
 
-An overview of how Harpoon is used here, with Lazy.nvim.
-This extends the default docs without overriding :help harpoon.
-
-To open this file:
-
-    :help dotfiles-harpoon
+How Harpoon is used here. This extends, not replaces, `:help harpoon`.
 
 ==============================================================================
 Overview~                                                       *dotfiles-harpoon*
 
-Harpoon makes a "working list" of files and lets you jump between them quickly.
-
-Think of it like:
-- File bookmarks for active tasks
-- Browser tabs for code
-- A tiny project “focus list”
+Harpoon keeps a short list of files for the task in hand and jumps between
+them. Think browser tabs for code, or a focus list, rather than a project
+tree.
 
 ==============================================================================
-Keymaps~                                          *dotfiles-harpoon-keymaps*
+Keymaps~                                                *dotfiles-harpoon-keymaps*
 
-<leader>a      Add file to Harpoon list
-<C-e>          Open quick list
-<C-n>          Next file in list
-<C-p>          Previous file
-<leader>hr     Reset list (clear all)
+Location: lua/external/plugins/harpoon.lua
 
-Telescope integration (if installed):
+    <leader>a       Add the current file to the list
+    <C-e>           Open the quick menu
+    <C-n>           Next file
+    <C-p>           Previous file
 
-<leader>fl     Show Harpoon list inside Telescope
-
-==============================================================================
-Workflow~               *dotfiles-harpoon-workflow*
-
-1. Open 3–6 files I'm working with
-2. Hit <leader>a on each one
-3. Jump between them like tabs with <C-n> and <C-p>
-4. Reset when the task/project is complete: <leader>hr
-
-This keeps attention on a small set of files instead of project-wide
-searching every time.
+The quick menu is a buffer: delete a line to drop a file, move lines to
+reorder, close it to apply. That is also how the list is cleared -- there is
+no separate reset mapping any more (the leader-h-r one went in 37fa6ce).
 
 ==============================================================================
-Lazy.nvim Config Reference~                      *dotfiles-harpoon-lazy-config*
+Workflow~                                              *dotfiles-harpoon-workflow*
 
-~/.config/nvim/lua/plugins/harpoon.lua
+    1. Open the 3-6 files the task touches
+    2. <leader>a on each one
+    3. <C-n> / <C-p> to cycle through just those
+    4. <C-e>, delete the lines, close -- when the task is done
 
-    return {
-      "ThePrimeagen/harpoon",
-      branch = "harpoon2",
-      dependencies = { "nvim-lua/plenary.nvim" },
-
-      config = function()
-        local harpoon = require("harpoon")
-        vim.keymap.set("n", "<leader>a", function() harpoon:list():add() end)
-        vim.keymap.set("n", "<C-e>", function() harpoon.ui:toggle_quick_menu(harpoon:list()) end)
-        vim.keymap.set("n", "<C-n>", function() harpoon:list():next() end)
-        vim.keymap.set("n", "<C-p>", function() harpoon:list():prev() end)
-        vim.keymap.set("n", "<leader>hr", function() harpoon:list():clear() end)
-      end,
-    }
-
-==============================================================================
-Open This Help Page~                              *dotfiles-harpoon-open*
-
-    :help dotfiles-harpoon
+The list persists across sessions, per project directory.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:
-

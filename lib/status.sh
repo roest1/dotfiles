@@ -210,7 +210,7 @@ status_tools() {
     actual="$(provider_of "$cmd")"
 
     if ! tool_applies_here "$cmd"; then
-      printf "%s  $MARK_NA %-14s n/a — installed on the Windows host%s\n" "$SG" "$cmd" "$SG_OFF"
+      printf "%s  $MARK_NA %-14s n/a — %s%s\n" "$SG" "$cmd" "$(tool_na_reason "$cmd")" "$SG_OFF"
     elif [[ "$actual" == "absent" ]]; then
       printf "%s  $MARK_NA %-14s not installed (declared %s)%s\n" "$SG" "$cmd" "$provider" "$SG_OFF"
       _drift_tool

@@ -28,9 +28,6 @@ return {
     dependencies = {
       -- Useful status updates for LSP.
       { 'j-hui/fidget.nvim', opts = {} },
-
-      -- Allows extra capabilities provided by blink.cmp
-      'saghen/blink.cmp',
     },
     config = function()
       -- Brief aside: **What is LSP?**
@@ -187,12 +184,11 @@ return {
         },
       }
 
-      -- LSP servers and clients are able to communicate to each other what features they support.
-      --  By default, Neovim doesn't support everything that is in the LSP specification.
-      --  When you add blink.cmp, luasnip, etc. Neovim now has *more* capabilities.
-      --  So, we create new capabilities with blink.cmp, and then broadcast that to the servers.
-      local ok, blink = pcall(require, 'blink.cmp')
-      local capabilities = ok and blink.get_lsp_capabilities() or vim.lsp.protocol.make_client_capabilities()
+      -- Neovim's own capabilities, unextended. There is no completion plugin:
+      -- blink.cmp sat here as `enabled = false` from 2026-06 to 2026-10, so the
+      -- servers were already being told exactly this. If a completion engine
+      -- comes back, this is the line it extends.
+      local capabilities = vim.lsp.protocol.make_client_capabilities()
 
       -- Server definitions live in lua/external/lsp_servers.lua so they can be
       -- unit-tested with `nvim --clean` (no plugins, no network). That module

@@ -1,18 +1,17 @@
 -- nvim-lint — async linting alongside LSP diagnostics
 --
--- Runs linters on save and insert-leave.
+-- Runs linters on save, insert-leave and buffer read.
 -- Complements conform.nvim (formatting) and LSP (type errors).
--- Catches style issues, unused variables, complexity warnings.
 --
 -- Linters:
 --   Python     → ruff, declared in ../../../../deps.conf and installed by uv
---   JS/TS      → eslint_d, NOT installed (see below)
 --
--- There is no Mason and no npm, so eslint_d has no installer any more. The
--- filetype mapping below is left in place because `available_linters` skips
--- anything not on PATH, so it costs nothing and documents the intent. To make
--- JS/TS linting real again, add it to nvim/lsp-servers/package.json and run it
--- through bun — the same way the language servers work.
+-- JS/TS is deliberately absent. eslint_d sat in this table for months after
+-- node left: `available_linters` skipped it because nothing installed it, so
+-- the entry linted nothing and documented a linter that did not exist. A
+-- mapping is only as real as the binary behind it. To lint JS/TS, add eslint
+-- to nvim/lsp-servers/package.json and run it through bun, the way prettier
+-- and the language servers are -- and add the table entry in the same commit.
 
 return {
   'mfussenegger/nvim-lint',
@@ -22,16 +21,11 @@ return {
 
     lint.linters_by_ft = {
       python = { 'ruff' },
-      javascript = { 'eslint_d' },
-      typescript = { 'eslint_d' },
-      javascriptreact = { 'eslint_d' },
-      typescriptreact = { 'eslint_d' },
     }
 
-    -- Only run linters whose executable is installed. eslint_d/ruff are
-    -- optional (not in reqs.lua), so when missing we skip them instead of
-    -- erroring on every buffer read. eslint_d is expected to be missing —
-    -- nothing installs it now that npm is gone.
+    -- Only run linters whose executable is installed. ruff comes from the
+    -- [nvim] section but a machine that skipped it should get silence, not an
+    -- error on every buffer read.
     local function available_linters(ft)
       local found = {}
       for _, name in ipairs(lint.linters_by_ft[ft] or {}) do

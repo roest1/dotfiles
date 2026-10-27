@@ -14,10 +14,8 @@ alias gstashls='git stash list'
 alias gstash='git stash'
 alias gstashpush='git stash push -m'
 alias gstashpop='git stash pop'
-alias gstatus='git status'
 alias gs='git status'
 alias gcommit='git commit -m'
-alias gc='git commit -m'
 alias gpusho='git push origin'
 alias gpushfo='git push --force-with-lease origin'
 alias gchecko='git checkout'
@@ -48,10 +46,8 @@ gb() {
                (h[i] ? "* " : "  "), (h[i] ? "32" : "0"), w, n[i], b[i], a[i]
     }'
 }
-alias gbranch='gb'
 
 alias gbd='git branch -d'
-alias gbranchd='git branch -d'
 
 alias gfetcho='git fetch origin'
 alias gpullo='git pull origin'

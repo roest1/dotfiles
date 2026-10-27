@@ -3,98 +3,100 @@
 ==============================================================================
 WORKFLOWS                                                    *dotfiles-workflows*
 
-"How do I..." recipes for common tasks.
-
-
-TODO:
-
-Where should I put find-replace in file 
-
-/<find-key>
-cgn<replace-key> → <Esc>
-
-    Press . to repeat replace
-    Press n/N to go to next/Prev
+"How do I..." recipes, using only keys this config defines plus Vim's own.
+Where a recipe names a command rather than a key, that is deliberate: the
+mapping was deleted in 37fa6ce and has not been missed enough to come back.
 
 ==============================================================================
 FINDING FILES                                        *dotfiles-workflows-finding*
 
 Find a file by name:~
-    <leader>sf → type filename → <CR>
+    <leader>sf -> type filename -> <CR>
 
 Find a file containing specific text:~
-    <leader>sg → type search term → <CR>
+    <leader>sg -> type search term -> <CR>
 
 Find where a function is defined:~
-    Put cursor on function name → grd
+    Cursor on the name -> grd
 
 Find everywhere a function is used:~
-    Put cursor on function name → grr
-
-Find a file I had open recently:~
-    <leader>s. → select from list
+    Cursor on the name -> grr
 
 Switch between open buffers:~
-    <leader><leader> → select buffer
+    :Telescope buffers      (or :ls and :b <n>)
 
-Search in just the current file:~
-    <leader>/ → type search term
+Find a file I had open recently:~
+    :Telescope oldfiles
+
+Repeat the last picker:~
+    :Telescope resume
+
+Replace in the current file, one match at a time:~
+    /pattern -> cgn<replacement><Esc> -> . to repeat, n to skip
 
 ==============================================================================
 NAVIGATING CODE                                    *dotfiles-workflows-navigating*
 
 Jump to where something is defined:~
-    Cursor on symbol → grd
+    Cursor on symbol -> grd
     To jump back: <C-t>
 
 Jump to the type of a variable:~
-    Cursor on variable → grt
+    Cursor on variable -> grt
 
 See all references to something:~
-    Cursor on symbol → grr
+    Cursor on symbol -> grr
 
 See all functions/classes in file:~
-    gO → select from list
+    gO -> select from list
 
 See all symbols in project:~
-    gW → type to filter
+    gW -> type to filter
 
 ==============================================================================
 EDITING CODE                                          *dotfiles-workflows-editing*
 
 Rename a variable everywhere:~
-    Cursor on variable → grn → type new name → <CR>
+    Cursor on variable -> grn -> type new name -> <CR>
 
 Fix an error (quick fix):~
-    Cursor on error → gra → select fix
+    Cursor on error -> gra -> select fix
 
 Format the file:~
-    <leader>l (or just save — a BufWritePre autocmd formats too)
+    <leader>l (or just save -- a BufWritePre autocmd formats too)
+
+Format only a selection:~
+    Select in visual mode -> <leader>l
+
+Change the quotes around a string:~
+    sr"'            (mini.surround: replace " with ')
 
 Comment out lines:~
-    Select lines in visual mode → gc (if you add comment plugin)
-    Or manually: I// <Esc> on each line
+    Select lines in visual mode -> gc (Neovim's built-in commenting)
 
 Indent multiple lines:~
-    Select in visual mode → > (repeat with .)
+    Select in visual mode -> > (repeat with .)
     Or: << and >> in normal mode
 
 ==============================================================================
 WORKING WITH FILES                                      *dotfiles-workflows-files*
 
 Create a new file:~
-    - (open Oil) → type filename on blank line → :w
+    - (open Oil) -> type filename on blank line -> :w
 
 Rename a file:~
-    - (open Oil) → edit the filename → :w
+    - (open Oil) -> edit the filename -> :w
 
 Delete a file:~
-    - (open Oil) → dd on the line → :w
+    - (open Oil) -> dd on the line -> :w
 
 Copy directory contents to clipboard (for AI/docs):~
-    - (open Oil in directory) → :Copy
+    - (open Oil in directory) -> :Copy
     Recursive: :Copy -r
     Exclude: :Copy --exclude=node_modules
+
+Paste a screenshot into a directory:~
+    - (open Oil there) -> :PasteImage
 
 ==============================================================================
 WORKING SET (HARPOON)                                  *dotfiles-workflows-harpoon*
@@ -104,62 +106,40 @@ Start a new task with specific files:~
     2. <leader>a on each one
     3. Now <C-n>/<C-p> cycles through just those
 
-Clear your working set:~
-    <leader>hr
-
-Reorder files in working set:~
-    <C-e> → move lines around → :w or close
-
-Remove one file from set:~
-    <C-e> → delete the line → close
+Reorder, remove, or clear the set:~
+    <C-e> -> edit the lines -> close the menu
 
 ==============================================================================
 GIT WORKFLOWS                                            *dotfiles-workflows-git*
 
-See what I changed:~
-    <leader>hp on a changed line (green + in gutter)
-
-Stage specific lines (not whole file):~
-    ]c to jump to change → <leader>hs
-
-Stage entire file:~
-    <leader>hS
-
-Undo staging a hunk:~
-    <leader>hu
-
-Discard changes in a hunk:~
-    <leader>hr
-
-Discard all changes in file:~
-    <leader>hR
-
-See who wrote a line:~
-    <leader>hb
-
-Compare to last commit:~
-    <leader>hD
-
 Navigate between changes:~
     ]c (next) and [c (previous)
+
+See what I changed on this line:~
+    :Gitsigns preview_hunk
+
+Stage just this hunk:~
+    ]c to reach it -> :Gitsigns stage_hunk
+
+See who wrote a line:~
+    :Gitsigns blame_line
+
+See which files changed, with counts, while browsing:~
+    - (open Oil) -- the +N/-N column at the right edge is :OilGit
+
+Everything else: the shell. `h git` lists the aliases.
 
 ==============================================================================
 DEBUGGING CODE                                        *dotfiles-workflows-debug*
 
-See the error on current line:~
-    <leader>e
+See the error on the current line:~
+    <C-w>d          (Neovim's built-in diagnostic float)
 
-See all errors in file:~
-    <leader>xX
+Jump to next / previous error:~
+    ]d / [d
 
-See all errors in project:~
-    <leader>xx
-
-Jump to next error:~
-    ]d
-
-Jump to previous error:~
-    [d
+See all errors in the project:~
+    :Trouble diagnostics
 
 ==============================================================================
 SPLITS AND WINDOWS                                    *dotfiles-workflows-splits*
@@ -181,9 +161,6 @@ Make splits equal size:~
 Close other splits:~
     <C-w>o
 
-Close current split:~
-    :q
-
 ==============================================================================
 SEARCH AND REPLACE                                    *dotfiles-workflows-replace*
 
@@ -200,44 +177,16 @@ Find files containing text:~
     Then :args to see the list
 
 ==============================================================================
-TERMINAL                                              *dotfiles-workflows-terminal*
-
-Open terminal in Neovim:~
-    :term
-
-Run current Python file:~
-    :term python %
-
-Run current file with args:~
-    :term python % arg1 arg2
-
-Exit terminal mode:~
-    <C-\><C-n>
-
-For persistent terminals, use tmux instead.
-
-==============================================================================
 CLIPBOARD                                            *dotfiles-workflows-clipboard*
 
 Copy entire file:~
-    :%y (automatically uses system clipboard)
+    :%y (goes to the system clipboard, OSC52 over ssh/WSL)
 
 Copy to system clipboard:~
-    Select text → "+y
-    Or just y (clipboard is synced)
+    Select text -> y (clipboard is synced; a notification confirms it)
 
 Paste from system clipboard:~
-    "+p or just p
-
-==============================================================================
-SESSIONS (COMING BACK LATER)                        *dotfiles-workflows-sessions*
-
-Currently no session plugin installed.
-Your Harpoon list persists across sessions.
-
-To save session state, consider adding:
-    - persistence.nvim (auto-save/restore)
-    - Or use tmux
+    p
 
 ==============================================================================
 MAINTENANCE                                        *dotfiles-workflows-maintenance*
@@ -249,12 +198,15 @@ Check plugin status:~
     :Lazy
 
 Install/update LSP servers:~
-    Not from inside the editor — see |dotfiles-commands-servers|.
+    Not from inside the editor -- see |dotfiles-commands-servers|.
     Native:  make install nvim
     JS ones: make -C nvim servers
 
 Check health:~
     :checkhealth
+
+Find mappings I never use:~
+    :KeymapUsage            (zeros first; see |dotfiles-commands-usage|)
 
 Nuclear reset (reinstall everything):~
     :ResetNvim (then restart Neovim)

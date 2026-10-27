@@ -11,15 +11,11 @@
 -- NOTE: using `require 'path/name'` will include a plugin definition from file lua/path/name.lua
 --
 -- For additional information with loading, sourcing and examples see `:help lazy.nvim-🔌-plugin-spec`
--- Or use telescope!
--- In normal mode type `<space>sh` then write `lazy.nvim-plugin`
--- you can continue same window with `<space>sr` which resumes last telescope search
 
 -- Plugin loader — called from lazy-plugins.lua
 -- Add new plugins: create a file in this directory, then add its path here.
 
 local plugin_modules = {
-  'external/plugins/blink-cmp',
   'external/plugins/formatter',
   'external/plugins/gitsigns',
   'external/plugins/harpoon',

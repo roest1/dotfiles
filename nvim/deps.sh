@@ -179,6 +179,38 @@ echo ""
 echo "  lemminx (XML):"
 install_lemminx
 
+# ── roslyn-language-server (C#) ──────────────────────────────────────────────
+#
+# roslyn.nvim looks for `roslyn-language-server` on PATH and nothing else, and
+# that name is a dotnet global tool. dotnet is not this repo's to install -- it
+# is a project toolchain, like a JDK -- so this installs the server only where
+# a dotnet already is, and says what it would have done where there is none.
+# tool_applies_here reports the same split, so `make status` agrees.
+#
+# The Azure DevOps feed is the one roslyn.nvim's README recommends: vscode's
+# C# extension ships from it, and nuget.org lags it by weeks. `dotnet tool
+# install -g` lands in ~/.dotnet/tools, which bashrc and the Makefile both put
+# on PATH; a machine without that line has the server and cannot see it.
+# `--prerelease` because every build on either feed is tagged that way.
+install_roslyn() {
+  if ! command -v dotnet >/dev/null 2>&1; then
+    echo "  ↷  no dotnet here — skipped (install the .NET SDK first if you want C#)"
+    return 0
+  fi
+  export PATH="$HOME/.dotnet/tools:$PATH"
+  command -v roslyn-language-server >/dev/null 2>&1 && { echo "  ✅ roslyn-language-server"; return 0; }
+  echo "  ➡️  dotnet tool install -g roslyn-language-server"
+  dotnet tool install -g roslyn-language-server --prerelease \
+    --source https://pkgs.dev.azure.com/azure-public/vside/_packaging/vs-impl/nuget/v3/index.json \
+    >/dev/null \
+    || { echo "  ⚠️  roslyn-language-server install failed — :help dotfiles-plugins-roslyn has the command"; return 0; }
+  echo "  🔗 roslyn-language-server -> ~/.dotnet/tools"
+}
+
+echo ""
+echo "  roslyn-language-server (C#):"
+install_roslyn
+
 # ── Clipboard image paste (:PasteImage) ──────────────────────────────────────
 # Lets `:PasteImage` drop a screenshot from the OS clipboard into a directory
 # (e.g. while browsing in Oil). Backend depends on the platform:

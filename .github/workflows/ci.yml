@@ -854,6 +854,60 @@ jobs:
           done
           exit $bad
 
+      # The editor's equivalent of the `h` check above, and it exists because
+      # the editor did not have one. Commit 37fa6ce (2026-06-17) deleted ~40
+      # nvim mappings; nvim/doc kept describing every one of them until
+      # 2026-10, with `<leader>e`, a Trouble family, a gitsigns family and a
+      # :Glow command that had no plugin file behind it. Nothing could notice,
+      # because the help files are hand-written and the rule that keeps `h`
+      # honest stopped at bash/.
+      #
+      # Static, like the `h` check: it reads the lua sources, not a running
+      # nvim. Scope is <leader> keys and user commands -- the mappings that are
+      # this config's to document. Plugin-internal keys (oil's `g?`, telescope's
+      # <C-v>) are the plugin's, and gr* / ]c are checked by eye.
+      - name: nvim help names only mappings that exist, and every mapping and command is documented
+        run: |
+          set -uo pipefail
+          bad=0
+          docs="nvim/doc/*.txt nvim/README.md"
+
+          # A <leader> key the config defines is any quoted literal under lua/
+          # that starts with <leader>. Comments do not count: they are not
+          # quoted, which is what let `<space>sh` survive in init.lua's header.
+          defined=$(grep -rhoE "['\"]<leader>[^'\"]+['\"]" nvim/lua nvim/init.lua \
+                    | tr -d "'\"" | sort -u)
+
+          # A key the docs name. A token ends at whitespace, a backtick, a pipe,
+          # or sentence punctuation -- `<leader>sf` in markdown, `<leader>sf ` in
+          # a help column.
+          token='<leader>[^[:space:]`|),.*]+'
+          # shellcheck disable=SC2086
+          named=$(grep -hoE "$token" $docs | sort -u)
+          for k in $named; do
+            echo "$defined" | grep -qxF -- "$k" \
+              || { echo "docs name $k, which nothing under nvim/lua defines"; bad=1; }
+          done
+
+          # ...and the reverse, against the one file that claims to be complete.
+          in_keymaps=$(grep -hoE "$token" nvim/doc/dotfiles-keymaps.txt | sort -u)
+          for k in $defined; do
+            echo "$in_keymaps" | grep -qxF -- "$k" \
+              || { echo "$k is defined but missing from nvim/doc/dotfiles-keymaps.txt"; bad=1; }
+          done
+
+          # Every custom command has a line in the help. `:Glow` had a whole
+          # page and no plugin; this is the direction that catches the opposite.
+          cmds=$(grep -rhoE "nvim_create_user_command\(\s*'[A-Za-z]+'" nvim/lua nvim/init.lua \
+                 | sed -E "s/.*'([A-Za-z]+)'/\1/" | sort -u)
+          for c in $cmds; do
+            grep -qE "(^|[[:space:]*]):$c([^A-Za-z]|$)" nvim/doc/*.txt \
+              || { echo ":$c is defined but has no line in nvim/doc"; bad=1; }
+          done
+
+          [ $bad -eq 0 ] && echo "ok: $(echo "$defined" | wc -l) leader keys and $(echo "$cmds" | wc -l) commands, all documented, nothing stale"
+          exit $bad
+
       # mise.toml is generated from deps.conf and mise.lock is generated from
       # mise.toml, so all three can disagree. Before this existed, lib/pkg.sh
       # installed `@latest` and the resolved versions lived only in
