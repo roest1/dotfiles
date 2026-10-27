@@ -6,7 +6,7 @@ useful to send.
 ## What's welcome
 
 - **Portability fixes.** Something breaks on a distro or platform I don't run —
-  Arch, Alpine, macOS on Apple Silicon, WSL quirks. This is the most valuable
+  Arch, Alpine, WSL quirks. This is the most valuable
   kind of PR, because I can only test what I have.
 - **Bugs in the machinery** — the manifest parser, provider dispatch, drift
   detection, install/link logic.
@@ -132,8 +132,8 @@ CI runs ten jobs on every push and PR; all ten are required to merge.
 | -------------------------------------- | --------------------------------------------------- |
 | `shellcheck`                           | Shell sources lint clean                            |
 | `manifest parses`                      | deps.conf parses; no Makefile target overrides its own recipe; every link source exists; `adopt.sh` output round-trips |
-| `link only (linux)` / `(macos)`        | The no-sudo, no-network path works and is idempotent |
-| `install (ubuntu / apt)` / `(macos / brew)` / `(fedora / dnf)` | `make install bash` completes with nothing MISSING |
+| `link only (linux)`                    | The no-sudo, no-network path works and is idempotent |
+| `install (ubuntu / apt)` / `(fedora / dnf)` | `make install bash` completes with nothing MISSING |
 | `neovim floor (ubuntu, mise fallback)` | Exactly one nvim, at or above 0.12, on the one platform whose distro can't reach it |
 | `bun audit (transitive advisories)`    | No known advisories in the language-server tree, including transitively |
 | `bun-only toolchain`                   | No node/npm/pip in the manifest, no shim anywhere, and all six language servers complete a real LSP handshake with node absent from PATH |

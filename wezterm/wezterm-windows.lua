@@ -1,7 +1,7 @@
 -- ─── wezterm.exe on WINDOWS ──────────────────────────────────────────────────
 --
 -- NOT a variant of wezterm.lua — a different job. wezterm.lua configures
--- wezterm running natively ON Linux/macOS and declares the `mux` unix domain
+-- wezterm running natively ON Linux and declares the `mux` unix domain
 -- the Jarvis sidecar attaches to, whose socket path is a Linux path that means
 -- nothing to wezterm.exe. This file configures the Windows HOST terminal, whose
 -- job is to drop you into WSL and, when you need it, into PowerShell or cmd.

@@ -231,7 +231,6 @@ Backend (auto-detected):~
     WSL2            Windows PowerShell    (no install)
     Linux/Wayland   wl-paste              (pkg: wl-clipboard)
     Linux/X11       xclip                 (pkg: xclip)
-    macOS           pngpaste              (brew), else osascript
 
 Location: lua/external/pasteimg.lua
 

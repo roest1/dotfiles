@@ -3,7 +3,7 @@
 -- :PasteImage — drop an image from the OS clipboard into a directory as a PNG.
 --
 -- The "screenshot → snip → paste into Oil" workflow: take a screenshot
--- (Win+Shift+S, macOS Cmd+Shift+4, a Linux snipper, …) so it lands on the OS
+-- (Win+Shift+S, a Linux snipper, …) so it lands on the OS
 -- clipboard, open Oil at the target directory, then `:PasteImage`. The new file
 -- is written to disk and Oil refreshes to show it.
 --
@@ -22,7 +22,6 @@
 --                       (no extra install — ships with Windows)
 --   • Linux / Wayland → wl-paste   (package: wl-clipboard)
 --   • Linux / X11     → xclip      (package: xclip)
---   • macOS           → pngpaste (brew), else an osascript fallback
 --
 -- See lua/external/reqs.lua, deps.sh, and `:checkhealth external` for the
 -- per-platform tool. Documented in `:help dotfiles-plugins-oil`.
@@ -50,9 +49,6 @@ local function detect_backend()
   if vim.fn.has 'wsl' == 1 then
     return 'wsl'
   end
-  if vim.fn.has 'mac' == 1 then
-    return 'macos'
-  end
   if vim.env.WAYLAND_DISPLAY then
     return 'wayland'
   end
@@ -63,7 +59,7 @@ local function detect_backend()
 end
 
 -- ─── Backends ──────────────────────────────────────────────────────────────
--- Each saver writes a PNG to `out_path` (a Linux/macOS path) and returns
+-- Each saver writes a PNG to `out_path` (a Linux path) and returns
 -- (true) on success or (false, message) on failure. "No image on the
 -- clipboard" is a failure, not a crash.
 
@@ -144,41 +140,10 @@ local function save_x11(out_path)
   return true
 end
 
-local function save_macos(out_path)
-  if vim.fn.executable 'pngpaste' == 1 then
-    vim.fn.system { 'pngpaste', out_path }
-    if vim.v.shell_error == 0 then
-      return true
-    end
-    return false, 'no image on the clipboard'
-  end
-  -- Fallback: AppleScript dumps the clipboard PNG to the file. pngpaste is
-  -- more reliable; recommend it in the failure message.
-  local script = table.concat({
-    ('set f to (POSIX file "%s")'):format(out_path:gsub('"', '\\"')),
-    'try',
-    '  set png to (the clipboard as «class PNGf»)',
-    'on error',
-    '  return "NO_IMAGE"',
-    'end try',
-    'set fh to open for access f with write permission',
-    'set eof fh to 0',
-    'write png to fh',
-    'close access fh',
-    'return "SAVED"',
-  }, '\n')
-  local out = vim.fn.system { 'osascript', '-e', script }
-  if vim.v.shell_error ~= 0 or out:find 'NO_IMAGE' then
-    return false, 'no image on the clipboard (install pngpaste for reliability)'
-  end
-  return true
-end
-
 local SAVERS = {
   wsl = save_wsl,
   wayland = save_wayland,
   x11 = save_x11,
-  macos = save_macos,
 }
 
 -- ─── Target directory & filename ─────────────────────────────────────────────
@@ -238,7 +203,7 @@ end
 local function paste(fargs)
   local backend = detect_backend()
   if not backend then
-    err 'no clipboard-image backend for this environment (need WSL, macOS, Wayland, or X11)'
+    err 'no clipboard-image backend for this environment (need WSL, Wayland, or X11)'
     return
   end
 

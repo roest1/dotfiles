@@ -983,9 +983,9 @@ pins that.
   That test immediately earned itself twice. It found `bootstrap.sh`, which
   escalates and which `dots` can never run — excluded now as a claim about
   reachability rather than a convenience. And it found a bug in its OWN parser:
-  `make shell` wraps its recipe in `ifeq ($(UNAME),Darwin)`, the scanner read
-  the directive as a new rule, and the escalation was attributed to no target
-  at all — the tree and the console agreeing when they did not, which is the
+  `make shell` wrapped its recipe in `ifeq ($(UNAME),Darwin)` (gone with macOS
+  support), the scanner read the directive as a new rule, and the escalation
+  was attributed to no target at all — the tree and the console agreeing when they did not, which is the
   exact failure the test exists to prevent.
 
 ## The command surface is three commands

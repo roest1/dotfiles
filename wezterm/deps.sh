@@ -3,9 +3,9 @@ set -euo pipefail
 
 # ─── [wezterm] platform fixups ───────────────────────────────────────────────
 #
-# The manifest declares `pkg wezterm`, which is correct on macOS (brew ships it)
-# but NOT on Fedora or stock Ubuntu — neither packages wezterm in their default
-# repos. So this fills the gap.
+# The manifest declares `pkg||manual wezterm`. Neither Fedora nor stock Ubuntu
+# packages wezterm in their default repos, so `pkg` rarely serves it and this
+# fills the gap with the fonts and the install advice.
 #
 # Deliberately does NOT guess at a COPR name or a release-asset URL. A fabricated
 # URL that 404s a year from now is worse than a clear instruction, and `make
@@ -59,10 +59,7 @@ fi
 # Unlike the wezterm binary below, this download IS safe to hardcode: nerd-fonts'
 # `releases/latest/download/<Name>.zip` pattern is distro-independent and stable
 # across releases, so there's no per-platform asset name to guess wrong.
-if [ "$PM" = brew ]; then
-  brew list --cask font-0xproto-nerd-font >/dev/null 2>&1 \
-    || brew install --cask font-0xproto-nerd-font
-elif command -v fc-list >/dev/null 2>&1; then
+if command -v fc-list >/dev/null 2>&1; then
   # grep without -q: under pipefail, `grep -q` exits at first match and can
   # SIGPIPE fc-list mid-write, failing the pipeline and re-installing every run.
   if fc-list | grep -i '0xProto Nerd Font' >/dev/null; then
@@ -96,10 +93,7 @@ fi
 # it was what you got when 0xProto was missing. Now it is a named default that
 # a correctly installed machine actually renders with, so it earns an install
 # of its own rather than riding on wezterm's bundled copy.
-if [ "$PM" = brew ]; then
-  brew list --cask font-jetbrains-mono-nerd-font >/dev/null 2>&1 \
-    || brew install --cask font-jetbrains-mono-nerd-font
-elif command -v fc-list >/dev/null 2>&1; then
+if command -v fc-list >/dev/null 2>&1; then
   # grep without -q, for the SIGPIPE reason spelled out above.
   if fc-list | grep -i 'JetBrainsMono Nerd Font' >/dev/null; then
     echo "  ✅ JetBrainsMono Nerd Font (already installed)"
@@ -142,10 +136,7 @@ fi
 # for `ui` while `editor` is a 0.60em font, because the editor lane draws inside
 # the base lane's cell and a wider glyph in a narrower cell collides. Same
 # arithmetic mkmono.py exists to satisfy.
-if [ "$PM" = brew ]; then
-  brew list --cask font-iosevka-term-nerd-font >/dev/null 2>&1 \
-    || brew install --cask font-iosevka-term-nerd-font
-elif command -v fc-list >/dev/null 2>&1; then
+if command -v fc-list >/dev/null 2>&1; then
   # grep without -q, for the SIGPIPE reason spelled out above.
   if fc-list | grep -i 'IosevkaTerm Nerd Font' >/dev/null; then
     echo "  ✅ IosevkaTerm Nerd Font (already installed)"
@@ -214,12 +205,7 @@ fi
 echo ""
 echo "  wezterm is not installed and isn't in this platform's default repos."
 echo ""
-case "$PM" in
-  brew)
-    echo "    brew install --cask wezterm"
-    ;;
-  *)
-    cat <<'EOF'
+cat <<'EOF'
     Fedora/RHEL and stock Ubuntu don't package wezterm. Options:
 
       1. Official instructions:  https://wezterm.org/installation.html
@@ -235,8 +221,6 @@ case "$PM" in
          Useful on a machine where you can't install packages but can write
          to $HOME — the same constraint the section toggles exist for.
 EOF
-    ;;
-esac
 
 echo ""
 echo "  NOTE: wezterm.lua declares the 'mux' unix domain the Jarvis sidecar"

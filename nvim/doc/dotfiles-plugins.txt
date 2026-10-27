@@ -112,7 +112,6 @@ file manager.
 
     1. Take a screenshot to the clipboard:
          Windows/WSL   Win+Shift+S         (Snipping Tool)
-         macOS         Cmd+Ctrl+Shift+4    (region -> clipboard)
          Linux         your snipper's "copy to clipboard" option
     2. Open Oil at the destination directory (`-`).
     3. Run a command:
@@ -127,7 +126,6 @@ everywhere:
     WSL2            Windows PowerShell        (no install needed)
     Linux / Wayland wl-paste                  (pkg: wl-clipboard)
     Linux / X11     xclip                     (pkg: xclip)
-    macOS           pngpaste                  (brew), else osascript
 
 The per-platform tool is installed by nvim/deps.sh (`make install nvim`);
 verify with `:checkhealth external`.

@@ -138,21 +138,19 @@ ensure_wsl_interop() {
 
 # ─── Detect package manager ──────────────────────────────────────────────────
 
-# On macOS, brew IS the system package manager. On Linux it is a supplementary
-# one that may or may not be installed, and preferring it over the distro's was
-# wrong: a RHEL 9 box with linuxbrew present got PM=brew, so `pkg` meant "ask
-# Homebrew" for everything. Two installs failed there that dnf would have done —
-# `brew install mise` (fell back to mise.run) and `brew install pngpaste`, which
-# has no Linux bottle at all — and the dnf-only clang/bindgen branch in
-# nvim/deps.sh went dead because it tests `$PM = dnf`.
+# Distro first, linuxbrew last. brew is a supplementary manager on Linux that
+# may or may not be installed, and preferring it over the distro's was wrong:
+# a RHEL 9 box with linuxbrew present got PM=brew, so `pkg` meant "ask
+# Homebrew" for everything. Two installs failed there that dnf would have done
+# — `brew install mise` (fell back to mise.run) and a cask with no Linux bottle
+# — and the dnf-only clang/bindgen branch in nvim/deps.sh went dead because it
+# tests `$PM = dnf`.
 #
-# So: distro first on Linux, brew as the fallback for machines that have no
-# apt/dnf but do have linuxbrew.
+# There is no Darwin branch: macOS support was dropped on 2026-10-26, see
+# docs/decisions/macos.md. brew stays only as the no-apt-no-dnf fallback.
 PM=""
 pkg_detect() {
-  if [ "$(uname -s)" = "Darwin" ]; then
-    command -v brew >/dev/null 2>&1 && PM="brew"
-  elif command -v apt >/dev/null 2>&1; then
+  if command -v apt >/dev/null 2>&1; then
     PM="apt"
   elif command -v dnf >/dev/null 2>&1; then
     PM="dnf"

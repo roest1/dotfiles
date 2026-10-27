@@ -18,8 +18,8 @@
 #
 #   TERM_PROGRAM=WezTerm   Every OTHER terminal renders SGR 6 as what it
 #                          actually means: BLINKING TEXT. Over ssh, in GNOME
-#                          Terminal, in Terminal.app, in a mac's default shell,
-#                          inside `script`, this must degrade to plain text —
+#                          Terminal, in the Windows console, inside `script`,
+#                          this must degrade to plain text —
 #                          and does, because the variables stay empty.
 #
 #   the fonts are linked    Being IN wezterm is not the same as wezterm having

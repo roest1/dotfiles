@@ -292,11 +292,12 @@ pub fn sudo_recipes(root: &Path) -> Vec<String> {
             continue;
         }
         // A conditional does not end a rule. GNU make lets ifeq/else/endif wrap
-        // a recipe, and `make shell` does exactly that -- its sudo lives inside
-        // an ifeq on UNAME. Treating the directive as a new rule attributed the
-        // escalation to NO target, so the drift test reported the tree and the
-        // console agreeing when they did not. That is the failure mode this
-        // whole test exists to prevent, found in the test's own parser.
+        // a recipe, and `make shell` did exactly that while macOS was a target
+        // -- its sudo lived inside an ifeq on UNAME. Treating the directive as
+        // a new rule attributed the escalation to NO target, so the drift test
+        // reported the tree and the console agreeing when they did not. That
+        // is the failure mode this whole test exists to prevent, found in the
+        // test's own parser. The ifeq is gone; the parser keeps the lesson.
         if matches!(
             head.split_whitespace().next(),
             Some("ifeq" | "ifneq" | "ifdef" | "ifndef" | "else" | "endif")
@@ -420,8 +421,8 @@ mod tests {
         );
         assert!(
             sudo_recipes(&root).contains(&"shell".to_string()),
-            "make shell escalates via `sudo tee -a /etc/shells` and the recipe \
-             scanner no longer sees it"
+            "make shell escalates via `sudo chsh` and the recipe scanner no \
+             longer sees it"
         );
     }
 

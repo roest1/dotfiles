@@ -118,10 +118,11 @@ manifest_scope() {
 #   run_something ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"}
 #
 # A FIXED GLOBAL rather than `local -n dest`, and a read loop rather than
-# `mapfile`. Both of those are bash 4+, and macOS's /bin/bash is 3.2 — this is
-# not a theoretical portability worry, it is the two macos CI jobs, which are
-# the entire strength of this repo's macOS support claim. They failed with
-# `local: -n: invalid option` and `mapfile: command not found`.
+# `mapfile`. Both are bash 4+, and this was written while macOS's /bin/bash 3.2
+# was a CI target, where both failed outright (`local: -n: invalid option`,
+# `mapfile: command not found`). macOS is gone (docs/decisions/macos.md); the
+# shape stays because every target still has to be shellcheck-clean and a
+# global plus a read loop is the version that is.
 #
 # A global is the honest trade. The alternative that keeps a caller-named
 # array on 3.2 is eval, which turns a caller's variable name into code.

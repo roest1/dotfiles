@@ -37,14 +37,14 @@ echo ""
 
 if ! command -v git >/dev/null 2>&1; then
   echo "git not found — installing..."
-  if command -v brew >/dev/null 2>&1; then
-    brew install git
-  elif command -v apt >/dev/null 2>&1; then
+  if command -v apt >/dev/null 2>&1; then
     sudo apt update && sudo apt install -y git
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y git
+  elif command -v brew >/dev/null 2>&1; then
+    brew install git
   else
-    echo "No supported package manager (brew/apt/dnf). Install git manually."
+    echo "No supported package manager (apt/dnf/linuxbrew). Install git manually."
     exit 1
   fi
 fi
@@ -66,9 +66,9 @@ fi
 
 if ! command -v make >/dev/null 2>&1; then
   echo "make not found — installing..."
-  if command -v brew >/dev/null 2>&1; then brew install make
-  elif command -v apt >/dev/null 2>&1; then sudo apt install -y make
+  if command -v apt >/dev/null 2>&1; then sudo apt install -y make
   elif command -v dnf >/dev/null 2>&1; then sudo dnf install -y make
+  elif command -v brew >/dev/null 2>&1; then brew install make
   fi
 fi
 

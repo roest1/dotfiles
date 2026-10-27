@@ -5,7 +5,7 @@
 #   source ~/.bash_productivity
 #
 # Prerequisites (install once):
-#   brew install zoxide fzf bat eza
+#   make install bash      (deps.conf's [bash] section)
 #
 # See all custom commands:
 #   h           Show quick reference
@@ -180,7 +180,7 @@ downloads() {
 # ─── Process management ──────────────────────────────────────────────────────
 
 # port: show what's running on a given port.
-# Uses lsof first (macOS/Linux), falls back to ss (Linux).
+# Uses lsof first, falls back to ss.
 port() {
   lsof -i :"$1" 2>/dev/null || ss -tlnp | grep ":$1"
 }
@@ -196,9 +196,9 @@ port() {
 # filename 3000 does not exist" without it), which an alias cannot do; -n takes
 # it as a flag up front.
 #
-# Linux only: psmisc reads /proc, so there is no fuser on a Mac. Undeclared in
-# deps.conf for that reason — brew would fail the macOS install job — hence the
-# guard, same as the eza and bat aliases above.
+# psmisc's fuser reads /proc. Undeclared in deps.conf because every Linux
+# target ships it, and guarded like the eza and bat aliases above for the box
+# that somehow does not.
 #
 # -TERM, not fuser's default KILL, so servers run their shutdown handlers.
 if command -v fuser &>/dev/null; then
@@ -288,8 +288,8 @@ findword() {
 #
 # The xz and zstd cases pipe through the decompressor rather than using tar's
 # own -J / --zstd. Both spellings are GNU-tar-isms that bsdtar either lacks or
-# spells differently, and macOS is CI-tested only — a decompressor writing to
-# `tar xf -` is the construct that works on every tar we claim to support.
+# spells differently; a decompressor writing to `tar xf -` works on every tar,
+# and the pipe is also the only spelling that threads (see compress).
 extract() {
     if [ -f "$1" ]; then
         case "$1" in
@@ -339,7 +339,7 @@ extract() {
 #
 # Parallelism comes from `-T0` and from pigz/pbzip2 rather than from counting
 # cores here: every one of those spellings means "all of them" already, so
-# there is no nproc/sysctl split to get wrong on macOS.
+# there is no core count to get wrong.
 #
 # The tar path pipes (`tar -cf - | filter`) instead of using tar's -z/-j/-J/
 # --zstd. Same reason as extract above: the pipe is the portable construct, and
@@ -442,9 +442,10 @@ compress() {
             _compress_filter "$fmt" "$level" || {
                 echo "compress: no compressor available for .$fmt" >&2; return 1; }
             if [ $tarred -eq 1 ]; then
-                # COPYFILE_DISABLE stops macOS tar emitting a ._ AppleDouble
-                # sidecar for every file, which the Linux side then unpacks as
-                # litter. Harmless no-op on GNU tar.
+                # COPYFILE_DISABLE is a no-op on GNU tar; it stops bsdtar
+                # emitting ._ AppleDouble sidecars, which matters when the
+                # archive is made on a Mac and unpacked here. Kept: it costs
+                # nothing and the archives still travel.
                 COPYFILE_DISABLE=1 tar -cf - -- "${inputs[@]}" | "${COMPRESS_CMD[@]}" > "$out"
             else
                 "${COMPRESS_CMD[@]}" < "${inputs[0]}" > "$out"
@@ -674,8 +675,8 @@ _sheet_convert() {
 2pickle()  { _sheet_convert pickle  "$@"; }
 
 # Where this repo lives, resolved from the symlink bashrc was sourced through.
-# Plain `readlink`, not `readlink -f`: macOS is CI-tested only and BSD readlink
-# has no -f, so -f is tried first and the portable spelling is the fallback.
+# `readlink -f` first, plain `readlink` as the fallback -- the order is from
+# when BSD readlink was a target, and the fallback costs nothing.
 _dotfiles_dir() {
     local link
     link="$(readlink -f ~/.bashrc 2>/dev/null || readlink ~/.bashrc)"
@@ -898,7 +899,7 @@ z — zoxide (smarter cd)
     It's a drop-in `cd` rplacement - you don't change any habits,
     you just type less over time.
 
-  Install: brew install zoxide
+  Install: make install bash
 HELP
       ;;
     downloads)
@@ -963,7 +964,7 @@ HELP
   FZF_DEFAULT_COMMAND controls what `fzf` lists when run with no input.
   We point it at `fd` so it respects .gitignore and skips .git/.
 
-  Depends on: fzf (brew install fzf), optionally fd for faster file listing
+  Depends on: fzf (make install bash), optionally fd for faster file listing
 HELP
       ;;
     extract)
@@ -1306,8 +1307,8 @@ port — check what's using a port
   port 3000         Show process on port 3000
   port 8080         Show process on port 8080
 
-  Tries lsof first (works on macOS + Linux), falls back to
-  ss -tlnp on Linux. Shows PID, process name, and state.
+  Tries lsof first, falls back to
+  ss -tlnp. Shows PID, process name, and state.
 HELP
       ;;
     killport)

@@ -45,12 +45,6 @@ case $- in
       *) return;;
 esac
 
-# ─── OS Detection ─────────────────────────────────────────────────
-case "$(uname -s)" in
-  Darwin) _OS=mac ;;
-  *)      _OS=linux ;;
-esac
-
 # ─── Global definitions (RHEL/Fedora) ────────────────────────────
 # RHEL's /etc/bashrc sets up the module system, /etc/profile.d/*,
 # and default environment. Source it early so our config can override.
@@ -116,20 +110,12 @@ fi
 
 # ─── Alert (for long-running commands: `sleep 10; alert`) ────────
 unalias alert 2>/dev/null
-if [[ "$_OS" == "mac" ]]; then
-  alert() {
-    local msg
-    msg=$(history | tail -n1 | sed 's/^[[:space:]]*[0-9][0-9]*[[:space:]]*//;s/[;&|][[:space:]]*alert$//')
-    osascript -e "display notification \"$msg\" with title \"Terminal\""
-  }
-else
-  alert() {
-    local icon msg
-    icon=$([ $? = 0 ] && echo terminal || echo error)
-    msg=$(history | tail -n1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')
-    notify-send --urgency=low -i "$icon" "$msg"
-  }
-fi
+alert() {
+  local icon msg
+  icon=$([ $? = 0 ] && echo terminal || echo error)
+  msg=$(history | tail -n1 | sed -e 's/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//')
+  notify-send --urgency=low -i "$icon" "$msg"
+}
 
 #####################################################################
 # PATH
@@ -137,12 +123,9 @@ fi
 
 export PATH="$HOME/bin:$PATH"
 
-# Homebrew
-if [[ "$_OS" == "mac" ]]; then
-  eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv 2>/dev/null)"
-else
-  [[ -d "/home/linuxbrew/.linuxbrew" ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-fi
+# linuxbrew, where a machine has it. (The Darwin half of this went with macOS
+# support on 2026-10-26 -- docs/decisions/macos.md.)
+[[ -d "/home/linuxbrew/.linuxbrew" ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 
 # ─── .NET ──────────────────────────────────────────────────────────
 export DOTNET_ROOT="$HOME/.dotnet"
@@ -155,13 +138,7 @@ export PATH="$DOTNET_ROOT:$PATH"
 [ -d "$DOTNET_ROOT/tools" ] && export PATH="$DOTNET_ROOT/tools:$PATH"
 
 # ─── Java ──────────────────────────────────────────────────────────
-if [[ "$_OS" == "mac" ]]; then
-  # Split, not `export JAVA_HOME=$(...)`: a combined declaration returns
-  # export's status, not java_home's, so a machine with no JDK would set
-  # JAVA_HOME to empty and look like it succeeded.
-  JAVA_HOME="$(/usr/libexec/java_home 2>/dev/null)"
-  export JAVA_HOME
-elif [[ -d /usr/lib/jvm ]]; then
+if [[ -d /usr/lib/jvm ]]; then
   # Works on both Debian (-amd64 suffix) and RHEL (no suffix)
   for _jvm in /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/java-17*; do
     [[ -d "$_jvm" ]] && export JAVA_HOME="$_jvm" && break
@@ -226,9 +203,9 @@ export SUDO_EDITOR=nvim
 # which is declared). Anything in the shell that wants repo data should
 # defer through here rather than restate it.
 #
-# Plain `readlink`, not `readlink -f`: -f is a GNU extension that BSD and
-# older macOS don't carry, and install.sh creates single-level absolute
-# links, so one hop is all there is to resolve. Left unset if this file
+# Plain `readlink`, not `readlink -f`: install.sh creates single-level
+# absolute links, so one hop is all there is to resolve, and the plain
+# spelling needs nothing GNU. Left unset if this file
 # isn't a symlink (someone copied it instead of installing) — callers
 # check before using it.
 if [[ -L "${BASH_SOURCE[0]}" ]]; then

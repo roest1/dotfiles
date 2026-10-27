@@ -8,7 +8,7 @@ A modular Neovim configuration built on **lazy.nvim**, forked from kickstart-mod
 
 ## Bootstrap & Dependencies
 
-The editor toolchain is declared in the parent repo's `../deps.conf` under `[nvim]` — that's the single source of truth, and `make deps` here delegates to it. `nvim/deps.sh` holds only platform-conditional fixups (dnf's `clang-devel` for bindgen, apt's `fdfind`→`fd`, WSL/macOS/Linux clipboard backends for `:PasteImage`). The tool list for `:checkhealth external` lives in `lua/external/reqs.lua`.
+The editor toolchain is declared in the parent repo's `../deps.conf` under `[nvim]` — that's the single source of truth, and `make deps` here delegates to it. `nvim/deps.sh` holds only platform-conditional fixups (dnf's `clang-devel` for bindgen, apt's `fdfind`→`fd`, WSL/Linux clipboard backends for `:PasteImage`). The tool list for `:checkhealth external` lives in `lua/external/reqs.lua`.
 
 Run `:checkhealth external` to verify tool availability — logic in `lua/external/health.lua`.
 

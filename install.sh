@@ -26,11 +26,6 @@ BACKUP_DIR="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
 # shellcheck source=lib/manifest.sh
 source "$DOTFILES_DIR/lib/manifest.sh"
 
-case "$(uname -s)" in
-  Darwin) _OS=mac ;;
-  *)      _OS=linux ;;
-esac
-
 # Named sections are validated and used as given; with none named this falls
 # back to the machine's own set (see manifest_scope). Naming one always wins,
 # so `./install.sh claude` still links Claude on a machine that opted out of it.
@@ -117,7 +112,7 @@ prune_orphans() {
 }
 
 echo ""
-echo "Linking dotfiles from $DOTFILES_DIR ($_OS)"
+echo "Linking dotfiles from $DOTFILES_DIR"
 if [[ ${#SECTIONS[@]} -gt 0 ]]; then
   echo "Sections: ${SECTIONS[*]}"
 else
@@ -182,15 +177,6 @@ echo "-------------------------------------------"
 
 if [[ -d "$BACKUP_DIR" ]]; then
   echo "Backed up existing files to: $BACKUP_DIR"
-fi
-
-if [[ "$_OS" == "mac" ]]; then
-  current_shell="$(dscl . -read /Users/"$USER" UserShell 2>/dev/null | awk '{print $2}')"
-  if [[ "$current_shell" != *bash* ]]; then
-    echo ""
-    echo "NOTE: Your default shell is $current_shell"
-    echo "  To switch to bash:  make shell   (or: chsh -s /bin/bash)"
-  fi
 fi
 
 echo "Done! Restart your shell or run: reload"

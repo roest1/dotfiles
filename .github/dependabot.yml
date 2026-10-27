@@ -62,7 +62,7 @@ version: 2
 #
 # ── Still invisible, and worth remembering ──────────────────────────────────
 #
-# deps.conf (a custom format; ~17 tools from dnf/apt/brew/mise/cargo) and
+# deps.conf (a custom format; ~17 tools from dnf/apt/mise/cargo) and
 # nvim/lazy-lock.json (26 neovim plugins — arbitrary Lua from 26 GitHub repos,
 # realistically the largest attack surface here, with no advisory database that
 # covers it; pinned commits are the mitigation). Nothing here will warn that a

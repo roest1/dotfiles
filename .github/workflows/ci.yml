@@ -38,21 +38,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # macOS ships bash 3.2 as /bin/bash, and that is what runs install.sh and
-      # everything it sources -- the Makefile calls `bash install.sh`, which
-      # resolves through PATH, and on a fresh Mac that is 3.2. So the whole
-      # lib/ + install path is 3.2 territory, however modern the shell you
-      # develop in.
-      #
-      # This is not hypothetical and it is not caught reliably by the macos
-      # jobs. `mapfile` sat in run_hooks on main for months without failing,
-      # because `make install bash` passes an argument and the branch holding
-      # it was never reached; a bare `make install` on a Mac would have hit it.
-      # A construct that only breaks on the untested path is exactly what a
-      # grep is for.
-      #
-      # bash/bashrc is deliberately NOT scanned: it guards its bash 4 features
-      # behind BASH_VERSINFO, which is the correct pattern and would trip this.
       # A Makefile target that shares a name with a real path is not an error --
       # make decides the target is already up to date and runs NOTHING. `make
       # windows` did exactly that against the windows/ directory: no output, no
@@ -132,20 +117,6 @@ jobs:
             exit 1
           fi
           echo "ok: every Makefile target is declared .PHONY"
-
-      - name: No bash 4+ constructs where /bin/bash 3.2 must run
-        run: |
-          set -uo pipefail
-          bad=$(grep -rnE '^[^#]*(local -n |[^_[:alnum:]]mapfile |[^_[:alnum:]]readarray |declare -A )' \
-                  lib/*.sh install.sh bootstrap.sh */deps.sh 2>/dev/null || true)
-          if [ -n "$bad" ]; then
-            echo "$bad"
-            echo ""
-            echo "bash 4+ construct on a path macOS's /bin/bash 3.2 must run."
-            echo "Use a fixed global + read loop instead of 'local -n' + mapfile."
-            exit 1
-          fi
-          echo "ok: nothing on the 3.2 path needs bash 4"
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -1434,8 +1405,6 @@ jobs:
         include:
           - name: linux
             os: ubuntu-latest
-          - name: macos
-            os: macos-latest
     steps:
       - uses: actions/checkout@v7
       - name: make link
@@ -1490,9 +1459,9 @@ jobs:
       # claude/CLAUDE.md would load the user prompt a second time, as directory
       # memory, whenever anyone edited claude/settings.json.
       #
-      # Checked case-insensitively because the macOS leg of this matrix runs on
-      # APFS, where `claude/claude.md` IS `claude/CLAUDE.md` to the lookup. A
-      # case-sensitive test would pass on Linux and let the collision ship.
+      # Checked case-insensitively: on a case-insensitive filesystem
+      # `claude/claude.md` IS `claude/CLAUDE.md` to the lookup, and a
+      # case-sensitive test here would pass and let the collision ship there.
       - name: The user memory file is not also directory memory
         run: |
           if find claude -maxdepth 1 -iname 'claude.md' | grep -q .; then
@@ -1549,9 +1518,6 @@ jobs:
           - name: ubuntu / apt
             runs-on: ubuntu-latest
             container: ''
-          - name: macos / brew
-            runs-on: macos-latest
-            container: ''
           - name: fedora / dnf
             runs-on: ubuntu-latest
             container: fedora:latest
@@ -1590,8 +1556,7 @@ jobs:
       # [uv] is installed on every platform in this matrix, and Fedora is the
       # one that makes it worth doing: dnf HAS a uv package, so if the
       # preference ever regresses to `pkg` this job gets /usr/bin/uv and fails,
-      # where ubuntu (no package) and macos (a keg that is not on PATH first)
-      # would both still pass by accident.
+      # where ubuntu (no package) would still pass by accident.
       #
       # The assertion is provenance, not presence. `make check uv` would go
       # green for the distro build — the tool exists, it just cannot update
@@ -1613,10 +1578,6 @@ jobs:
           if command -v dpkg >/dev/null 2>&1 && dpkg -S "$resolved" >/dev/null 2>&1; then
             echo "uv came from dpkg — ensure_uv preferred the distro package"; exit 1
           fi
-          case "$resolved" in
-            */Cellar/*) echo "uv came from brew — ensure_uv preferred the keg"; exit 1 ;;
-          esac
-
           # Not a distro build is necessary, not sufficient: pip --user also
           # installs into ~/.local/bin, and that copy cannot self-update
           # either. uv decides from the receipt Astral's installer writes, so
@@ -1708,7 +1669,7 @@ jobs:
       # nvim/lua/external/altfont.lua emits SGR 5 over the text of a file buffer
       # so wezterm's font_rules can draw it in another font. Everywhere else SGR
       # 5 means what it says -- BLINK -- so getting the guard wrong sets an
-      # entire source file flashing over ssh, in GNOME Terminal, on a Mac. The
+      # entire source file flashing over ssh, in GNOME Terminal, in a console. The
       # author never sees it: they are always in wezterm and always linked.
       #
       # Runtime rather than a grep, because what is being asserted is what
@@ -2304,7 +2265,7 @@ jobs:
 
   # ── Windows host ───────────────────────────────────────────────────────────
   # The only job that executes the PowerShell entry point. Every other job here
-  # runs on Linux or macOS, where windows/install.ps1 is unreachable — so
+  # runs on Linux, where windows/install.ps1 is unreachable — so
   # without this, a syntax error in it ships and is discovered by whoever next
   # bootstraps a Windows machine, which is the worst possible time.
   windows:

@@ -49,8 +49,8 @@ nvim_version() {
   nvim --version 2>/dev/null | awk 'NR==1 { sub(/^v/, "", $2); print $2 }'
 }
 
-# True when $1 is below the floor. Deliberately not `sort -V`: macOS ships BSD
-# sort, and only major/minor matter here anyway.
+# True when $1 is below the floor. Not `sort -V`: only major/minor matter here
+# and a string split is simpler than a sort for two numbers.
 nvim_below_floor() {
   local v="$1" maj min rest
   [ -n "$v" ] || return 1
@@ -112,8 +112,8 @@ fi
 
 # ── lemminx (XML language server) ────────────────────────────────────────────
 #
-# The one server with no package manager anywhere: not in dnf, apt, brew, the
-# aqua registry, or npm. Mason installed it by pulling a zip from
+# The one server with no package manager anywhere: not in dnf, apt, the aqua
+# registry, or npm. Mason installed it by pulling a zip from
 # redhat-developer/vscode-xml's releases, so this does the same thing — which is
 # why deps.conf declares it `manual`.
 #
@@ -126,7 +126,6 @@ install_lemminx() {
 
   local os arch asset
   case "$(uname -s)" in
-    Darwin) os="osx" ;;
     Linux)  os="linux" ;;
     *) echo "  ⚠️  lemminx: unsupported OS $(uname -s) — skipping"; return 0 ;;
   esac
@@ -215,18 +214,12 @@ install_roslyn
 # Lets `:PasteImage` drop a screenshot from the OS clipboard into a directory
 # (e.g. while browsing in Oil). Backend depends on the platform:
 #   • WSL2  → uses Windows PowerShell, nothing to install
-#   • macOS → pngpaste (brew)
 #   • Linux → xclip (X11) + wl-clipboard (Wayland); install both, harmless
 #
 # Genuinely a runtime probe (/proc/version), not something a manifest can state.
-#
-# The macOS test is `uname -s`, NOT `$PM = brew`. Those are the same thing only
-# if brew implies macOS, and linuxbrew is the counterexample: a RHEL box with
-# linuxbrew took this branch and ran `brew install pngpaste`, which has no Linux
-# bottle. It failed, and since this is the last block in the file, `set -e` made
-# its exit status the script's — "nvim/deps.sh failed" for a clipboard helper
-# that machine has no use for. Same class of mistake as keying a provider on
-# $PM; see CLAUDE.md.
+# (A macOS branch lived here until 2026-10-26, and once ran `brew install
+# pngpaste` on a RHEL box with linuxbrew because it keyed on $PM -- the same
+# class of mistake as keying a provider on $PM; see CLAUDE.md.)
 #
 # Nothing here is load-bearing: :PasteImage degrades to an error message. So the
 # whole block is best-effort and must not decide the script's exit status.
@@ -238,8 +231,6 @@ if is_wsl; then
   # powershell.exe is an .exe, so this backend is only as alive as WSL interop.
   ensure_wsl_interop || true
   echo "  ✅ WSL — uses Windows PowerShell, no install needed"
-elif [ "$(uname -s)" = "Darwin" ]; then
-  pkg_install "pngpaste" || echo "  ⚠️  :PasteImage will not work without pngpaste"
 elif [ -n "${PM}" ]; then
   pkg_install "xclip" || true
   pkg_install "wl-paste" || true

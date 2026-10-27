@@ -24,7 +24,7 @@ end)
 -- Smart clipboard provider:
 --   • WSL/SSH  → manual OSC52 write to stderr (copy-only; no terminal query)
 --               paste reads local register to avoid the terminal-response timeout
---   • Local    → leave unset; nvim auto-picks wl-copy / pbcopy / xclip
+--   • Local    → leave unset; nvim auto-picks wl-copy / xclip
 -- Note: tmux swallows OSC52 unless `set -g set-clipboard on` is set.
 if vim.fn.has 'wsl' == 1 or vim.env.SSH_TTY or vim.env.SSH_CONNECTION then
   local function osc52_copy(lines, _)
@@ -196,7 +196,7 @@ vim.api.nvim_create_autocmd('FileType', {
 -- one autocmd covers oil's <CR> (which goes through bufadd + :buffer, not
 -- :edit), `nvim x.pdf`, :e, and telescope alike.
 --
--- vim.ui.open carries this on mac and on a real Linux desktop. It is NOT
+-- vim.ui.open carries this on a real Linux desktop. It is NOT
 -- enough under WSL, and the failure is silent both ways — see os_open below.
 --
 -- Raster images only. SVG is deliberately absent: it is text, and editing one
