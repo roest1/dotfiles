@@ -213,27 +213,6 @@ Behavior:~
 Location: lua/external/plugins/render-markdown.lua
 
 ==============================================================================
-:GLOW                                                        *dotfiles-commands-glow*
-
-Render Markdown preview in terminal.
-
-Usage:~
-    :Glow
-
-Behavior:~
-    - Opens interactive preview of current markdown file
-    - Press q to exit
-
-Requirements:~
-    glow CLI tool
-
-Install:~
-    brew install glow
-    sudo apt install glow
-
-Location: lua/external/plugins/glow.lua
-
-==============================================================================
 :PASTEIMAGE                                            *dotfiles-commands-pasteimage*
 
 Paste an image from the OS clipboard into a directory as a PNG. Pairs with Oil
@@ -255,6 +234,51 @@ Backend (auto-detected):~
     macOS           pngpaste              (brew), else osascript
 
 Location: lua/external/pasteimg.lua
+
+==============================================================================
+:KEYMAPUSAGE                                            *dotfiles-commands-usage*
+                                                                 *:KeymapUsage*
+
+How often each mapping has actually been pressed.
+
+Usage:~
+    :KeymapUsage            every current mapping, zeros first
+    :KeymapUsage reset      delete the record and start over
+
+Behavior:~
+    - lua/external/usage.lua watches typed keys in normal and visual mode and
+      matches them against the mappings active in the buffer, so a count is a
+      real press of that mapping, not a key that happened to appear in text
+    - Written to stdpath('state')/keymap-usage.json -- ~/.local/state/nvim,
+      which is OUTSIDE the work tree. It cannot be committed by accident
+      because git never sees it. Do not move it under the config directory,
+      which is a symlink into the repo.
+    - Flushed every 25 presses and on exit; two running editors merge rather
+      than overwrite
+
+Why:~
+    The June 2026 cleanup deleted ~40 mappings on judgement and this help
+    kept describing them for four months. The next cleanup should delete
+    zeros instead. tools/usage.sh in the repo root does the same for the
+    shell and prints both halves together.
+
+Location: lua/external/usage.lua
+
+==============================================================================
+:ALTFONT                                              *dotfiles-commands-altfont*
+
+Report or toggle the alternate-font carrier -- file buffers drawn in a
+different wezterm font from oil, telescope and the chrome.
+
+Usage:~
+    :AltFont                what it decided and why
+    :AltFont toggle         off for this session
+
+Only active under wezterm with this repo's config linked; anywhere else the
+attribute it uses would mean blinking text, so it refuses. The mechanism and
+the three things not to "tidy" are in nvim/CLAUDE.md.
+
+Location: lua/external/altfont.lua
 
 ==============================================================================
 CORE TOOLING                                                *dotfiles-commands-core*

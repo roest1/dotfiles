@@ -13,8 +13,8 @@ How Neovim integrates Lua: `:help lua-guide`
 
 Neovim Tutor: `:Tutor`
 
-Help: `:help`
-- (or telescope version): `<space>sh` to [s]earch the [h]elp documentation
+Help: `:help dotfiles` for this config, `:help` for everything else
+- (or telescope version): `:Telescope help_tags`
 - several `:help X` options for relevant settings, plugins, or Neovim features
 
 Check Health: `:checkhealth` 
@@ -48,3 +48,4 @@ require('external.copy').setup()
 require('external.pasteimg').setup()
 require('external.reset').setup()
 require('external.altfont').setup()
+require('external.usage').setup()

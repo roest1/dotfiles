@@ -14,9 +14,9 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 
 ## Architecture
 
-**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `reset`, `altfont`).
+**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `reset`, `altfont`, `usage`). `oilgit` is the exception: oil's own `config` loads it, because it has nothing to do until oil does.
 
-**Plugin loading:** `lua/lazy-plugins.lua` calls `lua/external/plugins/init.lua`, which holds a hardcoded `plugin_modules` list (currently 17 entries). Each plugin is a separate file in `lua/external/plugins/` returning a lazy.nvim spec table.
+**Plugin loading:** `lua/lazy-plugins.lua` calls `lua/external/plugins/init.lua`, which holds a hardcoded `plugin_modules` list (currently 16 entries). Each plugin is a separate file in `lua/external/plugins/` returning a lazy.nvim spec table.
 
 **Custom modules** (not lazy.nvim plugins — loaded directly in `init.lua`):
 - `lua/external/copy.lua` — `:Copy` command, copies file contents to clipboard for LLM sharing
@@ -24,6 +24,8 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 - `lua/external/pasteimg.lua` — paste an image from the clipboard into a buffer
 - `lua/external/reset.lua` — `:ResetNvim` nuclear plugin reset
 - `lua/external/altfont.lua` — renders file buffers in a different terminal font from oil and the rest of the UI. See below.
+- `lua/external/usage.lua` — `:KeymapUsage`, counts real presses of each mapping into `stdpath('state')`, outside the work tree. See "Pruning is measured" below.
+- `lua/external/oilgit.lua` — `:OilGit`, the diffstat column in oil; loaded from `plugins/oil.lua`, not `init.lua`.
 
 ## The alternate-font carrier (`altfont.lua`)
 
@@ -70,7 +72,7 @@ the session. `font` (in bash) picks which family the lane maps to.
 - LSP servers are defined in `lua/external/lsp_servers.lua` (a plain table, kept out of the plugin spec so `nvim/tests/lsp_servers_spec.lua` can assert on it under `--clean`) and wired up in `lua/external/plugins/lsp.lua`. There is no Mason: native servers are declared in `../deps.conf`, JS ones in `lsp-servers/package.json` and run as `bun <path>` via explicit `cmd` overrides. TypeScript's `tsc` (TS 7, native) also comes from `lsp-servers/package.json` but runs as the platform binary directly, with no runtime
 - Formatters are configured in `lua/external/plugins/formatter.lua` (conform.nvim) by filetype
 - Linters are configured in `lua/external/plugins/lint.lua` (nvim-lint) by filetype
-- Completion is handled by `blink.cmp` (`lua/external/plugins/blink-cmp.lua`), which also provides LSP capabilities
+- There is no completion plugin. `blink.cmp` sat in the list as `enabled = false` from 2026-06 to 2026-10 and was deleted rather than kept off; servers get `vim.lsp.protocol.make_client_capabilities()` and `lsp.lua` says where an engine would plug back in
 
 ## Adding a New Plugin
 
@@ -90,9 +92,30 @@ The rule: the shell documents the shell, the editor documents the editor, and ne
 
 The README is a short orientation page (install + keymap quick-reference + pointers into `:help`).
 
+## Pruning is measured, and the docs are checked
+
+Commit 37fa6ce (2026-06-17) deleted ~40 mappings on judgement, and `doc/`
+kept describing every one of them until 2026-10, because the `h` rule that
+keeps the shell honest had no equivalent for the editor. Two things now
+exist so that does not repeat:
+
+- **`:KeymapUsage`** (`lua/external/usage.lua`) counts real presses of every
+  active mapping into `~/.local/state/nvim/keymap-usage.json`. That path is
+  outside the work tree on purpose -- the same property that keeps
+  `~/.bash_local` out of git -- so nothing here can commit a usage log by
+  accident. Do not move it under `~/.config/nvim`, which is a symlink into
+  the repo. `tools/usage.sh` in the repo root prints it next to the shell's
+  history counts. The next cleanup deletes zeros; it does not guess.
+- **CI checks `doc/` against `lua/` in both directions** (the `manifest`
+  job): every `<leader>` key named in `doc/*.txt` or `README.md` must be
+  defined under `lua/`, every `<leader>` key defined under `lua/` must be
+  named in `doc/dotfiles-keymaps.txt`, and every `nvim_create_user_command`
+  must have a page in `doc/`. A mapping and its help line change in the same
+  commit.
+
 ## Maintenance & Audit
 
-As the config grows, unused components accumulate (plugins you disabled, keybinds for removed tools, settings that conflict). Periodically audit to keep the ~5,000 lines manageable. Use this framework:
+As the config grows, unused components accumulate (plugins you disabled, keybinds for removed tools, settings that conflict). Start from `:KeymapUsage` and `tools/usage.sh`; the framework below is for what those cannot see:
 
 ### Unused External Plugins
 

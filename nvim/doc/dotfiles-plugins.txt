@@ -3,29 +3,14 @@
 ==============================================================================
 PLUGINS                                                        *dotfiles-plugins*
 
-Every plugin in your config, what it does, and how to use it.
+Every plugin in lua/external/plugins/init.lua, what it does, and the keys or
+commands it adds. Run `:Lazy` to see plugin status.
 
-Run `:Lazy` to see plugin status. Press `?` for help in that menu.
-
-==============================================================================
-BLINK.CMP (COMPLETION)                                  *dotfiles-plugins-blink*
-
-Autocompletion engine. Shows suggestions as you type.
-
-Location: lua/external/plugins/blink-cmp.lua
-
-Keymaps (insert mode, when menu is visible):
-    <Tab>           Next completion item
-    <S-Tab>         Previous item
-    <CR>            Confirm selection
-    <C-Space>       Manually trigger completion
-    <C-e>           Dismiss menu
-    <C-b>/<C-f>     Scroll documentation
-
-Features:
-    - Ghost text (inline preview of what would be inserted)
-    - Signature help (shows function parameters as you type)
-    - Sources: LSP → path → snippets → buffer (priority order)
+There is no completion plugin. blink.cmp sat in the list as `enabled = false`
+from June to October 2026, so the editor ran without one for four months
+while this file described its keymaps; the spec was deleted rather than
+kept disabled. LSP servers get Neovim's own capabilities (lsp.lua). If a
+completion engine comes back, that is the line it extends.
 
 ==============================================================================
 TELESCOPE                                              *dotfiles-plugins-telescope*
@@ -37,26 +22,12 @@ Location: lua/external/plugins/telescope.lua
 Keymaps:
     <leader>sf      Find files
     <leader>sg      Grep text in project
-    <leader>sh      Search help
-    <leader>sk      Search keymaps
-    <leader>sw      Search word under cursor
-    <leader>sd      Search diagnostics
-    <leader>sr      Resume last search
-    <leader>s.      Recent files
-    <leader>s/      Search in open files only
-    <leader>sn      Search Neovim config files
-    <leader>ss      Select Telescope picker
-    <leader>/       Search in current file
-    <leader><leader> Find open buffers
 
-Inside Telescope:
-    <CR>            Open selected
-    <C-x>           Open in horizontal split
-    <C-v>           Open in vertical split
-    <C-/>           Show keymaps (insert mode)
-    ?               Show keymaps (normal mode)
+Everything else is `:Telescope <picker>`; see |dotfiles-keymaps-telescope|.
+telescope-ui-select routes `vim.ui.select` (code actions, among others)
+through a dropdown.
 
-Dependencies: plenary.nvim, telescope-fzf-native.nvim
+Dependencies: plenary.nvim, telescope-fzf-native.nvim, telescope-ui-select.nvim
 
 ==============================================================================
 HARPOON                                                  *dotfiles-plugins-harpoon*
@@ -70,16 +41,8 @@ Keymaps:
     <C-e>           Toggle quick menu
     <C-n>           Next file
     <C-p>           Previous file
-    <leader>fl      View list in Telescope
-    <leader>hr      Clear the list
 
-Workflow:
-    1. Open files for a task
-    2. <leader>a on each one
-    3. <C-n>/<C-p> to jump between them
-    4. <leader>hr when done
-
-See also: |dotfiles-harpoon|
+See |dotfiles-harpoon| for the workflow and how the list is cleared.
 
 ==============================================================================
 OIL                                                          *dotfiles-plugins-oil*
@@ -100,9 +63,14 @@ Inside Oil:
 
 Edit the buffer to rename/delete/create files, then :w to apply.
 
+Commands:
+    :OilColumns             Show which optional columns are on
+    :OilColumns mtime size  Toggle columns (mtime size atime ctime birthtime
+                            type permissions); icon is always on
+
 <CR> on a PDF or a raster image (.png .jpg .jpeg .gif .webp .bmp .avif) hands
 the file to the OS's default viewer instead of opening it. Nothing is loaded
-into a buffer — you stay in Oil. Same for `nvim x.pdf` and :e. To read the
+into a buffer -- you stay in Oil. Same for `nvim x.pdf` and :e. To read the
 raw bytes anyway, use `:noautocmd e file.pdf`.
 
 .svg is deliberately not in that list: it is text, and worth editing in a
@@ -112,12 +80,12 @@ support is too incomplete for snacks.image or image.nvim to rely on.
 Under WSL the file goes to the WINDOWS default viewer, via explorer.exe. It
 does not go through vim.ui.open there: nvim tries xdg-open before wslview, and
 WSLg supplies a working xdg-open, so the file would be handed to whatever
-Linux desktop entry the guest happens to have — xpdf for a .pdf, and for a
+Linux desktop entry the guest happens to have -- xpdf for a .pdf, and for a
 .png usually nothing at all, failing into a discarded stderr. See the comment
 above os_open() for the whole chain.
 
 On a machine with no desktop handler at all (headless RHEL, a container), it
-warns and loads the file normally instead — the same binary buffer you got
+warns and loads the file normally instead -- the same binary buffer you got
 before this existed. It never becomes a silent no-op.
 
 Location: lua/options.lua (BufReadCmd autocmd)
@@ -133,18 +101,18 @@ right edge, matching the git section of the bash PS1:
 Combines staged and unstaged changes. Commands:
     :OilGit         Toggle the diffstat overlay on/off
 
-Location: lua/external/oilgit.lua
+Location: lua/external/oilgit.lua (loaded from oil.lua's config)
 
 Paste image from clipboard ~                       *dotfiles-plugins-pasteimage*
                                                                   *:PasteImage*
 
-Drop an image off the OS clipboard into a directory as a PNG — the
-"screenshot → snip → paste into Oil" workflow, like pasting a file in a GUI
+Drop an image off the OS clipboard into a directory as a PNG -- the
+"screenshot -> snip -> paste into Oil" workflow, like pasting a file in a GUI
 file manager.
 
     1. Take a screenshot to the clipboard:
          Windows/WSL   Win+Shift+S         (Snipping Tool)
-         macOS         Cmd+Ctrl+Shift+4    (region → clipboard)
+         macOS         Cmd+Ctrl+Shift+4    (region -> clipboard)
          Linux         your snipper's "copy to clipboard" option
     2. Open Oil at the destination directory (`-`).
     3. Run a command:
@@ -161,15 +129,15 @@ everywhere:
     Linux / X11     xclip                     (pkg: xclip)
     macOS           pngpaste                  (brew), else osascript
 
-Install the per-platform tool with ./bootstrap.sh; verify with
-`:checkhealth external`.
+The per-platform tool is installed by nvim/deps.sh (`make install nvim`);
+verify with `:checkhealth external`.
 
 Location: lua/external/pasteimg.lua
 
 ==============================================================================
 LSP                                                          *dotfiles-plugins-lsp*
 
-Language Server Protocol — code intelligence.
+Language Server Protocol -- code intelligence.
 
 Location: lua/external/plugins/lsp.lua
 
@@ -183,7 +151,7 @@ Configured servers:
     yamlls          YAML
     bashls          Bash
     lemminx         XML
-    roslyn          C# (separate plugin)
+    roslyn          C# (separate plugin, see |dotfiles-plugins-roslyn|)
 
 Keymaps (when LSP is attached):
     grd             Go to definition
@@ -195,17 +163,16 @@ Keymaps (when LSP is attached):
     gra             Code action (fixes, refactors)
     gO              Document symbols
     gW              Workspace symbols
-    <leader>th      Toggle inlay hints
 
-Related: blink.cmp (completion), fidget.nvim (LSP progress),
-    lazydev.nvim (Lua-specific). No mason.nvim — servers are declared, not
-    installed from the editor. See |dotfiles-commands-servers|.
+Related: fidget.nvim (LSP progress in the corner), lazydev.nvim (Lua-specific
+library paths). No mason.nvim -- servers are declared, not installed from the
+editor. See |dotfiles-commands-servers|.
 
 ==============================================================================
 CONFORM (FORMATTER)                                  *dotfiles-plugins-formatter*
 
 Auto-formatting on save, plus <leader>l on demand. The on-save hook lives in
-lua/options.lua as a BufWritePre autocmd — see |dotfiles-keymaps-formatting|.
+lua/options.lua as a BufWritePre autocmd -- see |dotfiles-keymaps-formatting|.
 
 Location: lua/external/plugins/formatter.lua
 
@@ -218,20 +185,21 @@ Formatters by filetype:
     typescript          prettier
     typescriptreact     prettier
     javascriptreact     prettier
-    json                prettier
+    json, jsonc         prettier
     markdown            prettier
     html                prettier
     css                 prettier
     yaml                prettier
     python              ruff
 
-prettierd is gone — it was an npm global and left with node. prettier itself is
-declared in nvim/lsp-servers/package.json and run as `bun <path> --write`, the
-same way the language servers are.
+prettier is declared in nvim/lsp-servers/package.json and run as
+`bun <path> --write`, the same way the language servers are. `--write` on
+the file, not stdin: prettier's stdin mode exits 0 and writes nothing under
+bun.
 
 Not listed, and deliberately: bash and toml. prettier has no parser for either
 ("No parser could be inferred"), so those mappings never worked. shfmt and taplo
-are the usual answers if you want them — both native binaries, a deps.conf line
+are the usual answers if you want them -- both native binaries, a deps.conf line
 each, no JavaScript involved.
 
 ==============================================================================
@@ -243,21 +211,19 @@ Location: lua/external/plugins/lint.lua
 
 Linters by filetype:
     python              ruff
-    javascript          eslint_d   (not installed — see below)
-    typescript          eslint_d   (not installed — see below)
 
-eslint_d was an npm global and left with node. The mapping is kept because
-nvim-lint only runs linters whose executable is on PATH, so a missing one costs
-nothing. To make JS/TS linting real again, add it to
-nvim/lsp-servers/package.json and run it through bun, the way prettier is.
+That is the whole table. eslint_d was listed for JS/TS for months after node
+left and nothing installed it, so the entry linted nothing. A mapping is only
+as real as the binary behind it: to lint JS/TS, add eslint to
+nvim/lsp-servers/package.json, run it through bun the way prettier is, and
+add the table entry in the same commit.
 
 Runs on: save, insert-leave, buffer read.
-Diagnostics appear alongside LSP errors in the gutter.
 
 ==============================================================================
 GITSIGNS                                                *dotfiles-plugins-gitsigns*
 
-Git gutter signs + staging/blame without leaving Neovim.
+Git gutter signs and hunk navigation.
 
 Location: lua/external/plugins/gitsigns.lua
 
@@ -270,32 +236,26 @@ Signs:
 Keymaps:
     ]c              Next change
     [c              Previous change
-    <leader>hs      Stage hunk
-    <leader>hS      Stage buffer
-    <leader>hu      Undo stage hunk
-    <leader>hr      Reset hunk
-    <leader>hR      Reset buffer
-    <leader>hp      Preview hunk
-    <leader>hb      Blame line
-    <leader>hd      Diff vs index
-    <leader>hD      Diff vs last commit
-    <leader>tb      Toggle line blame
-    <leader>tD      Toggle deleted preview
+
+Staging and blame are `:Gitsigns stage_hunk`, `:Gitsigns blame_line`,
+`:Gitsigns preview_hunk`. The leader-h mappings that wrapped them were
+deleted in 37fa6ce. The statusline reads gitsigns' branch name
+(lua/options.lua).
 
 ==============================================================================
 TROUBLE                                                  *dotfiles-plugins-trouble*
 
-Better diagnostics panel.
+Diagnostics and symbol lists in a panel. Command-only; lazy-loaded on first
+use.
 
 Location: lua/external/plugins/trouble.lua
 
-Keymaps:
-    <leader>xx      All diagnostics
-    <leader>xX      Buffer diagnostics
-    <leader>cs      Symbols outline
-    <leader>cl      LSP references/definitions
-    <leader>xL      Location list
-    <leader>xQ      Quickfix list
+Commands:
+    :Trouble diagnostics    All diagnostics
+    :Trouble symbols        Symbols outline
+    :Trouble lsp            References / definitions
+    :Trouble qflist         Quickfix list
+    :Trouble close
 
 Inside Trouble: q to close, <CR> to jump, j/k to navigate.
 
@@ -306,27 +266,27 @@ Shows available keymaps in a popup after pressing leader.
 
 Location: lua/external/plugins/which-key.lua
 
-How it works:
-    Press <Space> and wait 300ms → popup shows all leader keymaps.
-    Groups: [S]earch, Git [H]unk, [T]oggle, Trouble, [C]ode.
-
-No keymaps to learn — it teaches you keymaps you already have.
+Press <Space> and wait 300ms -> popup shows the leader keymaps. One group is
+declared, [S]earch, because <leader>s is the one prefix with two keys under
+it. Declare another only when a second mapping shares a prefix; which-key
+shows an empty group without complaint, which is how four stale ones
+survived for months.
 
 ==============================================================================
-MINI (SURROUND + PAIRS)                                  *dotfiles-plugins-mini*
+MINI (SURROUND)                                          *dotfiles-plugins-mini*
 
-Surround: manipulate surrounding characters.
-Pairs: auto-close brackets and quotes.
+Surround: manipulate surrounding characters. Only mini.surround is loaded;
+there is no mini.pairs.
 
 Location: lua/external/plugins/mini.lua
 
-Surround keymaps:
-    sa{motion}{char}  Add surrounding (e.g. saiw" → surround word with ")
-    sd{char}          Delete surrounding (e.g. sd" → remove quotes)
-    sr{old}{new}      Replace surrounding (e.g. sr"' → " to ')
-
-Pairs:
-    Automatic — type ( and ) appears. Works for (, [, {, ", ', `.
+Keymaps:
+    sa{motion}{char}  Add surrounding (e.g. saiw" -> surround word with ")
+    sd{char}          Delete surrounding (e.g. sd" -> remove quotes)
+    sr{old}{new}      Replace surrounding (e.g. sr"' -> " to ')
+    sf / sF           Find next / previous surrounding
+    sh                Highlight surrounding
+    sn                Set how many lines sf/sF search
 
 ==============================================================================
 TODO-COMMENTS                                      *dotfiles-plugins-todo-comments*
@@ -336,19 +296,22 @@ Highlights TODO, FIXME, HACK, NOTE, WARN, PERF in comments.
 Location: lua/external/plugins/todo-comments.lua
 
 Keymaps:
-    <leader>st      Search all TODOs in project (Telescope)
     ]t              Jump to next TODO
     [t              Jump to previous TODO
+
+Commands:
+    :TodoTelescope  List them all
 
 ==============================================================================
 TREESITTER                                            *dotfiles-plugins-treesitter*
 
-Syntax highlighting using actual parsing (not regex).
+Syntax highlighting using actual parsing (not regex). Highlighting is started
+per buffer by a FileType autocmd in lua/options.lua.
 
 Location: lua/external/plugins/treesitter.lua
 
 Installed parsers:
-    c_sharp, lua, json, yaml, bash, markdown, sql,
+    c_sharp, lua, json, yaml, bash, markdown, markdown_inline, latex, sql,
     typescript, javascript, tsx, terraform, python
 
 Commands:
@@ -356,24 +319,26 @@ Commands:
     :TSUpdate               Update all parsers
 
 ==============================================================================
+RENDER-MARKDOWN                                  *dotfiles-plugins-render-markdown*
+
+In-buffer markdown rendering, off by default.
+
+Location: lua/external/plugins/render-markdown.lua
+
+Commands:
+    :Render                 Toggle rendering for this buffer
+
+See |dotfiles-commands-render|.
+
+==============================================================================
 UNDOTREE                                                *dotfiles-plugins-undotree*
 
-Visual undo history tree.
+Visual undo history tree. Command-only.
 
 Location: lua/external/plugins/undotree.lua
 
 Commands:
     :UndotreeToggle         Open/close undo tree panel
-
-==============================================================================
-GLOW                                                        *dotfiles-plugins-glow*
-
-Markdown preview in terminal. Requires `glow` CLI.
-
-Location: lua/external/plugins/glow.lua
-
-Commands:
-    :Glow                   Render current markdown file
 
 ==============================================================================
 ROSE-PINE (THEME)                                        *dotfiles-plugins-theme*
@@ -385,12 +350,25 @@ Location: lua/external/plugins/theme.lua
 ==============================================================================
 ROSLYN                                                    *dotfiles-plugins-roslyn*
 
-C# language server (Microsoft's Roslyn).
+C# language server (Microsoft's Roslyn), through roslyn.nvim. It is also
+what sets this config's Neovim floor: the plugin refuses to load below 0.12.
 
 Location: lua/external/plugins/roslyn.lua
 
+The server is `roslyn-language-server`, a dotnet global tool, declared
+`manual` in ../deps.conf and installed by nvim/deps.sh wherever `dotnet`
+exists. dotnet itself is a project toolchain this repo does not install.
+By hand:
+
+    dotnet tool install -g roslyn-language-server --prerelease \
+      --source https://pkgs.dev.azure.com/azure-public/vside/_packaging/vs-impl/nuget/v3/index.json
+
+It lands in ~/.dotnet/tools, which bashrc puts on PATH. The plugin looks for
+it there by name and nowhere else.
+
 Commands:
     :Roslyn target          Change solution target
+    :Roslyn restart
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:
