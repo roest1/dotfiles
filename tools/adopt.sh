@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ─── Authoring aid: print a deps.conf line for a command ─────────────────────
 #
-#   ./tools/adopt.sh rg fd prettierd
+#   ./tools/adopt.sh rg fd ruff
 #
 #   tool  pkg          rg           ripgrep
 #   tool  pkg          fd           fd-find
-#   tool  npm          prettierd    @fsouza/prettierd
+#   tool  uv           ruff
 #
 # Deliberately NOT a make target. Everything in the Makefile is about
 # *operating* the repo — install, link, check, status, test. This is about
@@ -18,7 +18,6 @@
 #   * which provider owns a command (asks rpm/dpkg/brew/mise/uv, not the path)
 #   * the package name, which often differs from the command:
 #       rg -> ripgrep   fd -> fd-find   nvim -> neovim
-#       prettierd -> @fsouza/prettierd  (scoped npm packages)
 #
 # You name the commands. There is no "adopt everything installed" mode: nothing
 # here can tell a dotfiles dependency from a project-scoped tool, so bulk output
@@ -49,20 +48,6 @@ resolve_package() {
       elif command -v dpkg >/dev/null 2>&1; then
         pkg="$(dpkg -S "$resolved" 2>/dev/null | cut -d: -f1)"
       fi
-      ;;
-    npm)
-      # npm's parseable output ends in the package directory. Scoped packages
-      # live one level deeper (.../node_modules/@fsouza/prettierd), and the
-      # scope is part of the name you have to install.
-      local line base parent
-      while IFS= read -r line; do
-        base="$(basename "$line")"
-        parent="$(basename "$(dirname "$line")")"
-        if [[ "$base" == "$cmd" || "$base" == *"$cmd"* ]]; then
-          if [[ "$parent" == @* ]]; then pkg="$parent/$base"; else pkg="$base"; fi
-          break
-        fi
-      done < <(npm ls -g --depth=0 --parseable 2>/dev/null | tail -n +2)
       ;;
     cargo)
       pkg="$(cargo install --list 2>/dev/null | grep -E '^[a-zA-Z]' | awk '{print $1}' \

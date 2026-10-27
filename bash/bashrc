@@ -67,6 +67,26 @@ shopt -s histappend # append to the history file, don't overwrite it
 HISTSIZE=100000 # in memory (RAM) cache
 HISTFILESIZE=100000 # on disk (hard drive) .bash_history
 
+# History is the usage record this repo prunes against (tools/usage.sh), and
+# bash's defaults make it a poor one in two ways. It is written only when a
+# shell EXITS cleanly, so a terminal closed on its window button, a crashed
+# session, or a machine that is never logged out loses everything since the
+# shell started -- and it carries no dates, so a command seen once cannot be
+# told from one used last week. `history -a` after every prompt appends the
+# line as soon as it has run; HISTTIMEFORMAT makes bash store an epoch stamp
+# with each line (the format only governs how `history` prints it).
+#
+# Append to PROMPT_COMMAND, do not assign: bash_theme and zoxide both add to
+# it later and each checks for its own entry, so this follows the same guard
+# and `reload` stays idempotent. ~/.bash_history itself stays where bash puts
+# it, in $HOME and outside the work tree -- nothing here writes a log that
+# git can see.
+HISTTIMEFORMAT='%F %T '
+case ";${PROMPT_COMMAND};" in
+  *";history -a;"*) : ;;
+  *) PROMPT_COMMAND="history -a${PROMPT_COMMAND:+;${PROMPT_COMMAND}}" ;;
+esac
+
 
 # ─── Shell options ─────────────────────────────────────────────────
 # check the window size after each command and, if necessary,
@@ -128,6 +148,11 @@ fi
 export DOTNET_ROOT="$HOME/.dotnet"
 export DOTNET_MULTILEVEL_LOOKUP=1
 export PATH="$DOTNET_ROOT:$PATH"
+# `dotnet tool install -g` lands in ~/.dotnet/tools and adds nothing to PATH
+# itself. roslyn-language-server lives there (deps.conf [nvim], installed by
+# nvim/deps.sh), and roslyn.nvim finds it by name on PATH -- so without this
+# line the server is installed and the plugin still reports it missing.
+[ -d "$DOTNET_ROOT/tools" ] && export PATH="$DOTNET_ROOT/tools:$PATH"
 
 # ─── Java ──────────────────────────────────────────────────────────
 if [[ "$_OS" == "mac" ]]; then
