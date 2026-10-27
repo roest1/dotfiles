@@ -102,7 +102,7 @@ run_check() {
     fi
 
     if ! tool_applies_here "$cmd"; then
-      printf "  %-14s n/a (Windows host — see windows/README.md)\n" "$cmd"
+      printf "  %-14s n/a (%s)\n" "$cmd" "$(tool_na_reason "$cmd")"
     elif command -v "$cmd" >/dev/null 2>&1; then
       printf "  %-14s ok\n" "$cmd"
     elif [[ "$cmd" == "bat" ]] && command -v batcat >/dev/null 2>&1; then

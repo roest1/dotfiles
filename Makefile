@@ -21,7 +21,7 @@ SHELL := /bin/bash
 # so tool directories that only .bashrc puts on PATH are invisible here. Without
 # this line the check target reports false MISSINGs for anything installed by
 # cargo, bun, uv or mise.
-export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(PATH)
+export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo/bin:$(HOME)/.bun/bin:$(HOME)/.dotnet/tools:$(PATH)
 
 UNAME := $(shell uname -s)
 # make's own functions split their argument on whitespace, so $(abspath) and
