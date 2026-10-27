@@ -20,6 +20,16 @@ on:
   schedule:
     - cron: '0 6 * * 1'
 
+# mise resolves releases through the GitHub API, and an unauthenticated runner
+# shares 60 requests an hour with every other job on its IP. The neovim floor
+# job is a REQUIRED check that installs neovim exactly that way, so a busy
+# runner IP failed it with a 429 that lib/pkg.sh then hid (issue #12). The
+# workflow's own token is good for 1000 an hour, scoped to this repo, and
+# costs nothing to hand over; workflow-level so the install matrix, which also
+# reaches mise for whatever apt or dnf cannot provide, gets the same limit.
+env:
+  MISE_GITHUB_TOKEN: ${{ github.token }}
+
 jobs:
   # ── Lint ───────────────────────────────────────────────────────────────────
   shellcheck:
