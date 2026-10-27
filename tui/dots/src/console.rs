@@ -75,7 +75,7 @@ const VERBS: [&str; 3] = ["install", "link", "check"];
 /// streamed into the pane.
 ///
 ///   install   lib/pkg.sh's pkg_install -> `sudo apt|dnf install`
-///   shell     the Makefile's own recipe -> `sudo tee -a /etc/shells`
+///   shell     the Makefile's own recipe -> `sudo chsh -s /bin/bash`
 ///
 /// They detach instead: the terminal goes back, the real sudo prompts in the
 /// open, and this process never sees a password. Every alternative — an askpass

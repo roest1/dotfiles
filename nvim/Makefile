@@ -1,6 +1,6 @@
 # dotfiles-nvim/Makefile
 #
-# Portable installer for macOS, Linux (WSL), and Fedora/RHEL.
+# Installer for Fedora/RHEL and Ubuntu (WSL).
 # Every target is idempotent — safe to re-run.
 #
 # Usage:

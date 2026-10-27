@@ -329,7 +329,7 @@ Git is optimized for text. Binary files (archives, datasets, build artifacts) bl
 Install:
 
 ```sh
-brew install git-lfs
+sudo dnf install git-lfs    # or: sudo apt install git-lfs
 ```
 
 Track a file type:

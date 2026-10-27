@@ -27,7 +27,7 @@
 -- directory rather than the symlink's target. Both the repo checkout and the
 -- linked location hold shared.lua next to the entry point, so either resolves.
 --
--- Linked by deps.conf on Linux/macOS and by the $Links table in
+-- Linked by deps.conf on Linux and by the $Links table in
 -- windows/install.ps1 on Windows -- the same pair that already links wezterm's
 -- fonts directory.
 
@@ -228,9 +228,9 @@ function M.apply(config)
 	--
 	-- Read straight out of the linked config directory rather than installed into
 	-- the system font path. deps.conf links wezterm/fonts → ~/.config/wezterm/fonts
-	-- and config_dir follows the config file's own path, so this resolves on Linux,
-	-- macOS and the Windows host identically -- with no fc-cache (which macOS does
-	-- not have), no ~/Library/Fonts vs ~/.local/share/fonts split, and no chance of
+	-- and config_dir follows the config file's own path, so this resolves on Linux
+	-- and the Windows host identically -- with no fc-cache (which Windows does not
+	-- have), no per-platform font directory, and no chance of
 	-- a stale copy elsewhere on the system shadowing these. That last one is not
 	-- hypothetical: two files claiming family "Science Gothic Mono" style
 	-- "Regular" resolve by first match, and the loser is silently the wrong glyphs.
@@ -355,7 +355,7 @@ function M.apply(config)
 		inactive_titlebar_bg = p.base,
 
 		-- Science Gothic -- a Google Fonts variable family (OFL), installed by
-		-- wezterm/deps.sh on Linux/macOS. It is NOT installed on the Windows host,
+		-- wezterm/deps.sh on Linux. It is NOT installed on the Windows host,
 		-- where the fallback chain simply carries the bar; that degrades the tab
 		-- bar's face, nothing else.
 		--

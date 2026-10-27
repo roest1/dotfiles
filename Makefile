@@ -1,6 +1,6 @@
 # dotfiles/Makefile
 #
-# Portable dotfiles + nvim monorepo. macOS (brew), Ubuntu/WSL (apt), RHEL (dnf).
+# Dotfiles + nvim monorepo. Fedora/RHEL (dnf), Ubuntu/WSL (apt), and the Windows host.
 # Every target is idempotent — safe to re-run.
 #
 # Everything this repo installs or links is declared in deps.conf. This file
@@ -220,36 +220,19 @@ test: ## Run the Lua unit tests (no plugins, no network)
 #  Misc                                                                        #
 # --------------------------------------------------------------------------- #
 
+# `sudo chsh`, not a bare `chsh`. Bare chsh asks for the USER'S password
+# through PAM, which is a prompt all the same, and `dots` streams any target
+# that cannot reach sudo into a pane that cannot show a prompt. Going through
+# sudo keeps this target in the console's ESCALATES list (tui/dots), where it
+# detaches and the prompt fires in the open. The Darwin half of this recipe
+# (dscl, /etc/shells, a brew bash) went with macOS support on 2026-10-26.
 shell: ## Set default shell to bash
-ifeq ($(UNAME),Darwin)
-	@current=$$(dscl . -read /Users/$$USER UserShell 2>/dev/null | awk '{print $$2}'); \
-	if echo "$$current" | grep -q bash; then \
-		echo "Already using bash ($$current)"; \
-	else \
-		bash_path=""; \
-		if [ -x /opt/homebrew/bin/bash ]; then \
-			bash_path=/opt/homebrew/bin/bash; \
-		elif [ -x /usr/local/bin/bash ]; then \
-			bash_path=/usr/local/bin/bash; \
-		else \
-			bash_path=/bin/bash; \
-		fi; \
-		echo "Switching default shell to $$bash_path"; \
-		if ! grep -qxF "$$bash_path" /etc/shells 2>/dev/null; then \
-			echo "$$bash_path not in /etc/shells — adding (requires sudo):"; \
-			echo "$$bash_path" | sudo tee -a /etc/shells; \
-		fi; \
-		chsh -s "$$bash_path"; \
-		echo "Done. Open a new terminal to use bash."; \
-	fi
-else
 	@current=$$(getent passwd $$USER 2>/dev/null | cut -d: -f7); \
 	if echo "$$current" | grep -q bash; then \
 		echo "Already using bash ($$current)"; \
 	else \
 		echo "Current shell: $$current"; \
-		echo "Switching default shell to /bin/bash"; \
-		chsh -s /bin/bash; \
+		echo "Switching default shell to /bin/bash (sudo):"; \
+		sudo chsh -s /bin/bash "$$USER"; \
 		echo "Done. Log out and back in to use bash."; \
 	fi
-endif

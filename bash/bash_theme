@@ -237,7 +237,7 @@ __cache_get() {
   [[ -f "$__cg_file" ]] && IFS='|' read -r -a __CACHE_FIELDS < "$__cg_file"
 
   # Last field, by the contract above. Spelled with an explicit index
-  # rather than [-1], which is bash 4.2+; macOS /bin/bash is 3.2.
+  # rather than [-1], which is bash 4.2+ -- from when bash 3.2 was a target.
   local __cg_n=${#__CACHE_FIELDS[@]} __cg_fetch=0
   (( __cg_n )) && __cg_fetch="${__CACHE_FIELDS[__cg_n-1]}"
   case "$__cg_fetch" in
@@ -805,7 +805,8 @@ __prompt_render() {
     (( w_gh = 11 ))
   else
     local now
-    # $EPOCHSECONDS is a bash 5 builtin; macOS /bin/bash is 3.2. Read once
+    # $EPOCHSECONDS is a bash 5 builtin; the fallback is from when bash 3.2
+    # was a target and costs nothing to keep. Read once
     # and handed to both segments — on 3.2 it is a fork, and two of them
     # for the same number would be one too many.
     if (( BASH_VERSINFO[0] >= 5 )); then now="$EPOCHSECONDS"; else now=$(date +%s); fi

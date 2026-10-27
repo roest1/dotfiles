@@ -4,16 +4,14 @@
 
 Cross-platform dotfiles — terminal, editor and shell as one versioned unit. Installed personally on Linux Fedora, WSL Ubuntu, and SERHEL. Bash-based. Windows installation exists. A monorepo.
 
-**macOS is CI-tested, not daily-driven.** Nobody runs this on a Mac, so the
-support claim is exactly as strong as the `macos-latest` jobs — `link only
-(macos)` and `install (macos / brew)` — and no stronger. That is a real claim,
-not a hedge: those jobs link every `[bash]` config, install through brew, and
-assert idempotence and orphan pruning. It is also a rule for changes here. Mac
-behaviour that CI cannot exercise is unsupported, so prefer the portable
-construct over the one that needs a Mac to verify — plain `readlink` over GNU
-`readlink -f`, `sort -V` over anything BSD spells differently. If a Mac-only
-path genuinely can't be covered, say so at the call site rather than implying
-it works.
+**macOS is not supported, since 2026-10-26.** There is no Mac to run this on,
+and the two `macos-latest` CI jobs that were the whole of the support claim are
+gone with every Darwin branch, brew cask and bash 3.2 workaround they existed
+for. The rule they imposed -- prefer the construct BSD userland can run -- is
+retired with them: the targets are Fedora, RHEL, Ubuntu under WSL and the
+Windows host, and GNU spellings are fine. Portable constructs already in the
+tree were left where they cost nothing. What was removed and what it would take
+to bring it back: [`docs/decisions/macos.md`](docs/decisions/macos.md).
 
 ## Setup Workflow
 
@@ -209,7 +207,7 @@ you write code here. Reasoning, revisit conditions and current status:
   `~/.config/wezterm/fonts` hold. That guard is not belt-and-braces; each condition is a
   different failure. Without the tty half, escapes reach a pipe — and CI itself greps
   `make check bash | tee`. Without the WezTerm half, SGR 6 means what it actually says on
-  every other terminal: **rapid blink**, over ssh, in GNOME Terminal, on a Mac. And being
+  every other terminal: **rapid blink**, over ssh, in GNOME Terminal, in a plain console. And being
   *in* WezTerm still isn't enough, because WezTerm only honours the attribute if this
   repo's config is the live one — on a machine that hasn't run `make link`, or one
   pointed at a stock config, it blinks again. The linked font directory is the cheapest
@@ -322,7 +320,7 @@ you write code here. Reasoning, revisit conditions and current status:
   **The fonts are read via `font_dirs`, never installed into the system font path.**
   `deps.conf` links `wezterm/fonts` → `~/.config/wezterm/fonts` and both configs say
   `wezterm.config_dir .. "/fonts"`. That is what makes this portable in one line each:
-  no `fc-cache` (which macOS hasn't got), no `~/Library/Fonts` vs `~/.local/share/fonts`
+  no `fc-cache` (which Windows hasn't got), no per-platform font directory
   split, and — the real reason — no chance of a stale copy elsewhere shadowing it. Two
   files claiming family `Science Gothic Mono` style `Regular` resolve by first match,
   and the loser is silently the wrong glyphs. That already happened once during
@@ -520,8 +518,8 @@ you write code here. Reasoning, revisit conditions and current status:
 
 ## Key Conventions
 
-- **OS portability:** `_OS=mac|linux` detected in `bashrc`. Mac/Linux differences (homebrew paths, `date` flags, `stat` flags) are handled inline with conditionals.
-- **Bash version:** `bash/deps.sh` installs bash 5 via homebrew. Bash 4+ features (`dirspell`, `globstar`) are guarded with `BASH_VERSINFO` checks.
+- **OS portability:** Linux only on the shell side (Fedora, RHEL, Ubuntu under WSL); the Windows host has its own installer. There is no `_OS` variable any more. WSL is detected at runtime (`is_wsl`) where the guest and the host differ.
+- **Bash version:** bash 5 on every target. The `BASH_VERSINFO` guards and 3.2-safe constructs in the tree are from when macOS was one, and stay because they cost nothing.
 - **Tool dependencies:** `zoxide`, `fzf`, `bat`, `eza`, `fd`, `ripgrep`, `gh`, `jq`. All optional — features degrade gracefully via `command -v` guards. Declared in `deps.conf`'s `[bash]` section, installed via brew/apt/dnf. Some tools have alternate binary names on RHEL/Debian (`bat` → `batcat`, `fd` → `fdfind`) — handled with fallback checks.
 - **Symlink pattern:** `install.sh` symlinks `bash/*` to `~/.*` (e.g. `bash/bashrc` → `~/.bashrc`), driven entirely by the `link` lines in `deps.conf`. It hard-codes no filenames — adding or renaming a config file is a manifest edit and nothing else. Renames are safe because `install.sh` **prunes orphans**: a symlink pointing into this repo whose target no longer exists is removed, so the retired name can't survive next to the new one. That test is structural on purpose — don't replace it with a list of old names, which would need maintaining and would silently stop covering the next rename.
 - **Navigation UX: there are no interactive fzf commands left.** `__fzf_menu`/`__fzf_list` in `bash/bash_productivity` held the menu-and-list contract — `-`/`q` back, `?` help, type-to-filter, `esc` back — defined once because it had been 18 copies of the same `--bind` string. All 18 call sites were in `bash_github_tui`, so the Rust port left the wrappers with zero callers and they were deleted with the layer they served (`bash_git` never invoked fzf). The only fzf left in the shell is fzf's own Ctrl+R / Ctrl+T / Alt+C integration.
@@ -552,7 +550,7 @@ you write code here. Reasoning, revisit conditions and current status:
 
 ## When Editing
 
-- Test on both bash 3.2 (macOS `/bin/bash`) and bash 5+ (homebrew / Linux).
+- Test on bash 5 (Fedora, RHEL 9, Ubuntu 24.04). bash 3.2 stopped being a target with macOS.
 - Guard all tool usage with `command -v` checks.
 - Keep the `h` help function in `bash_productivity` in sync with any command changes.
 - The README is intentionally concise: install + new-machine flow + GitHub tools pointer + "what goes where" table. Prose explanations of bash internals belong here in `CLAUDE.md`, not in the README.

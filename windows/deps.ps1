@@ -22,7 +22,7 @@
 #
 # wezterm bundles a plain 'JetBrains Mono', which is the same typeface WITHOUT
 # the patched icons, so the fallback is not equivalent and the warning is
-# correct. wezterm/deps.sh installs this same pair on Linux and macOS; the two
+# correct. wezterm/deps.sh installs this same pair on Linux; the two
 # lists are asserted against each other in CI, because nothing else reads both.
 # Science Gothic -- the PROPORTIONAL family, not the monospaced cut this repo
 # generates. wezterm/shared.lua names it as window_frame.font, which is the face

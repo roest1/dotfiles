@@ -42,8 +42,8 @@ ensure_uv || {
 
 # Every uv on PATH, resolved and de-duplicated, in PATH order.
 #
-# Hand-split rather than `type -aP uv` or an IFS=: loop: macOS ships bash 3.2
-# and this file runs there in the install job, so the plainest spelling wins.
+# Hand-split rather than `type -aP uv` or an IFS=: loop: written for bash 3.2
+# when macOS was a target, and kept because the plain spelling costs nothing.
 # Duplicated PATH entries are real (a .bashrc that prepends twice), hence the
 # de-dupe on the RESOLVED path — two entries pointing at one binary is not two
 # copies of uv.
@@ -54,9 +54,9 @@ uv_paths() {
     if [ "$dir" = "$rest" ]; then rest=""; else rest="${rest#*:}"; fi
     [ -n "$dir" ] || dir="."
     [ -x "$dir/uv" ] || continue
-    # `readlink -f` guarded rather than assumed: it is GNU-shaped, and the
-    # macOS jobs are the whole of this repo's macOS support claim. The fallback
-    # is the unresolved path, which every test below tolerates.
+    # `readlink -f` guarded rather than assumed, from when BSD readlink was a
+    # target. The fallback is the unresolved path, which every test below
+    # tolerates.
     resolved="$(readlink -f "$dir/uv" 2>/dev/null || echo "$dir/uv")"
     case "$seen" in
       *$'\n'"$resolved"$'\n'*) continue ;;

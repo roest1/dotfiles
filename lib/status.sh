@@ -119,7 +119,7 @@ provider_of() {
 
 
   case "$resolved" in
-    /usr/bin/*|/usr/local/bin/*|/opt/homebrew/*) echo "pkg" ;;
+    /usr/bin/*|/usr/local/bin/*) echo "pkg" ;;
     *) echo "manual" ;;
   esac
 }

@@ -16,12 +16,6 @@ source "$HERE/../lib/pkg.sh"
 pkg_detect
 ensure_local_bin_on_path
 
-# macOS ships bash 3.2; this config wants 5.x. Not a manifest line because it
-# applies only to brew.
-if [ "$PM" = "brew" ]; then
-  pkg_install "bash"
-fi
-
 # Debian/Ubuntu install these under different binary names than everyone else.
 # The manifest asks for `fd` and `bat`; apt delivers `fdfind` and `batcat`.
 if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then

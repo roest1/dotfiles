@@ -2,7 +2,7 @@
 
 Terminal, editor and shell as one versioned unit — wezterm, neovim and bash in a
 single repo, with every symlink and every dependency declared in one manifest.
-Cross-platform: macOS, Linux, WSL, RHEL, and the Windows host.
+Fedora, RHEL, Ubuntu under WSL, and the Windows host.
 
 ## Install
 
@@ -68,7 +68,7 @@ exec bash
 | `2 conflicting` | that pull would conflict, in 2 files |
 | `[11/11 ✅ 22h]` | GitHub Actions for this commit, last run 22h ago |
 
-Bash 3.2+, so macOS's system bash is fine. `git` is the only hard requirement;
+Bash 5. `git` is the only hard requirement;
 `gh` and `jq` add the bracketed CI status and the 🌍/🔒/🛡️ markers. Every tool
 is behind a `command -v` guard, so a missing one drops its segment rather than
 breaking the prompt.
@@ -145,7 +145,7 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 
 | Provider | Use |
 | -------- | --- |
-| `pkg`    | system package manager (brew / apt / dnf) |
+| `pkg`    | system package manager (apt / dnf; linuxbrew as a last resort) |
 | `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
 | `uv`     | Python tools (replaces pip; same vendor as ruff) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
@@ -268,8 +268,8 @@ alone despite living here.
 
 ## Portability is tested, not claimed
 
-`.github/workflows/ci.yml` runs on every push: `make link` on Ubuntu and macOS,
-full installs across apt / brew / dnf, shellcheck, manifest validation, and a
+`.github/workflows/ci.yml` runs on every push: `make link` on Ubuntu, full
+installs on apt and dnf, shellcheck, manifest validation, and a
 job that comments out the node block and asserts nvim still starts clean.
 
 This exists because the previous Makefile promised WSL support in this README
@@ -330,7 +330,7 @@ for that reason).
 ├── nvim/                                 Neovim config (own Makefile + README)
 │   └── lsp-servers/                      JS language servers + prettier, run by bun
 ├── wezterm/
-│   ├── wezterm.lua                     → ~/.config/wezterm/wezterm.lua        (Linux/macOS)
+│   ├── wezterm.lua                     → ~/.config/wezterm/wezterm.lua        (Linux)
 │   └── wezterm-windows.lua             → %USERPROFILE%\.config\wezterm\wezterm.lua
 ├── windows/
 │   ├── install.ps1                       Windows link + winget engine
@@ -352,10 +352,9 @@ for that reason).
 │   ├── README.md                         GitHub tips and tricks
 │   ├── GITHUB_TOOLS.md                   The fzf github, as a record
 │   └── GITHUB_SETUP.md                   New-repo settings + ruleset reference
-├── podman/
-│   └── README.md                         podman container-engine reference (Linux)
-└── systemd/
-    └── README.md                         systemctl / journalctl reference (Linux)
+└── docs/
+    ├── decisions/                        Why things are the way they are
+    └── ops-notes.md                      podman / systemd cheat sheets, parked (TODO: move out)
 ```
 </details>
 
@@ -374,10 +373,8 @@ still stands alone.
 | `bash/bash_github`            | Plain `gh` (`gha`) + the helpers shared with the TUI                  |
 | `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
 | `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
-| `wezterm/wezterm.lua`         | Terminal on Linux/macOS — declares the `mux` domain                   |
+| `wezterm/wezterm.lua`         | Terminal on Linux — declares the `mux` domain                         |
 | `wezterm/wezterm-windows.lua` | Terminal on the Windows host — the shell picker                       |
-| `podman/README.md`            | `podman` container-engine reference (Linux/RHEL)                      |
-| `systemd/README.md`           | `systemctl` / `journalctl` reference (Linux/RHEL)                     |
 
 ## Machine-local config
 

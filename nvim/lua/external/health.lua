@@ -93,9 +93,7 @@ return {
     -- Clipboard image paste (:PasteImage) — backend is platform-specific, so
     -- only check the tool relevant to the current environment.
     local paste_title = 'Clipboard image paste (:PasteImage)'
-    if vim.fn.has 'mac' == 1 then
-      check_tools(paste_title, { { name = 'pngpaste', desc = 'macOS clipboard → PNG', required = false } })
-    elseif vim.fn.has 'wsl' == 1 then
+    if vim.fn.has 'wsl' == 1 then
       vim.health.start(paste_title)
       vim.health.ok 'WSL — uses Windows PowerShell, no extra tool needed'
     elseif vim.env.WAYLAND_DISPLAY then
