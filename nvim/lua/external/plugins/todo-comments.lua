@@ -1,9 +1,8 @@
 -- todo-comments
 -- Highlights TODO, FIXME, HACK, NOTE, WARN, PERF in comments
--- and makes them searchable via Telescope
+-- (`:TodoTelescope` lists them; it has no mapping here)
 --
 -- Keymaps:
---   <leader>st   Search all TODOs in project
 --   ]t           Jump to next TODO
 --   [t           Jump to previous TODO
 return {
