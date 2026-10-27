@@ -249,6 +249,9 @@ Behavior:~
     - lua/external/usage.lua watches typed keys in normal and visual mode and
       matches them against the mappings active in the buffer, so a count is a
       real press of that mapping, not a key that happened to appear in text
+    - `:` commands are counted too (the first word of the line, past any
+      range), for every user command a plugin or this config defines. That is
+      what makes :Trouble and :UndotreeToggle measurable: neither has a key
     - Written to stdpath('state')/keymap-usage.json -- ~/.local/state/nvim,
       which is OUTSIDE the work tree. It cannot be committed by accident
       because git never sees it. Do not move it under the config directory,

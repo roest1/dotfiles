@@ -28,6 +28,11 @@
 --                        zeros first -- those are the deletion candidates
 --   :KeymapUsage reset   delete the file and start over
 --
+-- User commands are counted too, from CmdlineLeave: the first word of a
+-- `:` line that names a command this config or a plugin defined. Trouble and
+-- undotree have no mapping at all, so without this the two plugins most
+-- likely to be pruned would read as unmeasured rather than as zeros.
+--
 -- The shell half is tools/usage.sh, which reads ~/.bash_history the same way.
 
 local M = {}
@@ -117,6 +122,36 @@ local function refresh_maps()
   end
 end
 
+-- First word of a command line, past any range or count: `:'<,'>Trouble`,
+-- `:3Render`, `:silent! Copy -r` all resolve to the bare name.
+local function command_name(line)
+  line = line:gsub("^[%s%d,%.%$%%'<>%-%+;/?]+", '')
+  for _ = 1, 3 do
+    local mod, rest = line:match '^(%a+)!?%s+(.*)$'
+    if mod and (mod == 'silent' or mod == 'noautocmd' or mod == 'vertical' or mod == 'keepjumps') then
+      line = rest
+    else
+      break
+    end
+  end
+  return line:match '^(%u[%w]*)'
+end
+
+local function on_cmdline()
+  if vim.v.event.abort or vim.fn.getcmdtype() ~= ':' then
+    return
+  end
+  local name = command_name(vim.fn.getcmdline())
+  if not name then
+    return
+  end
+  if vim.api.nvim_get_commands({})[name] or vim.api.nvim_buf_get_commands(0, {})[name] then
+    local k = 'cmd :' .. name
+    pending[k] = (pending[k] or 0) + 1
+    pending_n = pending_n + 1
+  end
+end
+
 local function on_key(_, typed)
   if typed == nil or typed == '' then
     return
@@ -162,18 +197,22 @@ local function report(args)
     local row = data[key_of(m.mode, m.lhs)] or { count = 0, last = '-' }
     table.insert(rows, { mode = m.mode, lhs = vim.fn.keytrans(m.raw), count = row.count, last = row.last or '-' })
   end
+  for name, _ in pairs(vim.api.nvim_get_commands {}) do
+    local row = data['cmd :' .. name] or { count = 0, last = '-' }
+    table.insert(rows, { mode = 'cmd', lhs = ':' .. name, count = row.count, last = row.last or '-' })
+  end
   table.sort(rows, function(a, b)
     if a.count ~= b.count then
       return a.count < b.count
     end
     return a.lhs < b.lhs
   end)
-  local out = { string.format('%-5s %-24s %6s  %s', 'mode', 'lhs', 'count', 'last'), string.rep('-', 50) }
+  local out = { string.format('%-5s %-24s %6s  %s', 'mode', 'lhs / :command', 'count', 'last'), string.rep('-', 50) }
   for _, r in ipairs(rows) do
     table.insert(out, string.format('%-5s %-24s %6d  %s', r.mode, r.lhs, r.count, r.last))
   end
   table.insert(out, '')
-  table.insert(out, 'zeros first: those are the mappings nothing has pressed since ' .. STATE .. ' was created')
+  table.insert(out, 'zeros first: those are the mappings and commands nothing has used since ' .. STATE .. ' was created')
   vim.cmd 'new'
   vim.bo.buftype = 'nofile'
   vim.bo.bufhidden = 'wipe'
@@ -195,6 +234,7 @@ function M.setup()
       vim.schedule(refresh_maps)
     end,
   })
+  vim.api.nvim_create_autocmd('CmdlineLeave', { group = group, callback = on_cmdline })
   vim.api.nvim_create_autocmd('VimLeavePre', { group = group, callback = flush })
   vim.schedule(refresh_maps)
   vim.on_key(on_key, vim.api.nvim_create_namespace 'dotfiles-usage')
