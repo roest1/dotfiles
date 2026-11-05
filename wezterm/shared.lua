@@ -51,7 +51,13 @@ local M = {}
 -- against it -- under the 3:1 floor. Main's base is L 21.3%, almost exactly
 -- where that pair crosses 3.00:1, and carries 35% less chroma.
 M.palette = {
-	base = "#191724", -- the terminal, and the active tab so it merges with the pane
+	base = "#191724", -- the terminal
+	-- The active tab, one step BELOW base. It used to be base itself so the tab
+	-- merged into the pane, but base against the bar's surface is a ~1.1:1 step
+	-- and the selected tab barely read as selected. Darker than the pane costs a
+	-- faint seam under the tab; the accent stripe below carries the rest.
+	tab_active = "#0c0b13",
+	accent = "#c4a7e7", -- rose-pine iris: the active tab's stripe and index
 	surface = "#1f1d2e", -- the bar itself and idle tabs
 	overlay = "#26233a", -- hover
 	highlight_med = "#403d52", -- selection
@@ -339,7 +345,7 @@ function M.apply(config)
 		tab_bar = {
 			background = p.surface,
 
-			active_tab = { bg_color = p.base, fg_color = p.text },
+			active_tab = { bg_color = p.tab_active, fg_color = p.text },
 			inactive_tab = { bg_color = p.surface, fg_color = p.muted },
 			inactive_tab_hover = { bg_color = p.overlay, fg_color = p.text },
 			new_tab = { bg_color = p.surface, fg_color = p.subtle },
@@ -661,13 +667,22 @@ function M.claude_tab_titles()
 		local out = {
 			{
 				Background = {
-					Color = hover and M.palette.overlay or (tab.is_active and M.palette.base or M.palette.surface),
+					Color = hover and M.palette.overlay or (tab.is_active and M.palette.tab_active or M.palette.surface),
 				},
 			},
 			{ Attribute = { Intensity = "Normal" } },
-			{ Foreground = { Color = M.palette.muted } },
-			{ Text = " " .. index },
 		}
+
+		-- The active tab trades its leading space for an accent stripe (U+258E,
+		-- one column, so the width budget above is unchanged) and wears its
+		-- index in the same accent; idle tabs keep the space and a muted index.
+		if tab.is_active then
+			out[#out + 1] = { Foreground = { Color = M.palette.accent } }
+			out[#out + 1] = { Text = "\u{258E}" .. index }
+		else
+			out[#out + 1] = { Foreground = { Color = M.palette.muted } }
+			out[#out + 1] = { Text = " " .. index }
+		end
 
 		-- Print the status glyph WITHOUT setting a Foreground color (lets emoji
 		-- render natively). glyph_color is the single exception, and only a state
