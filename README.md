@@ -370,7 +370,7 @@ still stands alone.
 | `bash/bash_theme`             | Prompt, colors, LS_COLORS, man page colors                            |
 | `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
 | `bash/bash_git`               | Git aliases and `gprune`                                             |
-| `bash/bash_github`            | Plain `gh` (`gha`) + the helpers shared with the TUI                  |
+| `bash/bash_github`            | Plain `gh` (`gha`, `stars`) + the helpers shared with the TUI         |
 | `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
 | `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
 | `wezterm/wezterm.lua`         | Terminal on Linux — declares the `mux` domain                         |
