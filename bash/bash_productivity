@@ -834,6 +834,9 @@ h() {
   GitHub Actions (one-shot, no TUI)                        [gh, jq]
     gha                Workflow status for HEAD
 
+  GitHub Stars                                             [gh, jq]
+    stars [list]       Your stars, grouped by List (or one List)
+
   Utilities
     port <num>         What's running on this port?
     killport <num>     Kill the process listening on this port
@@ -1274,6 +1277,33 @@ GitHub — one TUI, plus one one-shot
   (tui/github, installed by `make install tui`, the same way `dots` and
   `font` are), and the 2500-line fzf implementation it replaced is gone.
   gha is still shell and still needs jq.
+HELP
+      ;;
+    stars)
+      cat <<'HELP'
+stars — your GitHub stars, and the Lists you filed them in
+
+  stars              Every star, one block per List in GitHub's order,
+                     then Unlisted. A star in three Lists shows three
+                     times — that is the organization. Repo names link
+                     to the repo (ctrl-click in wezterm).
+  stars <list>       One List, by name or slug, any case:
+                     stars dotfiles · stars j-a-r-v-i-s · stars unlisted
+  stars -l|--lists   The Lists themselves: name, count, description
+  stars --json       Everything, merged: each star's description,
+                     language, topics, star count, archived, pushed_at,
+                     starred_at and Lists, plus every List's repos
+
+  Piped or redirected, stars prints one star per row as TSV —
+  repo, Lists, language, description — so `stars | grep -i rust`
+  and `stars | cut -f1` work without the layout.
+
+  Always live: there is no cache. A fetch is ~3s and 2 REST requests
+  plus 1 GraphQL point out of 5000/hour each, and stars change every
+  time you click one. Stars come from REST (it carries topics for
+  free); Lists come from GraphQL, because REST has no Lists.
+
+  Depends on: gh, jq.
 HELP
       ;;
     clear)
