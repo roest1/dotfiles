@@ -1842,6 +1842,16 @@ jobs:
           unlinked=$(mktemp -d)
           HOME="$linked" make link wezterm >/dev/null
 
+          # The real binary, resolved once under the REAL home. On PATH, nvim is
+          # mise's shim, and a shim run under a fixture HOME finds no installs
+          # and no global config there, so mise guesses a version and downloads
+          # it into each fixture home -- neovim@latest, not the pin. That made
+          # this step's result depend on what mise guessed (it broke when the
+          # pin moved to aqua:neovim/neovim). The guard under test is
+          # altfont.lua's, not mise's.
+          nvim_bin=$(mise which nvim 2>/dev/null || command -v nvim)
+          echo "nvim under test: $nvim_bin"
+
           work=$(mktemp -d)
           printf 'local x = 1\n' > "$work/probe.lua"
           # Only altfont, on the repo's real runtimepath -- loading the full
@@ -1852,10 +1862,17 @@ jobs:
             "$PWD" > "$work/init.lua"
 
           # $1 home, $2 TERM_PROGRAM -- true when the carrier reaches the tty
+          #
+          # Captured, then grepped. `script ... | grep -aq` under pipefail is
+          # false whenever grep exits on the match before script finishes
+          # writing: script dies of SIGPIPE and the pipeline takes its 141. So
+          # the positive row failed at random, more often the more nvim wrote.
           emits() {
-            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
-              script -qec "nvim --clean -u '$work/init.lua' -c 'redraw!' -c 'sleep 300m' -c 'q!' '$work/probe.lua'" \
-                /dev/null 2>/dev/null | grep -aqE "$carrier"
+            local out
+            out=$(HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+              script -qec "'$nvim_bin' --clean -u '$work/init.lua' -c 'redraw!' -c 'sleep 300m' -c 'q!' '$work/probe.lua'" \
+                /dev/null 2>/dev/null) || true
+            grep -aqE "$carrier" <<<"$out"
           }
 
           if emits "$linked" xterm; then
@@ -1881,9 +1898,10 @@ jobs:
             printf "vim.api.nvim_buf_set_lines(b, 0, -1, false, { 'oilrow' })\n"
             printf "vim.api.nvim_set_current_buf(b)\n"
           } > "$work/oil.lua"
-          if HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
-             script -qec "nvim --clean -u '$work/oil.lua' -c 'redraw!' -c 'sleep 300m' -c 'qa!'" \
-               /dev/null 2>/dev/null | grep -aqE "$carrier"; then
+          oil_out=$(HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
+             script -qec "'$nvim_bin' --clean -u '$work/oil.lua' -c 'redraw!' -c 'sleep 300m' -c 'qa!'" \
+               /dev/null 2>/dev/null) || true
+          if grep -aqE "$carrier" <<<"$oil_out"; then
             echo "carrier reached an oil-style buffer — it must be files only"; fail=1
           fi
           exit $fail
