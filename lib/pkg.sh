@@ -526,9 +526,9 @@ mise_install() {
 # installed it. tools/gen-mise.sh resolves the name against the registry and
 # writes the winner here, so this just has to find it.
 #
-# The key may be backend-qualified ("aqua:neovim/neovim"), which is how
+# The key may be backend-qualified ("aqua:neovim"), which is how
 # gen-mise.sh picks a checksummed backend over a registry default that records
-# none. The whole key is the spec: `mise use -g aqua:neovim/neovim@0.12.4`.
+# none. The whole key is the spec: `mise use -g aqua:neovim@0.12.4`.
 _mise_pin() {
   local cmd="$1" pkg="${2:-}" root key version
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -542,7 +542,8 @@ _mise_pin() {
 #
 # "key<TAB>value" for every [tools] entry in a mise config that names this
 # tool, under either name, bare ("neovim") or backend-qualified
-# ("aqua:neovim/neovim", matched on its last path segment). A value that is
+# ("aqua:neovim", or aqua's long form "aqua:neovim/neovim", matched on the
+# name after the backend and any owner/). A value that is
 # not a plain string (a table, an array) prints as "?", which never equals a
 # pin and so reads as drift rather than being silently skipped.
 _mise_toml_entries() {
@@ -576,7 +577,7 @@ _mise_global_config() {
 #
 # Drift is any global entry that is not exactly the pin, key and value: an old
 # "latest" from before pins existed, a version the repo has since bumped, or a
-# bare "neovim" left behind after the pin moved to "aqua:neovim/neovim". An
+# bare "neovim" left behind after the pin moved to "aqua:neovim". An
 # exact entry whose version is not on disk is drift too, the stale-shim case
 # `make status` calls mise-stale.
 mise_global_drift() {

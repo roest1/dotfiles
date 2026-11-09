@@ -1797,7 +1797,7 @@ jobs:
           spec=$(_mise_pin nvim neovim)
           echo "pin: $spec"
           case "$spec" in aqua:*) ;; *) echo "neovim is not pinned under aqua:"; exit 1 ;; esac
-          sed -i 's|^"aqua:neovim/neovim" = .*|neovim = "latest"|' "$cfg"
+          sed -i 's|^"aqua:neovim[^"]*" = .*|neovim = "latest"|' "$cfg"
           cat "$cfg"
           out=$(mise_install nvim neovim); echo "$out"
           grep -q 'repo pins' <<<"$out" || { echo "the stale entry was not noticed"; exit 1; }
@@ -1847,7 +1847,7 @@ jobs:
           # and no global config there, so mise guesses a version and downloads
           # it into each fixture home -- neovim@latest, not the pin. That made
           # this step's result depend on what mise guessed (it broke when the
-          # pin moved to aqua:neovim/neovim). The guard under test is
+          # pin moved to an aqua: backend). The guard under test is
           # altfont.lua's, not mise's.
           nvim_bin=$(mise which nvim 2>/dev/null || command -v nvim)
           echo "nvim under test: $nvim_bin"

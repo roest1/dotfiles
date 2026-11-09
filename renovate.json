@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Renovate is here for ONE thing: the mise pins. Dependabot has no mise",
+    "ecosystem, and it already covers bun, cargo and Actions (.github/dependabot.yml),",
+    "so every other manager is off to avoid two bots opening the same PR.",
+    "minimumReleaseAge matches nvim/Makefile's SERVER_COOLDOWN and dependabot.yml's",
+    "cooldown: a release must be a week old before a PR proposes it, because the",
+    "first days after a release are when a hijacked one is usually caught.",
+    "If the host cannot run `mise lock`, the PR bumps mise.toml alone and CI fails",
+    "it (tools/gen-mise.sh --check: lock version != pin). Run `make mise-lock` on",
+    "the PR branch and push. See docs/decisions/toolchain-policy.md."
+  ],
+  "extends": ["schedule:monthly"],
+  "enabledManagers": ["mise"],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "mise:",
+  "packageRules": [
+    {
+      "description": "One PR a month for minor and patch bumps; each major arrives alone, as in dependabot.yml.",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "mise tools"
+    }
+  ]
+}
