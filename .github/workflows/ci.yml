@@ -1678,8 +1678,11 @@ jobs:
           shim=$(mktemp -d); printf '#!/bin/sh\necho "$@" >> /tmp/sudo.log\n' > "$shim/sudo"; chmod +x "$shim/sudo"
           PATH="$shim:$PATH" ensure_dnf_parallel
           [ ! -s /tmp/sudo.log ] || { echo "a re-run reached sudo:"; cat /tmp/sudo.log; exit 1; }
-          make status bash | grep -q "✓ max_parallel_downloads=$DNF_MAX_PARALLEL_DOWNLOADS" \
-            || { echo "make status does not report the value"; exit 1; }
+          # Captured first: `make status | grep -q` under pipefail fails whenever
+          # grep exits on the match before make finishes writing (SIGPIPE).
+          st=$(make status bash || true)
+          grep -q "✓ max_parallel_downloads=$DNF_MAX_PARALLEL_DOWNLOADS" <<<"$st" \
+            || { echo "make status does not report the value"; echo "$st"; exit 1; }
           echo "ok: one key, effective value $got, idempotent without sudo"
 
   # ── the neovim floor holds on the platform that can't meet it ──────────────

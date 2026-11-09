@@ -153,8 +153,16 @@ ensure_wsl_interop() {
 # dnf5, while RHEL 9 and 10 stay on dnf4 (Red Hat does not build dnf5 for 10).
 DNF_MAX_PARALLEL_DOWNLOADS=10
 
+# Captured, then tested: no pipe. `dnf --version | head -1 | grep -q` under
+# `set -o pipefail` (bash/deps.sh sets it) answers false whenever head closes
+# the pipe before dnf has finished writing, because dnf then dies of SIGPIPE
+# and the pipeline inherits its 141. That depends on timing. It passed in a
+# local fedora:44 container and failed on the CI runner, which took the dnf4
+# branch on Fedora 44 and reported `Unknown argument "--save"`.
 dnf_is_dnf5() {
-  dnf --version 2>/dev/null | head -1 | grep -q '^dnf5'
+  local v
+  v="$(dnf --version 2>/dev/null)" || return 1
+  [[ "$v" == dnf5* ]]
 }
 
 # The EFFECTIVE value -- what dnf will use after every config file and drop-in
@@ -166,7 +174,7 @@ dnf_max_parallel_downloads() {
   else
     dump="$(dnf config-manager --dump 2>/dev/null)"
   fi
-  printf '%s\n' "$dump" | sed -n 's/^max_parallel_downloads *= *//p' | head -1
+  printf '%s\n' "$dump" | sed -n '/^max_parallel_downloads *= */{s///p;q}'
 }
 
 ensure_dnf_parallel() {
