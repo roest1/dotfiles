@@ -84,14 +84,20 @@ correctly — nothing distinguishes a dotfiles dependency from a project-scoped
 tool — and suppressing it required naming unrelated projects in `deps.conf`.
 The repo describes itself and nothing else; don't reintroduce an ignore list.
 
-It also does not report **duplicate** installs, and that one is a gap rather than a
-principle. A `||` chain is satisfied by any member, so a tool installed by two providers
-reads `✓` while PATH order alone decides which copy runs — and the dormant copy is
-typically older than the pinned one. Unlike "installed but not declared", this *is*
-computable: the tool is already in the manifest, so the question is only how many copies
-of a declared tool exist. `mise prune` handles mise's own superseded versions; nothing
-handles the cross-provider case. Evidence and the open design questions:
+It **does** report duplicate installs, as advice rather than drift. A `||` chain is
+satisfied by any member, so a tool installed by two providers reads `✓` while PATH order
+alone decides which copy runs — and the dormant copy is typically older than the pinned
+one. Each shadowed copy is named under its tool (`also on PATH, shadowed: linuxbrew`) and
+summed in a `shadowed` line that does not touch the exit code, because the machine works.
+Copies are compared by resolved path, so usrmerge's `/bin` and apt's `fd`→`fdfind` link
+are one copy, not two. Removal is still manual and per-provider:
 [`docs/decisions/tool-duplication.md`](docs/decisions/tool-duplication.md).
+
+**A linuxbrew copy is `brew`, not `pkg`, on any machine with apt or dnf** — and `manual`'s
+wildcard does not absorb it. It used to answer `pkg` for any `Cellar` path, a macOS
+leftover, which is how eleven Homebrew copies on a WSL box read `✓ pkg`. Which provider a
+tool *should* have is a rule, not a per-machine choice:
+[`docs/decisions/toolchain-policy.md`](docs/decisions/toolchain-policy.md).
 
 When adding a tool, add a `tool` line to the right section. **Don't add install logic** —
 `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`,

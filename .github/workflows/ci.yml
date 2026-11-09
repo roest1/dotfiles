@@ -1029,6 +1029,50 @@ jobs:
           [ "$got" = uv ] || { echo "ruff is a uv tool but reported as '$got'"; exit 1; }
           echo "ok: git is $(provider_of git), ruff is uv"
 
+      # A Cellar path answered `pkg` unconditionally -- a macOS leftover -- so on
+      # a WSL box with linuxbrew, five [bash] tools that existed ONLY as Homebrew
+      # copies read `✓ pkg`. brew is `pkg` only where pkg_install would have
+      # used it (no apt, no dnf). Both directions, plus the `manual` wildcard,
+      # which must not absorb brew either (zoxide is `pkg||manual`).
+      - name: linuxbrew is pkg only where there is no apt or dnf
+        run: |
+          set -euo pipefail
+          source lib/status.sh
+          t=$(mktemp -d)
+          mkdir -p "$t/Cellar/foo/1.0/bin" "$t/bin"
+          printf '#!/bin/sh\n' > "$t/Cellar/foo/1.0/bin/foo"; chmod +x "$t/Cellar/foo/1.0/bin/foo"
+          ln -s "$t/Cellar/foo/1.0/bin/foo" "$t/bin/foo"
+          export PATH="$t/bin:$PATH"
+          mise() { return 1; }; uv() { :; }
+          PM=apt;  got=$(provider_of foo); [ "$got" = brew ] || { echo "PM=apt: Cellar copy reported '$got', want brew"; exit 1; }
+          PM=dnf;  got=$(provider_of foo); [ "$got" = brew ] || { echo "PM=dnf: Cellar copy reported '$got', want brew"; exit 1; }
+          PM=brew; got=$(provider_of foo); [ "$got" = pkg ]  || { echo "PM=brew: Cellar copy reported '$got', want pkg"; exit 1; }
+          ! provider_satisfies 'pkg'         brew || { echo "pkg accepted brew"; exit 1; }
+          ! provider_satisfies 'pkg||manual' brew || { echo "manual wildcard absorbed brew"; exit 1; }
+          provider_satisfies 'pkg||manual' cargo  || { echo "manual wildcard no longer accepts other sources"; exit 1; }
+          echo "ok: brew is its own provider beside apt/dnf, and pkg where it is the only one"
+
+      # The reporting half of docs/decisions/tool-duplication.md. Two distinct
+      # copies must be reported; a symlink to the active copy (usrmerge's /bin,
+      # apt's ~/.local/bin/fd -> fdfind) is the SAME copy and must not be.
+      - name: make status names shadowed copies, and only real ones
+        run: |
+          set -euo pipefail
+          source lib/status.sh
+          t=$(mktemp -d); mkdir -p "$t/a" "$t/b" "$t/c"
+          printf '#!/bin/sh\necho a\n' > "$t/a/dup"; printf '#!/bin/sh\necho b\n' > "$t/b/dup"
+          chmod +x "$t/a/dup" "$t/b/dup"
+          ln -s "$t/a/dup" "$t/c/dup"
+          printf '#!/bin/sh\n' > "$t/a/solo"; chmod +x "$t/a/solo"; ln -s "$t/a/solo" "$t/c/solo"
+          export PATH="$t/a:$t/c:$t/b:$PATH"
+          got=$(shadowed_copies dup)
+          [ "$got" = "$t/b" ] || { echo "dup: want exactly '$t/b', got '$got'"; exit 1; }
+          got=$(shadowed_copies solo)
+          [ -z "$got" ] || { echo "a symlink to the active copy was reported as a second copy: '$got'"; exit 1; }
+          got=$(shadowed_copies no-such-tool-xyz)
+          [ -z "$got" ] || { echo "an absent tool reported copies: '$got'"; exit 1; }
+          echo "ok: one real duplicate reported, a symlinked alias and an absent tool are not"
+
       # The clean filter keeps per-machine model and effort choices out of git
       # by swapping them for claude/model-defaults.json. It once stripped only
       # model and effortLevel, while /effort writes modelSettings — which went
@@ -1518,15 +1562,30 @@ jobs:
           - name: ubuntu / apt
             runs-on: ubuntu-latest
             container: ''
-          - name: fedora / dnf
+          # Pinned to the release the fleet runs (the ThinkPad, and the WSL
+          # guest once it moves), not `latest`: a new Fedora landing mid-week
+          # would otherwise change what this row proves without a commit.
+          - name: fedora 44 / dnf5
             runs-on: ubuntu-latest
-            container: fedora:latest
+            container: fedora:44
+          # The work PowerEdge is RHEL 9.8. AlmaLinux is binary-compatible and
+          # tracks the same point release (rockylinux:9 on Docker Hub is stuck at
+          # 9.3). EPEL on and CRB off, because that is how the real box is set:
+          # a package that needs CRB should fail here before it fails there.
+          - name: rhel 9 / dnf4
+            runs-on: ubuntu-latest
+            container: almalinux:9
     steps:
+      - name: Enable EPEL (as on the RHEL box)
+        if: startsWith(matrix.container, 'almalinux')
+        run: dnf install -y epel-release
+
       - name: Bootstrap container prerequisites
         if: matrix.container != ''
-        # curl is here for [uv]: ensure_uv fetches Astral's installer, and
-        # fedora:latest ships curl-minimal, which is not guaranteed to stay.
-        run: dnf install -y git make sudo findutils curl
+        # curl is here for [uv]: ensure_uv fetches Astral's installer, and both
+        # images ship curl-minimal, which is not guaranteed to stay. Swapping it
+        # for curl needs --allowerasing on the EL image.
+        run: dnf install -y --allowerasing git make sudo findutils curl
 
       - uses: actions/checkout@v7
 
@@ -1540,6 +1599,12 @@ jobs:
       - name: Refresh apt lists
         if: matrix.name == 'ubuntu / apt'
         run: sudo apt-get update -qq
+
+      # Before [bash] runs, because [bash] is what sets dnf's one key -- the
+      # assertion after it compares every OTHER line against this.
+      - name: Snapshot dnf.conf
+        if: matrix.container != ''
+        run: grep -v '^max_parallel_downloads' /etc/dnf/dnf.conf > /tmp/dnf.rest.before
 
       - name: Install the bash section
         run: make install bash
@@ -1594,10 +1659,33 @@ jobs:
           grep -q 'python-preference' "$HOME/.config/uv/uv.toml"
           echo "ok: self-updatable uv, config linked"
 
+      # bash/deps.sh owns ONE key of dnf.conf, through dnf's own setter, on both
+      # dnfs in the fleet. Three claims: the value lands as dnf itself resolves
+      # it; every other line of dnf.conf survives; and a re-run on a machine
+      # already at the value never reaches sudo.
+      - name: "[bash] sets one dnf key and nothing else"
+        if: matrix.container != ''
+        run: |
+          set -euo pipefail
+          source lib/pkg.sh
+          got=$(dnf_max_parallel_downloads)
+          [ "$got" = "$DNF_MAX_PARALLEL_DOWNLOADS" ] || { echo "dnf resolves $got, want $DNF_MAX_PARALLEL_DOWNLOADS"; exit 1; }
+          grep -v '^max_parallel_downloads' /etc/dnf/dnf.conf > /tmp/dnf.rest.after
+          # Compared in bash, not with cmp: cmp is diffutils, which neither image
+          # ships, and "command not found" reads exactly like "files differ".
+          [ "$(cat /tmp/dnf.rest.before)" = "$(cat /tmp/dnf.rest.after)" ] \
+            || { echo "dnf.conf changed beyond the one key:"; cat /etc/dnf/dnf.conf; exit 1; }
+          shim=$(mktemp -d); printf '#!/bin/sh\necho "$@" >> /tmp/sudo.log\n' > "$shim/sudo"; chmod +x "$shim/sudo"
+          PATH="$shim:$PATH" ensure_dnf_parallel
+          [ ! -s /tmp/sudo.log ] || { echo "a re-run reached sudo:"; cat /tmp/sudo.log; exit 1; }
+          make status bash | grep -q "✓ max_parallel_downloads=$DNF_MAX_PARALLEL_DOWNLOADS" \
+            || { echo "make status does not report the value"; exit 1; }
+          echo "ok: one key, effective value $got, idempotent without sudo"
+
   # ── the neovim floor holds on the platform that can't meet it ──────────────
-  # Ubuntu is the only platform where the distro package cannot satisfy the 0.12
-  # floor (24.04 ships 0.9.5), so it is the only platform where the mise fallback
-  # actually runs — and until this job existed, nothing exercised it. The other
+  # Two platforms cannot satisfy the 0.12 floor from the distro: Ubuntu 24.04
+  # (0.9.5) and RHEL 9 + EPEL (0.8.0). Those are the only places the mise
+  # fallback actually runs -- and until this job existed, nothing exercised it. The other
   # install jobs run `make install bash`, which never touches neovim.
   #
   # This drives the real lib/ code rather than re-implementing the decision, but
@@ -1606,9 +1694,28 @@ jobs:
   # provider selection. What's asserted is exactly the claim — one nvim, and it
   # meets the floor.
   nvim-floor:
-    name: neovim floor (ubuntu, mise fallback)
+    name: neovim floor (${{ matrix.name }}, mise fallback)
     runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            container: ''
+          # RHEL 9's EPEL ships neovim 0.8.0 -- further below the floor than
+          # Ubuntu -- so this is the second platform where the fallback is the
+          # whole answer, and the only one on old glibc (2.34). It proves the
+          # prebuilt binary mise fetches actually RUNS there.
+          - name: rhel 9
+            container: almalinux:9
     steps:
+      - name: Container prerequisites (EPEL on, as on the RHEL box)
+        if: matrix.container != ''
+        run: |
+          dnf install -y epel-release
+          dnf install -y --allowerasing git make sudo findutils curl
+
       - uses: actions/checkout@v7
 
       # Reports what apt offers; deliberately does NOT fail when that improves.
@@ -1616,17 +1723,21 @@ jobs:
       # news — blocking every PR on it would mean an upstream improvement stops
       # unrelated work until someone edits CI. The assertion that matters is the
       # one below: one nvim, at or above the floor. That holds either way.
-      - name: What apt offers (informational)
+      - name: What the distro offers (informational)
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          cand=$(apt-cache policy neovim | awk '/Candidate:/ {print $2}')
-          echo "apt candidate: $cand"
+          if command -v apt-cache >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            cand=$(apt-cache policy neovim | awk '/Candidate:/ {print $2}')
+          else
+            cand=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' neovim)
+          fi
+          echo "distro candidate: $cand"
           case "$cand" in
-            0.9.*|0.1[01].*)
+            0.[0-9].*|0.1[01].*)
               echo "below 0.12 — the mise fallback is doing real work here" ;;
             *)
-              echo "::notice::apt now offers neovim $cand. If that is >= 0.12 the"
+              echo "::notice::the distro now offers neovim $cand. If that is >= 0.12 the"
               echo "::notice::mise||pkg ordering in deps.conf may no longer be needed." ;;
           esac
 
@@ -1654,14 +1765,20 @@ jobs:
           v=$(nvim --version | awk 'NR==1 { sub(/^v/,"",$2); print $2 }')
           maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
           [ "$maj" -gt 0 ] || [ "$min" -ge 12 ] || { echo "nvim $v is below the 0.12 floor"; exit 1; }
-          # The point of mise-first: apt's 0.9.5 was never installed, so there is
-          # nothing to be second.
-          n=$(which -a nvim | sort -u | wc -l)
+          # The point of mise-first: the distro's too-old neovim was never
+          # installed, so there is nothing to be second. `type -ap`, not
+          # `which -a`: the EL image has no `which`.
+          n=$(type -ap nvim | sort -u | wc -l)
           echo "nvim binaries on PATH: $n"
-          which -a nvim
+          type -ap nvim
           [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
-          dpkg -s neovim >/dev/null 2>&1 && { echo "apt's neovim got installed after all"; exit 1; } || true
-          echo "one nvim, $v, no apt package — mise-first held"
+          if command -v dpkg >/dev/null 2>&1 && dpkg -s neovim >/dev/null 2>&1; then
+            echo "apt's neovim got installed after all"; exit 1
+          fi
+          if command -v rpm >/dev/null 2>&1 && rpm -q neovim >/dev/null 2>&1; then
+            echo "dnf's neovim got installed after all"; exit 1
+          fi
+          echo "one nvim, $v, no distro package — mise-first held"
 
       # The nvim half of the alternate-font carrier, and the mirror image of
       # "make output carries escapes only on a wezterm tty" in the manifest job.
@@ -1677,6 +1794,8 @@ jobs:
       # SGR 5 byte runs through nvim's TUI and its terminfo. A grep would keep
       # passing if that path changed.
       - name: nvim emits the alternate-font carrier only under wezterm
+        # Once is enough: it tests altfont.lua's guard, not the platform.
+        if: matrix.name == 'ubuntu'
         run: |
           set -uo pipefail
           fail=0

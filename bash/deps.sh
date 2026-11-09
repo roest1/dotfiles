@@ -45,6 +45,13 @@ fi
 # a guest without sudo still gets the rest of this file.
 ensure_wsl_interop || true
 
+# dnf: one setting, max_parallel_downloads, through dnf's own setter. Same
+# shape as the line above -- system config, sudo only when the value is wrong,
+# a no-op without dnf -- and here for the same reason: every machine installs
+# [bash]. A section of its own would declare no link and no tool, which the
+# `dots` console treats as a section that does nothing.
+ensure_dnf_parallel || true
+
 # ── fzf: no version floor any more ───────────────────────────────────────────
 #
 # There was one, 0.65, and this is where it was enforced over an

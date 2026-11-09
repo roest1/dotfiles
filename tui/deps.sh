@@ -37,6 +37,8 @@ if ! ensure_cargo; then
   echo "     then comment out 'tui'. Other sections are unaffected."
   exit 1
 fi
+# Before the first crate, not after its build script has failed to link.
+cargo_can_link || exit 1
 
 # An array rather than a literal list: `github` and the make-it console are
 # the next two, and this is the line they get added to.
