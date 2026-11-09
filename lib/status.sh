@@ -62,6 +62,7 @@ STATUS_DRIFT_TOOLS=0
 STATUS_DRIFT_STALE=0
 STATUS_DRIFT_FONTS=0
 STATUS_DRIFT_WSL=0
+STATUS_DRIFT_DNF=0
 
 _drift_link()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
 _drift_tool()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
@@ -69,6 +70,7 @@ _drift_stale() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_STALE=$((STATU
 _drift_windows() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WINDOWS=$((STATUS_DRIFT_WINDOWS + 1)); }
 _drift_font()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_FONTS=$((STATUS_DRIFT_FONTS + 1)); }
 _drift_wsl()   { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WSL=$((STATUS_DRIFT_WSL + 1)); }
+_drift_dnf()   { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_DNF=$((STATUS_DRIFT_DNF + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
 #
@@ -112,10 +114,27 @@ provider_of() {
     "$HOME"/.bun/*)        echo "manual"; return ;;
   esac
 
+  # linuxbrew is `pkg` ONLY where pkg_install would have used it: a box with
+  # neither apt nor dnf (lib/pkg.sh, pkg_detect). Everywhere else it is its own
+  # provider, `brew`, which no declaration accepts -- because `pkg` there means
+  # apt or dnf, and a Homebrew copy is something nothing in this repo installed.
+  #
+  # This used to answer `pkg` for any Cellar path, a leftover from macOS, where
+  # brew WAS the system package manager. On a WSL box with linuxbrew that made
+  # bat, eza, fd, fzf and zoxide -- present only as Homebrew copies -- read
+  # `✓ pkg`, so `make status` was green over a toolchain deps.conf never named.
+  # Matched on the path rather than on `command -v brew`, so a brew that has
+  # left PATH still cannot launder its Cellar into `pkg`.
+  case "$resolved" in
+    /home/linuxbrew/*|*/Cellar/*)
+      [[ -n "${PM:-}" ]] || pkg_detect
+      if [[ "$PM" == "brew" ]]; then echo "pkg"; else echo "brew"; fi
+      return ;;
+  esac
+
   # System package managers own it?
   if command -v rpm >/dev/null 2>&1 && rpm -qf "$resolved" >/dev/null 2>&1; then echo "pkg"; return; fi
   if command -v dpkg >/dev/null 2>&1 && dpkg -S "$resolved" >/dev/null 2>&1; then echo "pkg"; return; fi
-  if command -v brew >/dev/null 2>&1 && [[ "$resolved" == *"/Cellar/"* ]]; then echo "pkg"; return; fi
 
 
   case "$resolved" in
@@ -163,9 +182,50 @@ provider_satisfies() {
     #
     # This only applies to a tool that IS installed: an absent one is caught by
     # the `absent` branch in status_tools before provider_satisfies is reached.
-    [[ "$p" == "manual" ]] && return 0
+    #
+    # Except `brew`. A linuxbrew copy on an apt/dnf machine is neither an
+    # official installer nor an extracted build -- it is a second package
+    # manager nothing here asked for -- and letting the wildcard absorb it is
+    # how zoxide (`pkg||manual`) read ✓ while every sibling read ✗ brew.
+    [[ "$p" == "manual" && "$actual" != "brew" ]] && return 0
   done
   return 1
+}
+
+# ── Shadowed copies ──────────────────────────────────────────────────────────
+#
+# The reporting half of docs/decisions/tool-duplication.md. A `||` chain is
+# satisfied by any member, so a tool installed by two providers reads ✓ while
+# PATH order alone decides which copy runs -- and the dormant one is typically
+# older and unpinned, one PATH edit away from being live again.
+#
+# Prints the locations of every copy of <cmd> on PATH OTHER than the one that
+# runs, comma-separated, or nothing. Copies are compared by resolved path, so
+# usrmerge's /bin/gh -> /usr/bin/gh and apt's ~/.local/bin/fd -> fdfind are one
+# copy, not two.
+#
+# Labelled by location, not by provider_of: the point is "where is the other
+# one", and provider_of on every path would cost an rpm/dpkg query each.
+_copy_label() {
+  case "$1" in
+    /home/linuxbrew/*|*/Cellar/*)  echo "linuxbrew" ;;
+    */mise/shims/*|*/mise/installs/*) echo "mise" ;;
+    *) local d="${1%/*}"; echo "${d/#$HOME/\~}" ;;
+  esac
+}
+
+shadowed_copies() {
+  local cmd="$1" active p r seen out=""
+  active="$(command -v "$cmd" 2>/dev/null)" || return 0
+  [[ "$active" == /* ]] || return 0          # a builtin or function, not a binary
+  seen="$(readlink -f "$active" 2>/dev/null || echo "$active")"
+  while IFS= read -r p; do
+    r="$(readlink -f "$p" 2>/dev/null || echo "$p")"
+    case $'\n'"$seen"$'\n' in *$'\n'"$r"$'\n'*) continue ;; esac
+    seen+=$'\n'"$r"
+    out+="${out:+, }$(_copy_label "$p")"
+  done < <(type -ap "$cmd" 2>/dev/null)
+  printf '%s' "$out"
 }
 
 # ── Links ────────────────────────────────────────────────────────────────────
@@ -199,7 +259,9 @@ status_links() {
 
 # ── Tools ────────────────────────────────────────────────────────────────────
 status_tools() {
-  local section provider cmd pkg current="" actual want have
+  local section provider cmd pkg current="" actual want have shadows
+  # rg and fd are declared in two sections; count each command once.
+  local -A shadow_seen=() brew_seen=()
   # shellcheck disable=SC2034  # pkg is read to consume the 4th field
   while IFS=$'\t' read -r section provider cmd pkg; do
     [[ -z "$section" ]] && continue
@@ -225,8 +287,21 @@ status_tools() {
       printf "%s  $MARK_BAD %-14s declared %-12s actual %-8s %s%s\n" \
         "$SG" "$cmd" "$provider" "$actual" "$(command -v "$cmd" | sed "s|^$HOME|~|")" "$SG_OFF"
       _drift_tool
+      [[ "$actual" == "brew" ]] && brew_seen[$cmd]=1
+    fi
+
+    # Advice, not drift (tool-duplication.md, Q2): a shadowed copy is a hazard
+    # on a machine that works, and counting it would make the common state red.
+    if tool_applies_here "$cmd" && [[ "$actual" != "absent" ]]; then
+      shadows="$(shadowed_copies "$cmd")"
+      if [[ -n "$shadows" ]]; then
+        printf "%s      also on PATH, shadowed: %s%s\n" "$SG" "$shadows" "$SG_OFF"
+        shadow_seen[$cmd]=1
+      fi
     fi
   done < <(manifest_lines tool "$@")
+  STATUS_SHADOWED=${#shadow_seen[@]}
+  STATUS_BREW=${#brew_seen[@]}
 }
 
 # ── Everything ───────────────────────────────────────────────────────────────
@@ -323,6 +398,26 @@ status_wsl_interop() {
     _drift_wsl
   else
     printf "%s  $MARK_OK registered, and persisted in %s%s\n" "$SG" "$WSL_INTEROP_CONF" "$SG_OFF"
+  fi
+}
+
+# ── dnf ──────────────────────────────────────────────────────────────────────
+#
+# Set by bash/deps.sh (ensure_dnf_parallel) and reported here the way
+# status_wsl_interop reports its sibling: the EFFECTIVE value, as dnf itself
+# resolves it, on any machine that has dnf.
+status_dnf() {
+  command -v dnf >/dev/null 2>&1 || return 0
+  case " $* " in *" bash "*) ;; *) return 0 ;; esac
+  local want="$DNF_MAX_PARALLEL_DOWNLOADS" have
+  have="$(dnf_max_parallel_downloads)"
+  echo ""
+  printf "%s[dnf] config%s\n" "$SG_B" "$SG_OFF"
+  if [[ "$have" == "$want" ]]; then
+    printf "%s  $MARK_OK max_parallel_downloads=%s%s\n" "$SG" "$want" "$SG_OFF"
+  else
+    printf "%s  $MARK_BAD max_parallel_downloads=%s, want %s%s\n" "$SG" "${have:-?}" "$want" "$SG_OFF"
+    _drift_dnf
   fi
 }
 
@@ -456,6 +551,9 @@ status_all() {
   STATUS_DRIFT_WINDOWS=0
   STATUS_DRIFT_FONTS=0
   STATUS_DRIFT_WSL=0
+  STATUS_DRIFT_DNF=0
+  STATUS_SHADOWED=0
+  STATUS_BREW=0
   echo ""
   printf "%ssync status — deps.conf vs. this machine%s\n" "$SG_B" "$SG_OFF"
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -489,8 +587,10 @@ status_all() {
   status_fonts "${scope[@]}"
   status_windows
   status_wsl_interop
+  status_dnf "${scope[@]}"
   STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE \
-                   + STATUS_DRIFT_WINDOWS + STATUS_DRIFT_FONTS + STATUS_DRIFT_WSL ))
+                   + STATUS_DRIFT_WINDOWS + STATUS_DRIFT_FONTS + STATUS_DRIFT_WSL \
+                   + STATUS_DRIFT_DNF ))
 
   echo ""
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -519,6 +619,10 @@ status_all() {
       echo "             Run 'make install bash', which writes $WSL_INTEROP_CONF"
       echo "             and restarts systemd-binfmt. It asks for sudo."
     fi
+    if [[ $STATUS_DRIFT_DNF -gt 0 ]]; then
+      echo "  $MARK_BAD dnf ($STATUS_DRIFT_DNF) — max_parallel_downloads is not $DNF_MAX_PARALLEL_DOWNLOADS."
+      echo "             Run 'make install bash'. It edits that one key and asks for sudo."
+    fi
     if [[ $STATUS_DRIFT_FONTS -gt 0 ]]; then
       echo "  $MARK_BAD fonts ($STATUS_DRIFT_FONTS) — the font lanes cannot work as configured."
       echo "             Only the provable half is counted here: files present, and"
@@ -529,7 +633,22 @@ status_all() {
       echo "  $MARK_BAD tools ($STATUS_DRIFT_TOOLS) — the manifest declares a provider that didn't install it."
       echo "             Either fix deps.conf to match reality, or uninstall and"
       echo "             re-run 'make install' to get the declared one."
+      if [[ $STATUS_BREW -gt 0 ]]; then
+        echo "             $STATUS_BREW of them come from linuxbrew, which is not 'pkg' on a"
+        echo "             machine with apt or dnf. Remove linuxbrew FIRST, then run"
+        echo "             'make install': it skips any tool already on PATH, so with"
+        echo "             the brew copies present it would install nothing."
+      fi
     fi
+  fi
+  # Printed whether or not anything drifted: it is advice, and an in-sync
+  # machine is exactly where a shadowed copy goes unnoticed.
+  if [[ $STATUS_SHADOWED -gt 0 ]]; then
+    echo ""
+    echo "  $MARK_NA shadowed ($STATUS_SHADOWED) — a second copy sits behind the active one on PATH."
+    echo "             Not counted: the active copy is the one shown. The other is"
+    echo "             usually older and unpinned. Removal per provider:"
+    echo "             docs/decisions/tool-duplication.md"
   fi
   echo ""
   return $(( STATUS_DRIFT > 0 ? 1 : 0 ))

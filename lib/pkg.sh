@@ -136,6 +136,66 @@ ensure_wsl_interop() {
   echo "  ✅ WSL interop restored"
 }
 
+# ─── dnf: one setting, never the file ───────────────────────────────────────
+#
+# The only dnf option worth owning here. dnf4 and dnf5 both default to 3
+# parallel downloads; past ~10 the link or the mirror is the limit rather than
+# the count, and 20 is dnf's ceiling. One value for every machine, because there
+# is nothing per-machine to tune: a slower link just saturates sooner.
+#
+# Set through dnf's own setter, which edits that one key in place and leaves the
+# rest of dnf.conf alone. That matters on the work RHEL box, whose dnf.conf is
+# not this repo's to rewrite. A re-run on a machine already at the value asks
+# for no password: sudo is reached only when the value is wrong. Called from
+# bash/deps.sh, next to ensure_wsl_interop, which is the same kind of thing.
+#
+# The two dnfs spell it differently, and both are in the fleet: Fedora 44 is
+# dnf5, while RHEL 9 and 10 stay on dnf4 (Red Hat does not build dnf5 for 10).
+DNF_MAX_PARALLEL_DOWNLOADS=10
+
+# Captured, then tested: no pipe. `dnf --version | head -1 | grep -q` under
+# `set -o pipefail` (bash/deps.sh sets it) answers false whenever head closes
+# the pipe before dnf has finished writing, because dnf then dies of SIGPIPE
+# and the pipeline inherits its 141. That depends on timing. It passed in a
+# local fedora:44 container and failed on the CI runner, which took the dnf4
+# branch on Fedora 44 and reported `Unknown argument "--save"`.
+dnf_is_dnf5() {
+  local v
+  v="$(dnf --version 2>/dev/null)" || return 1
+  [[ "$v" == dnf5* ]]
+}
+
+# The EFFECTIVE value -- what dnf will use after every config file and drop-in
+# is read -- not a grep of dnf.conf, which a dnf5 drop-in can override.
+dnf_max_parallel_downloads() {
+  local dump
+  if dnf_is_dnf5; then
+    dump="$(dnf --dump-main-config 2>/dev/null)"
+  else
+    dump="$(dnf config-manager --dump 2>/dev/null)"
+  fi
+  printf '%s\n' "$dump" | sed -n '/^max_parallel_downloads *= */{s///p;q}'
+}
+
+ensure_dnf_parallel() {
+  command -v dnf >/dev/null 2>&1 || { echo "  ↷  no dnf on this machine"; return 0; }
+  local want="$DNF_MAX_PARALLEL_DOWNLOADS" have
+  have="$(dnf_max_parallel_downloads)"
+  if [[ "$have" == "$want" ]]; then
+    echo "  ✅ dnf max_parallel_downloads=$want"
+    return 0
+  fi
+  echo "  ➡️  dnf max_parallel_downloads ${have:-?} -> $want..."
+  if dnf_is_dnf5; then
+    sudo dnf config-manager setopt "max_parallel_downloads=$want"
+  else
+    sudo dnf config-manager --save --setopt="max_parallel_downloads=$want" >/dev/null
+  fi || { echo "  ⚠️  could not set max_parallel_downloads"; return 1; }
+  [[ "$(dnf_max_parallel_downloads)" == "$want" ]] \
+    || { echo "  ⚠️  set, but dnf still reports $(dnf_max_parallel_downloads)"; return 1; }
+  echo "  ✅ dnf max_parallel_downloads=$want"
+}
+
 # ─── Detect package manager ──────────────────────────────────────────────────
 
 # Distro first, linuxbrew last. brew is a supplementary manager on Linux that
@@ -311,6 +371,18 @@ ensure_cargo() {
   }
 }
 
+# cargo can download and compile without a C toolchain, and then fail at the
+# LINK step, minutes in, with a wall of build-script output. Every crate needs a
+# linker, so ask before starting rather than after. A minimal RHEL 9 has none:
+# that is how eza failed in CI's AlmaLinux row.
+cargo_can_link() {
+  command -v cc >/dev/null 2>&1 && return 0
+  echo "  ❌ cargo needs a C linker and there is no \`cc\`. Install one:"
+  echo "       sudo dnf install gcc        # Fedora / RHEL"
+  echo "       sudo apt install build-essential"
+  return 1
+}
+
 cargo_install() {
   local cmd="$1"
   local crate="${2:-$1}"
@@ -321,6 +393,7 @@ cargo_install() {
   fi
 
   ensure_cargo || return 1
+  cargo_can_link || return 1
 
   echo "  ➡️  Installing $crate via cargo..."
   cargo install "$crate" 2>/dev/null \

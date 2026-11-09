@@ -1,6 +1,6 @@
 # Duplicate installs across providers
 
-**Status:** open problem, no tool offered yet.
+**Status:** reporting half built 2026-11-07; removal still open.
 **Applies to:** `make status`, provider resolution, `lib/pkg.sh`.
 
 `deps.conf` declares which provider *should* install a tool. Nothing ever removes the
@@ -157,6 +157,25 @@ Open questions before building:
    a broken machine, and making `make status` fail on it would make the common state red.
 3. Is this `make doctor`, or a fourth column in `status`? `status` currently answers "is
    this machine what the manifest says" and this is arguably a different question.
+
+## What was built (2026-11-07)
+
+`shadowed_copies` in `lib/status.sh`, called from `status_tools`. The open questions were
+answered as follows:
+
+1. **`type -a`, deduplicated by resolved path, was enough.** `provider_of` per path
+   was not needed: the note says *where* the other copy is (`linuxbrew`, `~/.cargo/bin`,
+   `/usr/bin`), which is what you need to remove it. Resolving matters. Without it,
+   usrmerge's `/bin/gh` reports as a second `/usr/bin/gh`.
+2. **Advice.** It prints under the tool and in a `shadowed (N)` summary line, and does not
+   touch `STATUS_DRIFT` or the exit code, as `uv/deps.sh` had already decided for uv.
+3. **A note in `status`, not `make doctor`.** It appears only under a tool `status`
+   already reports, so it describes the repo's own dependencies and nothing else.
+
+The same change fixed a provenance bug this check could not have caught by itself:
+linuxbrew copies answered `pkg`. On the Alienware's WSL guest, that left five tools
+present *only* as Homebrew copies reading `✓ pkg`, with no second copy to shadow. See
+[`toolchain-policy.md`](toolchain-policy.md).
 
 ## Relationship to Nix
 
