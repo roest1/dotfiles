@@ -259,10 +259,9 @@ status_links() {
 
 # ── Tools ────────────────────────────────────────────────────────────────────
 status_tools() {
-  local section provider cmd pkg current="" actual want have shadows
+  local section provider cmd pkg current="" actual want have shadows drift
   # rg and fd are declared in two sections; count each command once.
   local -A shadow_seen=() brew_seen=()
-  # shellcheck disable=SC2034  # pkg is read to consume the 4th field
   while IFS=$'\t' read -r section provider cmd pkg; do
     [[ -z "$section" ]] && continue
     if [[ "$section" != "$current" ]]; then
@@ -280,6 +279,15 @@ status_tools() {
       IFS=$'\t' read -r want have <<<"$(_mise_pin_versions "$cmd")"
       printf "%s  $MARK_BAD %-14s pinned %s not installed (active: %s)%s\n" \
         "$SG" "$cmd" "${want:-?}" "${have:-none}" "$SG_OFF"
+      _drift_stale
+    # A mise tool that runs fine but is not the version mise.toml pins: the
+    # global config still says "latest", or an older pin, or names the tool
+    # under a backend the repo has moved off. Drift, because a pin that the
+    # machines do not run is not tracking anything. Same bucket as a stale
+    # pin, same remedy.
+    elif [[ "$actual" == "mise" ]] && drift="$(mise_global_drift "$cmd" "$pkg")" \
+         && [[ -n "$drift" ]]; then
+      printf "%s  $MARK_BAD %-14s %s%s\n" "$SG" "$cmd" "$drift" "$SG_OFF"
       _drift_stale
     elif provider_satisfies "$provider" "$actual"; then
       printf "%s  $MARK_OK %-14s %s%s\n" "$SG" "$cmd" "$actual" "$SG_OFF"
@@ -603,9 +611,9 @@ status_all() {
       echo "  $MARK_BAD links ($STATUS_DRIFT_LINKS) — run 'make link' to repoint them"
     fi
     if [[ $STATUS_DRIFT_STALE -gt 0 ]]; then
-      echo "  $MARK_BAD pins ($STATUS_DRIFT_STALE) — mise.toml pins a version this machine never installed."
-      echo "             Run 'mise install'. 'make install' will NOT fix it: the old"
-      echo "             shim is still on PATH, so mise_install short-circuits."
+      echo "  $MARK_BAD pins ($STATUS_DRIFT_STALE) — this machine does not run the version mise.toml pins."
+      echo "             Run 'make install'. It moves each mise tool's global entry to the"
+      echo "             pin and installs it, checked against mise.lock."
     fi
     if [[ $STATUS_DRIFT_WINDOWS -gt 0 ]]; then
       echo "  $MARK_BAD windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is behind origin/main."

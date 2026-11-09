@@ -495,25 +495,27 @@ pkg_upgrade() {
 }
 
 mise_install() {
-  local cmd="$1"
+  local cmd="$1" pkg="${2:-}" drift
 
   if command -v "$cmd" >/dev/null 2>&1; then
-    echo "  ✅ $cmd"
-    return 0
+    # Present is not the same as current. When mise manages this tool here,
+    # the version it runs comes from the GLOBAL config, which nothing but this
+    # function writes. So a pin bumped in mise.toml would never reach a
+    # machine that already had the tool, and "pull, make install" would leave
+    # it on the old version while reporting ✅. That was the state until
+    # 2026-11-09. See mise_global_drift.
+    drift="$(mise_global_drift "$cmd" "$pkg")"
+    if [[ -z "$drift" ]]; then
+      echo "  ✅ $cmd"
+      return 0
+    fi
+    echo "  ⬆️  $cmd: $drift"
   fi
 
   mise_install_forced "$@"
 }
 
-# mise_install_forced <cmd> [tool]
-#
-# mise_install without the `command -v` short-circuit, for when the command is
-# present but not usable. `command -v` answers "does this exist", which is the
-# right question almost everywhere and the wrong one when a distro ships a
-# version too old to run the config — Ubuntu 24.04's neovim 0.9.5 against a
-# config that needs 0.10+. The caller decides it's unusable; this just installs
-# over it. See the version floor in nvim/deps.sh for the only current use.
-# The pinned "name@version" for a tool, from the repo's generated mise.toml.
+# The pinned "key@version" for a tool, from the repo's generated mise.toml.
 # Empty if the tool isn't pinned there.
 #
 # Two names are tried because mise's registry name matches neither field of a
@@ -523,18 +525,87 @@ mise_install() {
 # entry, so the old `mise use -g "${pkg:-$cmd}@latest"` could never have
 # installed it. tools/gen-mise.sh resolves the name against the registry and
 # writes the winner here, so this just has to find it.
+#
+# The key may be backend-qualified ("aqua:neovim/neovim"), which is how
+# gen-mise.sh picks a checksummed backend over a registry default that records
+# none. The whole key is the spec: `mise use -g aqua:neovim/neovim@0.12.4`.
 _mise_pin() {
-  local cmd="$1" pkg="${2:-}" root candidate version
+  local cmd="$1" pkg="${2:-}" root key version
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   [[ -f "$root/mise.toml" ]] || return 0
-  for candidate in "${pkg:-$cmd}" "$cmd"; do
-    [[ -z "$candidate" ]] && continue
-    version="$(sed -n "s/^${candidate} = \"\(.*\)\"\$/\1/p" "$root/mise.toml" | head -1)"
-    [[ -n "$version" ]] && { echo "${candidate}@${version}"; return 0; }
-  done
+  IFS=$'\t' read -r key version < <(_mise_toml_entries "$root/mise.toml" "$cmd" "$pkg")
+  [[ -n "${key:-}" && -n "${version:-}" ]] && echo "${key}@${version}"
   return 0
 }
 
+# _mise_toml_entries <file> <cmd> [pkg]
+#
+# "key<TAB>value" for every [tools] entry in a mise config that names this
+# tool, under either name, bare ("neovim") or backend-qualified
+# ("aqua:neovim/neovim", matched on its last path segment). A value that is
+# not a plain string (a table, an array) prints as "?", which never equals a
+# pin and so reads as drift rather than being silently skipped.
+_mise_toml_entries() {
+  local file="$1" cmd="$2" pkg="${3:-}"
+  [[ -f "$file" ]] || return 0
+  awk -v a="${pkg:-$cmd}" -v b="$cmd" '
+    /^[ \t]*\[/ { intools = ($0 ~ /^[ \t]*\[tools\][ \t]*$/); next }
+    !intools || $0 !~ /=/ || $0 ~ /^[ \t]*#/ { next }
+    {
+      key = $0; sub(/[ \t]*=.*/, "", key); gsub(/^[ \t]+|"/, "", key)
+      val = $0; sub(/^[^=]*=[ \t]*/, "", val); sub(/[ \t]+(#.*)?$/, "", val)
+      if (val ~ /^"[^"]*"$/) gsub(/"/, "", val); else val = "?"
+      name = key; sub(/^[^:]*:/, "", name); sub(/^.*\//, "", name)
+      if (key == a || key == b || (key ~ /:/ && (name == a || name == b)))
+        print key "\t" val
+    }' "$file"
+}
+
+# The config `mise use -g` writes, resolved the way mise resolves it.
+_mise_global_config() {
+  echo "${MISE_GLOBAL_CONFIG_FILE:-${MISE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/mise}/config.toml}"
+}
+
+# mise_global_drift <cmd> [pkg]
+#
+# Empty when there is nothing to converge, otherwise a one-line reason. There
+# is nothing to converge when the global config does not list the tool (mise
+# does not manage it on this machine: the distro or another provider does, and
+# tier 1 of docs/decisions/toolchain-policy.md says leave that alone), or when
+# mise.toml pins no version for it.
+#
+# Drift is any global entry that is not exactly the pin, key and value: an old
+# "latest" from before pins existed, a version the repo has since bumped, or a
+# bare "neovim" left behind after the pin moved to "aqua:neovim/neovim". An
+# exact entry whose version is not on disk is drift too, the stale-shim case
+# `make status` calls mise-stale.
+mise_global_drift() {
+  local cmd="$1" pkg="${2:-}" spec key val n=0 other=""
+  spec="$(_mise_pin "$cmd" "$pkg")"
+  [[ -n "$spec" ]] || return 0
+  command -v mise >/dev/null 2>&1 || return 0
+  while IFS=$'\t' read -r key val; do
+    [[ -z "$key" ]] && continue
+    n=$((n + 1))
+    [[ "$key@$val" == "$spec" ]] || other="${other:+$other, }$key=$val"
+  done < <(_mise_toml_entries "$(_mise_global_config)" "$cmd" "$pkg")
+  [[ $n -eq 0 ]] && return 0
+  if [[ -n "$other" ]]; then
+    echo "global mise has $other, repo pins $spec"
+  elif ! mise where "$spec" >/dev/null 2>&1; then
+    echo "pinned $spec is not installed"
+  fi
+}
+
+# mise_install_forced <cmd> [tool]
+#
+# mise_install without the `command -v` short-circuit, for when the command is
+# present but not usable. `command -v` answers "does this exist", which is the
+# right question almost everywhere and the wrong one when a distro ships a
+# version too old to run the config — Ubuntu 24.04's neovim 0.9.5 against a
+# config that needs 0.10+. The caller decides it's unusable; this just installs
+# over it. Two callers: the version floor in nvim/deps.sh, and mise_install
+# itself when mise_global_drift says the global config is not the pin.
 mise_install_forced() {
   local cmd="$1" pkg="${2:-}" spec
 
@@ -566,12 +637,27 @@ mise_install_forced() {
   # exactly what was wrong -- GitHub's API returning 429 to an anonymous
   # runner. Silence on success is still right; mise's progress output is noise
   # in `make install`. Silence on failure is what hid the cause.
-  local err
-  if ! err="$(mise use -g "$spec" 2>&1 >/dev/null)"; then
+  #
+  # Run from the repo root, so mise reads the repo's mise.lock and refuses a
+  # download whose sha256 does not match it. `-g` only says where the version
+  # is recorded. Verified 2026-11-09 with a tampered hash: from the repo root,
+  # `mise use -g` fails "Actual: sha256:...". make already runs here, which
+  # is why this held before, but a caller elsewhere would install unchecked.
+  local err root key _val
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if ! err="$(cd "$root" && mise use -g "$spec" 2>&1 >/dev/null)"; then
     echo "  ⚠️  mise use -g $spec failed"
     [ -n "$err" ] && printf '%s\n' "$err" | sed 's/^/      /'
     return 1
   fi
+  # Retire any other global entry for the same tool, AFTER the new one is in,
+  # so a failed install never leaves the machine with neither. Two entries
+  # would both claim the same shim and leave which one runs to mise.
+  while IFS=$'\t' read -r key _val; do
+    [[ -z "$key" || "$key" == "${spec%@*}" ]] && continue
+    (cd "$root" && mise unuse -g "$key" >/dev/null 2>&1) \
+      || echo "  ⚠️  could not remove the old global entry '$key' (mise unuse -g $key)"
+  done < <(_mise_toml_entries "$(_mise_global_config)" "$cmd" "$pkg")
   export PATH="$HOME/.local/share/mise/shims:$PATH"
 }
 

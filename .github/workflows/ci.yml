@@ -1783,6 +1783,32 @@ jobs:
           fi
           echo "one nvim, $v, no distro package — mise-first held"
 
+      # "Pull, make install, and the machine runs what the repo says" depends on
+      # this. mise_install used to stop at `command -v`, so a machine that
+      # already had nvim kept whatever its global mise config named -- on the
+      # Alienware that was "latest", under a backend that records no checksum
+      # -- and a bumped pin never arrived. Rewinding the entry to that state is
+      # the cheapest faithful stand-in for "this machine predates the pin".
+      - name: make install moves an existing mise tool onto the pin
+        run: |
+          set -euo pipefail
+          source lib/pkg.sh
+          cfg=$(_mise_global_config)
+          spec=$(_mise_pin nvim neovim)
+          echo "pin: $spec"
+          case "$spec" in aqua:*) ;; *) echo "neovim is not pinned under aqua:"; exit 1 ;; esac
+          sed -i 's|^"aqua:neovim/neovim" = .*|neovim = "latest"|' "$cfg"
+          cat "$cfg"
+          out=$(mise_install nvim neovim); echo "$out"
+          grep -q 'repo pins' <<<"$out" || { echo "the stale entry was not noticed"; exit 1; }
+          cat "$cfg"
+          grep -qx "\"${spec%@*}\" = \"${spec#*@}\"" "$cfg" || { echo "global config is not the pin"; exit 1; }
+          if grep -q '^neovim = ' "$cfg"; then echo "the old entry survived"; exit 1; fi
+          out=$(mise_install nvim neovim); echo "$out"
+          [ "$out" = "  ✅ nvim" ] || { echo "second run did more than confirm"; exit 1; }
+          if make status nvim | grep 'repo pins'; then echo "make status still reports pin drift"; exit 1; fi
+          echo "ok: converged to $spec, idempotent, and make status agrees"
+
       # The nvim half of the alternate-font carrier, and the mirror image of
       # "make output carries escapes only on a wezterm tty" in the manifest job.
       #

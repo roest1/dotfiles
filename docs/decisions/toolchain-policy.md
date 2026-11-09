@@ -50,7 +50,14 @@ of what each curl line would lose:
   per tool, scattered across `deps.sh` files.
 - **The checksum.** `curl | sh` runs whatever the server returns at that moment.
   `mise.lock` records a sha256 per platform, so a swapped release fails to install.
-  That is the supply-chain half of the reason this repo pins anything.
+  That is the supply-chain half of the reason this repo pins anything. It holds only
+  for backends that write a hash. Until 2026-11-09 neovim was locked through
+  mise's registry default, a vfox plugin, which records a URL and no hash, so the
+  one binary this repo depends on most was the one installed unchecked.
+  `tools/gen-mise.sh` now pins such a tool under its `aqua:` backend
+  (`"aqua:neovim/neovim"`, the same upstream tarball), and `--check` fails CI if
+  any tool in `mise.lock` lacks a linux-x64 sha256. Verified with a tampered hash:
+  `mise use -g` from the repo root refuses it.
 - **One update route.** A bump is one line in `mise.toml` and `make mise-lock`, and
   Renovate can open that PR. Curl installers each have their own story: `bun
   upgrade`, `uv self update`, nothing at all for qsv.
@@ -58,6 +65,36 @@ of what each curl line would lose:
 mise is itself one curl install, so the trade is **one trusted installer in exchange
 for many, and the tools become data**. It stays small on purpose: the tier-2 tools
 above, and nothing the distro already serves.
+
+## Applying a bump: pull, then `make install`
+
+The workflow this repo is for is: a PR bumps a version, every machine pulls and
+runs `make install`, and that machine now runs the bumped version. For mise tools
+that did not hold until 2026-11-09. `mise_install` stopped at `command -v`, and the
+version a mise tool runs comes from the *global* mise config, which only
+`mise_install` writes. The Alienware's still said `neovim = "latest"`,
+`qsv = "latest"` and `lua-language-server = "latest"`, from before pins existed.
+Inside the repo the repo's `mise.toml` overrode them, which is why `make status`
+(run from the repo) looked clean.
+
+Now, when the global config lists a tool, `mise_install` compares the entry with
+the pin. Any difference (value, backend key, or the pinned version missing from
+disk) runs `mise use -g <pin>` from the repo root, so `mise.lock` is enforced. It
+then retires the old entry with `mise unuse -g`, after the new one is in. A tool
+the global config does not list is left alone: mise does not manage it on that
+machine, and tier 1 says the distro's copy is fine. `make status` reports the same
+comparison under `pins`.
+
+What `make install` applies, by lane:
+
+| Lane | Applied by `make install` |
+| --- | --- |
+| mise tools | yes, as above |
+| `nvim/lsp-servers` (bun) | yes, `bun install --frozen-lockfile` on every run |
+| `nvim/lazy-lock.json` | yes, `make -C nvim sync` |
+| `tui/` crates | yes, `cargo install --locked --path` |
+| distro packages | no: tier 1, the distro's own upgrade (`dnf upgrade`) |
+| uv | no: `uv self update` |
 
 uv is the exception that proves the rule. Its own installer is preferred over both
 mise and `pkg` because only that build can `uv self update` (see `[uv]`).
