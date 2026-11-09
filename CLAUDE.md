@@ -104,6 +104,10 @@ When adding a tool, add a `tool` line to the right section. **Don't add install 
 `uv_install`, `mise_install`, `cargo_install`, `ensure_symlink`), and
 `lib/providers.sh` dispatches to it. Every helper short-circuits on `command -v`, which is
 what makes overlapping tools (`rg`, `fd` appear in both `[bash]` and `[nvim]`) safe.
+**`mise_install` is the one that looks past it**: when the global mise config lists the
+tool and the entry is not exactly `mise.toml`'s pin, it reinstalls to the pin, because
+otherwise a bumped pin never reaches a machine that already has the tool
+([`toolchain-policy.md`](docs/decisions/toolchain-policy.md), "Applying a bump").
 
 There's also a `manual` provider. It installs nothing — it declares that an official
 installer or an extracted build is an acceptable source, so `make status` doesn't flag a
@@ -551,7 +555,7 @@ you write code here. Reasoning, revisit conditions and current status:
   The editor side has the CI guard the shell always had: `nvim/doc` is checked
   against `nvim/lua` in both directions (see `nvim/CLAUDE.md`).
 - **The `[bash]` file split is enforced, not conventional, and it has now paid for itself.** `bash_git` (git porcelain) → `bash_github` (plain `gh` + shared helpers) → `bash_github_tui` (everything interactive), sourced in that order; only the TUI file could invoke fzf, and CI checked it. That boundary is what made replacing the interactive layer a **deletion** rather than a rewrite: `github` is `tui/github` now, `bash_github_tui` is gone, and `bash_git`, `bash_github` and `gha` were untouched by the swap. The CI row survives the file, because `bash_github` is still the plain-`gh` file and a screen growing back into it is the drift to catch. How it was built, ported and swapped: [`docs/decisions/github-tui.md`](docs/decisions/github-tui.md), and what the port chose not to carry: [`docs/decisions/github-parity.md`](docs/decisions/github-parity.md).
-- **`mise.toml` and `mise.lock` are generated.** `deps.conf` is still the only place tools are declared; `tools/gen-mise.sh` derives the mise-provided subset from it and `mise lock` adds per-platform checksums. Run `make mise-lock` after touching a mise tool. Don't hand-edit the tool list (versions are fine to edit — regenerating preserves them).
+- **`mise.toml` and `mise.lock` are generated.** `deps.conf` is still the only place tools are declared; `tools/gen-mise.sh` derives the mise-provided subset from it and `mise lock` adds per-platform checksums. Run `make mise-lock` after touching a mise tool. Don't hand-edit the tool list (versions are fine to edit — regenerating preserves them). A key may be backend-qualified (`"aqua:neovim/neovim"`): the generator does that when mise's registry default backend writes no checksum, and `--check` fails CI on any tool `mise.lock` does not hash for linux-x64.
 - **Machine-local config:** `~/.bash_local` (per-machine paths and exports) and `~/.bash_password_commands` (secrets) are optional-sourced by `bashrc`. They live **in `$HOME`, never in the work tree** — do not "tidy" them back into `bash/` with a `.gitignore` entry, which is how they used to be. Outside the tree, git cannot see them; inside it, protection is a rule that `git add -f` overrides and that a `.gitignore` rewrite silently deletes. They're also the only configs not declared in `deps.conf`, and must stay that way: the manifest describes what _every_ machine gets.
 
 ## When Editing
