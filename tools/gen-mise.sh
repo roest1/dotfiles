@@ -42,13 +42,19 @@ source "$ROOT/lib/manifest.sh"
 # bump a version you deliberately chose.
 #
 # Matched literally with awk, not with sed: a backend-qualified key
-# ("aqua:neovim/neovim") carries the `/` sed would take as its delimiter.
+# ("aqua:neovim") carries a `:`, and the quotes TOML puts around it.
 existing_pin() {
   local tool="$1" version
   [[ -f "$OUT" ]] || return 1
+  # Keys compared by tool NAME, so a pin survives a change of spelling:
+  # neovim, "aqua:neovim" and "aqua:neovim/neovim" are one pin. Matching the
+  # exact key only is how a backend move once re-resolved neovim to latest.
   version="$(awk -v t="$tool" '
-    { key = $0; sub(/[ \t]*=.*/, "", key); gsub(/"/, "", key) }
-    key == t && match($0, /= *"[^"]*"/) {
+    function norm(k) { gsub(/"/, "", k); sub(/^[^:]*:/, "", k); sub(/^.*\//, "", k); return k }
+    /^\[/ { intools = ($0 ~ /^\[tools\]/); next }
+    intools && match($0, /= *"[^"]*"/) {
+      key = $0; sub(/[ \t]*=.*/, "", key)
+      if (norm(key) != norm(t)) next
       v = substr($0, RSTART, RLENGTH); sub(/^= *"/, "", v); sub(/"$/, "", v); print v; exit
     }' "$OUT")"
   [[ -n "$version" ]] || return 1
@@ -67,15 +73,24 @@ existing_pin() {
 #
 # A rule rather than a neovim special case, so the next tool whose registry
 # default is a plugin is caught the same way.
+#
+# Spelled "aqua:<registry name>" ("aqua:neovim"), not aqua's own
+# "aqua:neovim/neovim". mise locks both to the same URL and sha256, but
+# Renovate's mise manager reads only the short form: its docs give
+# `aqua:helm/helm` as unsupported and `aqua:helm` as supported. The long
+# form would have been a pin no bot ever bumped.
 mise_key() {
-  local name="$1" backends first aqua
+  local name="$1" backends first
   backends="$(mise registry "$name" 2>/dev/null || true)"
   first="${backends%% *}"
   case "$first" in
     aqua:*|core:*|"") echo "$name"; return ;;
   esac
-  aqua="$(tr ' ' '\n' <<<"$backends" | grep -m1 '^aqua:' || true)"
-  echo "${aqua:-$name}"
+  if tr ' ' '\n' <<<"$backends" | grep -q '^aqua:'; then
+    echo "aqua:$name"
+  else
+    echo "$name"
+  fi
 }
 
 # mise's registry name is not reliably either field of a deps.conf tool line.
@@ -139,7 +154,7 @@ generate() {
       # The bare name's pin still counts when the key changes, so moving a
       # tool to a checksummed backend does not also silently bump it.
       key="$(mise_key "$tool")"
-      version="$(existing_pin "$key" || existing_pin "$tool" || true)"
+      version="$(existing_pin "$tool" || true)"
       [[ -n "$version" ]] || version="$(installed_version "$key")"
       [[ -n "$version" ]] || version="$(mise latest "$key" 2>/dev/null || true)"
       if [[ -z "$version" ]]; then
@@ -162,7 +177,7 @@ if [[ "${1:-}" == "--check" ]]; then
   # a tool in one file and not the other means the two have drifted apart.
   [[ -f "$OUT" ]] || { echo "mise.toml is missing — run: make mise-lock" >&2; exit 1; }
 
-  # Keys compared by tool name: "aqua:neovim/neovim" pins neovim.
+  # Keys compared by tool name: "aqua:neovim" pins neovim.
   pinned="$(sed -n 's/^"\{0,1\}\([A-Za-z0-9_.@/:-]*\)"\{0,1\} = ".*"$/\1/p' "$OUT" \
     | sed 's/^[^:]*://; s|^.*/||' | sort -u)"
   bad=0
@@ -211,6 +226,30 @@ if [[ "${1:-}" == "--check" ]]; then
     exit 1
   fi
   echo "mise.lock hashes every tool for linux-x64"
+
+  # ...and hashes the version mise.toml actually pins. A bump to mise.toml
+  # without `make mise-lock` (by hand, or by a Renovate PR whose host would
+  # not run `mise lock`) leaves the hash describing the OLD release, and the
+  # new one would install with nothing to check it against. Fail closed.
+  stale="$(awk '
+    FNR == 1 { file++ }
+    file == 1 && /^\[/ { intools = ($0 ~ /^\[tools\]/); next }
+    file == 1 && intools && /=/ {
+      k = $0; sub(/[ \t]*=.*/, "", k); gsub(/"/, "", k)
+      v = $0; sub(/^[^=]*=[ \t]*"/, "", v); sub(/".*$/, "", v)
+      pin[k] = v; next
+    }
+    file == 2 && /^\[\[tools\./ { t = $0; sub(/^\[\[tools\./, "", t); sub(/\]\]$/, "", t); gsub(/"/, "", t); next }
+    file == 2 && /^version = / && t != "" { v = $0; sub(/^version = "/, "", v); sub(/"$/, "", v); locked[t] = v; t = "" }
+    END { for (k in pin) if (locked[k] != pin[k]) print k " (mise.toml " pin[k] ", mise.lock " (k in locked ? locked[k] : "none") ")" }
+  ' "$OUT" "$ROOT/mise.lock")"
+  if [[ -n "$stale" ]]; then
+    echo "mise.lock does not match mise.toml's pins:" >&2
+    sed 's/^/  /' <<<"$stale" >&2
+    echo "run: make mise-lock (on the bump PR's branch, if a bot opened it)" >&2
+    exit 1
+  fi
+  echo "mise.lock locks every version mise.toml pins"
   exit 0
 fi
 
