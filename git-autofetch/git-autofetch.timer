@@ -1,0 +1,12 @@
+[Unit]
+Description=Run git-autofetch every 20 minutes
+
+[Timer]
+# Wall-clock schedule + Persistent=true: after suspend, a missed run happens right away.
+# (OnUnitActiveSec= would not, because its clock stops during suspend.)
+OnCalendar=*:0/20
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
