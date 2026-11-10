@@ -14,7 +14,7 @@ path = "src/main.rs"
 reticle = { path = "../reticle" }
 ttf-parser = "0.25"
 fontdue = "0.9"
-png = "0.17"
+png = "0.18"
 libc = "0.2"
 serde_json = "1"
 
