@@ -192,6 +192,26 @@ jobs:
           fi
           echo "ok: all .ps1 sources are ASCII"
 
+      # ~/.gitconfig is a symlink to git/gitconfig, so `gh auth setup-git`
+      # (the "Authenticate Git?" prompt in `gh auth login` / `refresh`) and any
+      # `git config --global` write land in the repo. `helper = store` sat
+      # here until 2026-11-10 and left a plaintext token on every machine that
+      # linked it. A bare https://github.com/ insteadOf is the other half: it
+      # sends every public clone (lazy.nvim's plugins) over SSH, which fails on
+      # a machine with no key.
+      - name: gitconfig stores no credentials and rewrites only owned repos
+        run: |
+          git config -f git/gitconfig --get-regexp '^credential' && {
+            echo "git/gitconfig declares a credential helper; GitHub auth is SSH"
+            exit 1
+          }
+          if git config -f git/gitconfig --get-regexp '^url\..*\.insteadof$' |
+              grep -qE ' https://github\.com/?$'; then
+            echo "git/gitconfig rewrites all of github.com; scope insteadOf to an owner"
+            exit 1
+          fi
+          echo "ok: no credential helper, insteadOf scoped to owners"
+
   # ── Manifest sanity ────────────────────────────────────────────────────────
   # Cheap guard against a typo in deps.conf taking down every other job.
   manifest:

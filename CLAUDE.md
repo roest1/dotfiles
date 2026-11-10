@@ -446,6 +446,17 @@ you write code here. Reasoning, revisit conditions and current status:
   be matched, and says **nothing** when a fallback resolves. A wrong-but-valid
   font is silent by design.
 
+- **`~/.gitconfig` is a symlink into the repo, so `git config --global` is a tracked
+  edit.** So is `gh auth setup-git`, which `gh auth login` and `gh auth refresh` run
+  when you answer yes to *"Authenticate Git with your GitHub credentials?"*. Answer
+  no. GitHub auth is SSH: `git/gitconfig` declares no credential helper, rewrites
+  only this account's owners to `git@github.com:`, and sends every push over SSH.
+  A bare `https://github.com/` rewrite would also route lazy.nvim's public plugin
+  clones over SSH, which fails on a machine with no key. CI rejects both a
+  credential helper and that rewrite. `helper = store` lived here until
+  2026-11-10 and left a plaintext token in `~/.git-credentials` on every machine
+  that linked the file. A new machine needs an SSH key on GitHub before it can
+  pull this repo after `make link`.
 - **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
   writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
   Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will

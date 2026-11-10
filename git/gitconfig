@@ -1,8 +1,26 @@
 [user]
 	name = roest1
 	email = 95721769+roest1@users.noreply.github.com
-[credential]
-	helper = store
+; No credential helper, on purpose. GitHub auth is SSH: the rules below send
+; this account's repos, and every push, over git@github.com, and anything else
+; on GitHub is a public download that needs no credentials. `helper = store`
+; used to live here, and it wrote a plaintext token to ~/.git-credentials on
+; every machine that linked this file.
+;
+; ~/.gitconfig is a symlink to this file, so `git config --global` and
+; `gh auth setup-git` (which `gh auth login` and `gh auth refresh` run when you
+; answer yes to "Authenticate Git with your GitHub credentials?") edit the repo.
+; Answer no; gh's own login is separate and keeps working.
+;
+; The owner is on both sides of each rule. insteadOf swaps only the matched
+; prefix, so a bare https://github.com/ rule would also send lazy.nvim's plugin
+; clones over SSH and fail on a machine with no key.
+[url "git@github.com:roest1/"]
+	insteadOf = https://github.com/roest1/
+[url "git@github.com:codegig-br/"]
+	insteadOf = https://github.com/codegig-br/
+[url "git@github.com:"]
+	pushInsteadOf = https://github.com/
 [color "status"]
 	; Match the PS1 untracked segment (__C_UNTRACKED in bash/bash_theme).
 	untracked = 180
