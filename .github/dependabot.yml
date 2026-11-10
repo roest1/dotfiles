@@ -1,11 +1,16 @@
 version: 2
 
-# Two ecosystems, because those are the two Dependabot can parse here.
+# Three ecosystems, because those are the three Dependabot can parse here. The
+# fourth lane, mise.toml, is Renovate's (renovate.json): Dependabot has no mise
+# ecosystem.
 #
 #   nvim/lsp-servers  the JS language servers. Moving them out of Mason and into
 #                     a package.json is what made them visible at all — Mason's
 #                     copies live in ~/.local/share/nvim/mason, untracked and
 #                     unwatched.
+#   tui               the Rust workspace. Cargo.lock already raised ALERTS
+#                     without this entry; what it adds is version-update PRs,
+#                     which `make install` applies (`cargo install --locked`).
 #   /                 GitHub Actions versions. They rot on their own schedule:
 #                     actions/checkout@v4 began emitting a Node.js 20
 #                     deprecation on every run and needed a manual bump.
@@ -70,6 +75,12 @@ version: 2
 # design, not an oversight.
 #
 # Monthly, not weekly — this repo is small enough that weekly would be noise.
+#
+# `cooldown: 7` on every entry: a release must be a week old before a version
+# PR proposes it, the same week nvim/Makefile's SERVER_COOLDOWN and Renovate's
+# minimumReleaseAge wait. A hijacked release is usually caught within days, and
+# this repo has no reason to be early. GitHub applies cooldown to version
+# updates only, never to security updates, so a fix is not delayed by it.
 
 updates:
   # The JS language servers.
@@ -81,6 +92,8 @@ updates:
       prefix: "nvim"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     groups:
       # Five servers that all move independently would be five PRs a month for
       # a config nobody is paging on. One batched PR is the reviewable unit.
@@ -102,6 +115,27 @@ updates:
       # to TypeScript 7's own `tsc --lsp`, and the ignore that held typescript
       # back went with it.
 
+  # The tui/ workspace: font, dots, github, reticle.
+  - package-ecosystem: "cargo"
+    directory: "/tui"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "tui"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 7
+    groups:
+      # Same split as lsp-servers: minor and patch together, majors alone.
+      crates:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -110,6 +144,8 @@ updates:
       prefix: "ci"
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     groups:
       actions-all:
         patterns:

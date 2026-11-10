@@ -55,7 +55,7 @@ of what each curl line would lose:
   mise's registry default, a vfox plugin, which records a URL and no hash, so the
   one binary this repo depends on most was the one installed unchecked.
   `tools/gen-mise.sh` now pins such a tool under its `aqua:` backend
-  (`"aqua:neovim/neovim"`, the same upstream tarball), and `--check` fails CI if
+  (`"aqua:neovim"`, the same upstream tarball), and `--check` fails CI if
   any tool in `mise.lock` lacks a linux-x64 sha256. Verified with a tampered hash:
   `mise use -g` from the repo root refuses it.
 - **One update route.** A bump is one line in `mise.toml` and `make mise-lock`, and
@@ -156,11 +156,20 @@ rule makes on purpose: the distro's security stream is tier 1's screen.
 | Lane | Screened by | State |
 | --- | --- | --- |
 | `nvim/lsp-servers/yarn.lock` (bun's tree, regenerated) | Dependabot | working — see `.github/dependabot.yml` |
-| `tui/Cargo.lock` | Dependabot alerts | working; **no version-update PRs**, `cargo` is not in `dependabot.yml` |
+| `tui/Cargo.lock` | Dependabot | working, alerts and monthly version PRs (`cargo` in `dependabot.yml`) |
 | GitHub Actions | Dependabot | working |
-| `mise.toml` / `mise.lock` | nothing | Dependabot has no mise ecosystem |
+| `mise.toml` / `mise.lock` | Renovate (`renovate.json`), version bumps only | configured; needs the Renovate GitHub app on the repo. No advisory database covers these as CLI tools |
 | distro packages | the distro | `dnf updateinfo --security` / `apt list --upgradable` |
 | `nvim/lazy-lock.json` | nothing | no advisory database exists; pinned commits are the mitigation |
+
+Every version PR, from either bot, waits for a release to be 7 days old
+(`cooldown` in `dependabot.yml`, `minimumReleaseAge` in `renovate.json`, and
+`SERVER_COOLDOWN` for `make -C nvim servers`). Security updates are exempt from
+Dependabot's cooldown. Renovate touches only `mise.toml`, so the two bots never
+propose the same bump. A Renovate PR that bumps `mise.toml` without
+regenerating `mise.lock` fails `gen-mise.sh --check` until `make mise-lock`
+runs on its branch. Hosted Renovate treats `mise lock` as an unsafe execution,
+so expect to do that by hand.
 
 Proposed, not decided:
 
@@ -168,7 +177,6 @@ Proposed, not decided:
   and the Go/Rust libraries compiled into binaries; `grype` checks that inventory against
   distro trackers and NVD. It is the only lane that sees tier 1 and the libraries
   inside `fzf` and `gh`. The cost is two more tools in `deps.conf`.
-- **Renovate for `mise.toml` version bumps.** The cost is a third-party app on the repo.
 - **Dependency submission of mise tools as PURLs (package URLs).** Rejected for now. Of
   the eight tools, only four map to an ecosystem GitHub tracks (`stylua`, `tree-sitter`
   and `qsv` as cargo, `fzf` as Go), and advisories against whole CLI programs are rare.
