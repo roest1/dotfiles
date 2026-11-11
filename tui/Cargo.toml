@@ -9,4 +9,4 @@ rust-version = "1.82"
 license = "MIT"
 
 [workspace.dependencies]
-crossterm = "0.28"
+crossterm = "0.29"
