@@ -31,6 +31,55 @@ env:
   MISE_GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
+  # ── Docs-only PRs skip the heavy jobs ──────────────────────────────────────
+  # A PR that touches only Markdown runs this job, shellcheck and ci ok, and
+  # skips the rest. The skip is decided HERE, not with `paths-ignore` on the
+  # trigger: a workflow that never starts never reports `ci ok`, and the
+  # main-ci ruleset would leave a docs-only PR waiting on it forever.
+  #
+  # shellcheck always runs because it holds tools/check-content.sh, the
+  # credential and home-path scan, and Markdown is where that scan matters
+  # most: claude/user-memory.md is rewritten by Claude Code unprompted. Two
+  # Markdown paths still count as code, because a heavy job reads them:
+  #   claude/*        linked into ~/.claude; link-only checks name and content
+  #   nvim/README.md  manifest checks its <leader> keys against nvim/lua
+  # Pushes to main, schedules and manual runs always run everything, so main
+  # itself is fully tested after every merge, docs-only or not.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - name: Classify the change
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "$EVENT" != pull_request ]]; then
+            echo "full=true" >>"$GITHUB_OUTPUT"
+            echo "$EVENT: full run"
+            exit 0
+          fi
+          # previous_filename too: renaming foo.sh to foo.md deletes a script,
+          # and the new name alone would call that a docs change.
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+                    --jq '.[] | .filename, (.previous_filename // empty)')
+          full=false
+          [[ -z "$files" ]] && full=true
+          while IFS= read -r f; do
+            case "$f" in
+              claude/* | nvim/README.md) full=true ;;
+              *.md) ;;
+              *) full=true ;;
+            esac
+          done <<<"$files"
+          echo "$files" | sed 's/^/  /'
+          echo "full=$full" >>"$GITHUB_OUTPUT"
+          echo "full=$full"
   # ── Lint ───────────────────────────────────────────────────────────────────
   shellcheck:
     name: shellcheck
@@ -192,10 +241,32 @@ jobs:
           fi
           echo "ok: all .ps1 sources are ASCII"
 
+      # ~/.gitconfig is a symlink to git/gitconfig, so `gh auth setup-git`
+      # (the "Authenticate Git?" prompt in `gh auth login` / `refresh`) and any
+      # `git config --global` write land in the repo. `helper = store` sat
+      # here until 2026-11-10 and left a plaintext token on every machine that
+      # linked it. A bare https://github.com/ insteadOf is the other half: it
+      # sends every public clone (lazy.nvim's plugins) over SSH, which fails on
+      # a machine with no key.
+      - name: gitconfig stores no credentials and rewrites only owned repos
+        run: |
+          git config -f git/gitconfig --get-regexp '^credential' && {
+            echo "git/gitconfig declares a credential helper; GitHub auth is SSH"
+            exit 1
+          }
+          if git config -f git/gitconfig --get-regexp '^url\..*\.insteadof$' |
+              grep -qE ' https://github\.com/?$'; then
+            echo "git/gitconfig rewrites all of github.com; scope insteadOf to an owner"
+            exit 1
+          fi
+          echo "ok: no credential helper, insteadOf scoped to owners"
+
   # ── Manifest sanity ────────────────────────────────────────────────────────
   # Cheap guard against a typo in deps.conf taking down every other job.
   manifest:
     name: manifest parses
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       # Full history: the alias-to-function check below compares against the
@@ -1267,6 +1338,8 @@ jobs:
   # --severity=warning: a warning nobody fails on is a warning nobody reads.
   tui:
     name: tui (rust)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -1442,6 +1515,8 @@ jobs:
     # required check would never report — and a check that never reports doesn't
     # fail a PR, it blocks it indefinitely waiting for a status that won't come.
     name: link only (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -1553,6 +1628,8 @@ jobs:
   # ── Full install per platform ──────────────────────────────────────────────
   install:
     name: install (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.runs-on }}
     container: ${{ matrix.container }}
     strategy:
@@ -1698,6 +1775,8 @@ jobs:
   # meets the floor.
   nvim-floor:
     name: neovim floor (${{ matrix.name }}, mise fallback)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     container: ${{ matrix.container }}
     strategy:
@@ -1930,6 +2009,8 @@ jobs:
   # engine.
   conversions:
     name: 2* conversions (ubuntu)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2183,6 +2264,8 @@ jobs:
   # the override itself, once editorconfig declares ^11.
   audit:
     name: bun audit (transitive advisories)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2302,6 +2385,8 @@ jobs:
   # run under bun.
   toolchain:
     name: bun-only toolchain
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2445,6 +2530,8 @@ jobs:
   # bootstraps a Windows machine, which is the worst possible time.
   windows:
     name: windows (link only)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -2560,3 +2647,59 @@ jobs:
           $want = (Get-FileHash -LiteralPath '.\wezterm\wezterm-windows.lua' -Algorithm SHA256).Hash
           if ($got -ne $want) { throw "second run left the wrong content in place" }
           Write-Host 'ok: idempotent'
+
+  # ── The one required check ─────────────────────────────────────────────────
+  # The main-ci ruleset requires this job and nothing else. Required checks
+  # are a list of job NAMES typed into the ruleset, and GitHub never updates
+  # it: by 2026-11-10 it required "install (fedora / dnf)", a name #96
+  # renamed away, and four jobs added since were never in it. One stable name
+  # means adding or renaming a job above cannot desync the ruleset again.
+  #
+  # main-ci has no bypass actors, unlike main-branch-rules (whose admin bypass
+  # exists only because GitHub forbids approving your own PR). Bypass is per
+  # ruleset, so merging past the review rule no longer skips this one.
+  #
+  # `if: always()` is load-bearing. Without it a failed job above SKIPS this
+  # one, and a skipped required check counts as passing.
+  ci-ok:
+    name: ci ok
+    if: always()
+    needs: [changes, shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The drift this job exists to stop would come back as a job added
+      # above but not to `needs`: it would run, could fail, and gate nothing.
+      - name: Every job is in needs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          declared=$(awk '/^jobs:/ { j = 1; next }
+                          j && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { sub(/^  /, ""); sub(/:.*/, ""); print }' \
+                       .github/workflows/ci.yml | grep -vx 'ci-ok' | sort)
+          needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
+          if [[ "$declared" != "$needed" ]]; then
+            echo "ci-ok's needs differ from the jobs in ci.yml (< missing from needs, > not a job):"
+            diff <(echo "$declared") <(echo "$needed") || true
+            exit 1
+          fi
+          echo "ok: needs lists all $(wc -l <<<"$declared") jobs"
+
+      # A skip passes only when `changes` itself succeeded and said this is a
+      # docs-only PR, and never for `changes` or shellcheck, which always run.
+      # If `changes` fails, FULL is empty and every skip fails here.
+      - name: Every job succeeded, or was skipped for a docs-only PR
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          FULL: ${{ needs.changes.outputs.full }}
+        run: |
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS"
+          if ! jq -e --arg full "$FULL" 'to_entries | all(
+                 .value.result == "success"
+                 or ($full == "false" and .value.result == "skipped"
+                     and (.key | IN("changes", "shellcheck") | not)))' <<<"$NEEDS" >/dev/null; then
+            echo "not every job succeeded (full=${FULL:-unknown})"
+            exit 1
+          fi
+          echo "ok: full=$FULL"
