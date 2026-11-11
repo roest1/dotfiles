@@ -2580,3 +2580,52 @@ jobs:
           $want = (Get-FileHash -LiteralPath '.\wezterm\wezterm-windows.lua' -Algorithm SHA256).Hash
           if ($got -ne $want) { throw "second run left the wrong content in place" }
           Write-Host 'ok: idempotent'
+
+  # ── The one required check ─────────────────────────────────────────────────
+  # The main-ci ruleset requires this job and nothing else. Required checks
+  # are a list of job NAMES typed into the ruleset, and GitHub never updates
+  # it: by 2026-11-10 it required "install (fedora / dnf)", a name #96
+  # renamed away, and four jobs added since were never in it. One stable name
+  # means adding or renaming a job above cannot desync the ruleset again.
+  #
+  # main-ci has no bypass actors, unlike main-branch-rules (whose admin bypass
+  # exists only because GitHub forbids approving your own PR). Bypass is per
+  # ruleset, so merging past the review rule no longer skips this one.
+  #
+  # `if: always()` is load-bearing. Without it a failed job above SKIPS this
+  # one, and a skipped required check counts as passing.
+  ci-ok:
+    name: ci ok
+    if: always()
+    needs: [shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The drift this job exists to stop would come back as a job added
+      # above but not to `needs`: it would run, could fail, and gate nothing.
+      - name: Every job is in needs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          declared=$(awk '/^jobs:/ { j = 1; next }
+                          j && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { sub(/^  /, ""); sub(/:.*/, ""); print }' \
+                       .github/workflows/ci.yml | grep -vx 'ci-ok' | sort)
+          needed=$(jq -r 'keys[]' <<<"$NEEDS" | sort)
+          if [[ "$declared" != "$needed" ]]; then
+            echo "ci-ok's needs differ from the jobs in ci.yml (< missing from needs, > not a job):"
+            diff <(echo "$declared") <(echo "$needed") || true
+            exit 1
+          fi
+          echo "ok: needs lists all $(wc -l <<<"$declared") jobs"
+
+      - name: Every job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS"
+          if jq -e 'any(.[]; .result != "success")' <<<"$NEEDS" >/dev/null; then
+            echo "not every job succeeded (a skipped or cancelled job counts as not)"
+            exit 1
+          fi
+          echo "ok: all jobs succeeded"

@@ -98,9 +98,15 @@ touch .github/dependabot.yml
 
 ---
 
-## Creating a ruleset
+## Creating the rulesets
 
-One ruleset targeting the default branch.
+Two rulesets target the default branch. They are split because a bypass applies
+to its own ruleset only: `main-branch-rules` carries the review requirement, which
+the sole maintainer can only satisfy by bypassing, and `main-ci` carries the CI
+gate, which nobody bypasses. With one ruleset, the bypass every merge needs also
+skipped every required check, so CI was advisory.
+
+### `main-branch-rules`
 
 | Setting                                                                           | Value                | Notes                                               |
 | --------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------- |
@@ -122,14 +128,34 @@ One ruleset targeting the default branch.
 | → require approval of most recent push                                            | off                  |                                                     |
 | → require conversation resolution                                                 | off                  | `(depends)`                                         |
 | → require an additional approval for unattributed Copilot pull requests (preview) | off                  |                                                     |
-| **Require status checks to pass**                                                 | **on**               | **`CHANGE`** — once CI exists                       |
-| → require branches to be up to date before merging                                | **on**               | **`CHANGE`** — cheap when CI is fast; see below     |
-| → do not require status checks on creation                                        | off                  | only matters for branch _patterns_                  |
+| Require status checks to pass                                                     | off                  | lives in `main-ci`, below                           |
 | Block force pushes                                                                | on                   |                                                     |
 | Require code scanning results                                                     | off                  | only meaningful if CodeQL is set up                 |
 | Require code quality results                                                      | off                  |                                                     |
 | Restrict code coverage                                                            | off                  |                                                     |
 | Automatically request Copilot review                                              | off                  |                                                     |
+
+### `main-ci`
+
+| Setting                                            | Value                | Notes                                          |
+| -------------------------------------------------- | -------------------- | ---------------------------------------------- |
+| **Enforcement**                                    | Active               |                                                |
+| **Bypass list**                                    | **empty**            | the point of the split                         |
+| **Target branches**                                | Default branch       | an empty target list matches no branch at all  |
+| **Require status checks to pass**                  | **on**               | one check: **`ci ok`**, source GitHub Actions  |
+| → require branches to be up to date before merging | **on**               | otherwise CI tested the PR on an older `main`  |
+| → do not require status checks on creation         | off                  |                                                |
+
+**Require `ci ok` and nothing else.** Required checks are job *names* typed into
+the ruleset, and GitHub never updates the list. The old single ruleset required
+`install (fedora / dnf)` after #96 renamed that job, which left a check that never
+reported, and it missed four jobs added later. `ci ok` is the last job in `ci.yml`.
+It `needs` every other job and fails unless all of them succeeded, and it fails
+too if a job is missing from its `needs`. A new or renamed job therefore needs no
+ruleset edit.
+
+`ci ok` has to report once before the ruleset UI offers it, so merge the PR that
+adds it before you enable `main-ci`.
 
 ### Why the bypass list is mandatory here
 
