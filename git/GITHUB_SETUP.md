@@ -116,10 +116,67 @@ as the last job, and list every other job id in `needs`:
 so a new job cannot run without gating anything. Copy that step from
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) too.
 
-**No `paths` or `paths-ignore` on the `pull_request` trigger.** A workflow that
-doesn't run never reports `ci ok`, so a docs-only PR would wait on a required
-check forever. To skip work on docs-only changes, skip steps inside the jobs
-and let `ci ok` still report.
+### Skip docs-only PRs inside the workflow, never on the trigger
+
+`paths-ignore: ['**.md']` on `pull_request` looks like the way to save runner
+time on a docs-only PR, and with a required check it is a trap. The workflow
+never starts, so `ci ok` never reports, and the PR waits on it forever. GitHub
+shows "Expected — Waiting for status to be reported" and nothing else.
+
+Decide the skip in a first job instead, and gate the expensive jobs on it:
+
+```yaml
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          full=true
+          if [[ "$EVENT" == pull_request ]]; then
+            files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+                      --jq '.[] | .filename, (.previous_filename // empty)')
+            full=false
+            [[ -z "$files" ]] && full=true
+            while IFS= read -r f; do
+              case "$f" in *.md) ;; *) full=true ;; esac
+            done <<<"$files"
+          fi
+          echo "full=$full" >>"$GITHUB_OUTPUT"
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    # ...
+```
+
+`ci ok` then needs `changes` too, and accepts a skip only when `changes`
+succeeded and said `full=false`:
+
+```bash
+jq -e --arg full "$FULL" 'to_entries | all(.value.result == "success"
+  or ($full == "false" and .value.result == "skipped" and .key != "changes"))'
+```
+
+with `FULL: ${{ needs.changes.outputs.full }}` in its `env`. If `changes`
+fails, `FULL` is empty and every skip fails, so a broken classifier cannot
+wave a PR through.
+
+- **Use `previous_filename` as well as `filename`.** Renaming `foo.sh` to `foo.md`
+  deletes a script, and the new name alone would call that a docs change.
+- **Keep a secret scan running on every PR.** Markdown is where a pasted token
+  lands. In `dotfiles`, `shellcheck` (which runs `tools/check-content.sh`) is not
+  gated.
+- **List the Markdown that a job actually reads as code.** In `dotfiles`,
+  `claude/*` and `nvim/README.md` are checked by the heavy jobs.
+- **Run everything on push, schedule and manual runs**, so `main` is fully tested
+  after every merge, docs-only or not.
 
 ## Configuring dependabot updates
 
@@ -302,8 +359,7 @@ rather than buried in settings.
 `package.json` (npm, yarn, pnpm, bun), `Cargo.toml`, `requirements.txt`,
 `pyproject.toml`, `go.mod`, `Gemfile`, `composer.json`, and
 `.github/workflows/*.yml`. Custom dependency formats and lockfiles from other
-tools are invisible to it. `mise.toml` is one of those, which is why `dotfiles`
-also runs Renovate (below).
+tools are invisible to it.
 
 Before enabling version updates, check the repo actually has a manifest it can
 read — otherwise the config is decoration. A repo with no supported manifest
@@ -322,26 +378,6 @@ updates:
 Dependabot's PRs come from `dependabot[bot]`, so approving them isn't
 self-approval — the code-owner requirement works normally, and they merge
 without the bypass. They still wait on `ci ok` like any other PR.
-
-### Renovate, for what Dependabot can't read
-
-Only when a repo pins something Dependabot has no ecosystem for (`dotfiles`:
-the `mise.toml` tools). Renovate is a GitHub App run by Mend, a third party,
-with read/write access to code and pull requests on the repos you give it.
-Put every Renovate setting in a committed `renovate.json`, and turn off every
-manager Dependabot already covers (`enabledManagers`), so the two bots never
-open the same PR.
-
-| Step                              | Choice                                  | Notes                                                    |
-| --------------------------------- | --------------------------------------- | -------------------------------------------------------- |
-| GitHub app install                | **Only select repositories**            | never "All repositories"                                 |
-| Mend: product                     | **Renovate Only**                       | "Mend Application Security" needs a paid license         |
-| Mend: mode                        | **Scan and Alert**                      | the default, "Scan Only", sets Renovate to silent: no PRs |
-| `renovate.json`: automerge        | off (the default)                       | a bot PR still needs your merge                          |
-| `renovate.json`: release age      | `"minimumReleaseAge": "7 days"`         | matches Dependabot's cooldown                            |
-
-A repo that already has `renovate.json` gets no onboarding PR. Renovate goes
-straight to its schedule.
 
 ### CodeQL is language-gated
 

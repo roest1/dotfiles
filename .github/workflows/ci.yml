@@ -31,6 +31,55 @@ env:
   MISE_GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
+  # ── Docs-only PRs skip the heavy jobs ──────────────────────────────────────
+  # A PR that touches only Markdown runs this job, shellcheck and ci ok, and
+  # skips the rest. The skip is decided HERE, not with `paths-ignore` on the
+  # trigger: a workflow that never starts never reports `ci ok`, and the
+  # main-ci ruleset would leave a docs-only PR waiting on it forever.
+  #
+  # shellcheck always runs because it holds tools/check-content.sh, the
+  # credential and home-path scan, and Markdown is where that scan matters
+  # most: claude/user-memory.md is rewritten by Claude Code unprompted. Two
+  # Markdown paths still count as code, because a heavy job reads them:
+  #   claude/*        linked into ~/.claude; link-only checks name and content
+  #   nvim/README.md  manifest checks its <leader> keys against nvim/lua
+  # Pushes to main, schedules and manual runs always run everything, so main
+  # itself is fully tested after every merge, docs-only or not.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - name: Classify the change
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ "$EVENT" != pull_request ]]; then
+            echo "full=true" >>"$GITHUB_OUTPUT"
+            echo "$EVENT: full run"
+            exit 0
+          fi
+          # previous_filename too: renaming foo.sh to foo.md deletes a script,
+          # and the new name alone would call that a docs change.
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+                    --jq '.[] | .filename, (.previous_filename // empty)')
+          full=false
+          [[ -z "$files" ]] && full=true
+          while IFS= read -r f; do
+            case "$f" in
+              claude/* | nvim/README.md) full=true ;;
+              *.md) ;;
+              *) full=true ;;
+            esac
+          done <<<"$files"
+          echo "$files" | sed 's/^/  /'
+          echo "full=$full" >>"$GITHUB_OUTPUT"
+          echo "full=$full"
   # ── Lint ───────────────────────────────────────────────────────────────────
   shellcheck:
     name: shellcheck
@@ -216,6 +265,8 @@ jobs:
   # Cheap guard against a typo in deps.conf taking down every other job.
   manifest:
     name: manifest parses
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       # Full history: the alias-to-function check below compares against the
@@ -1287,6 +1338,8 @@ jobs:
   # --severity=warning: a warning nobody fails on is a warning nobody reads.
   tui:
     name: tui (rust)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -1462,6 +1515,8 @@ jobs:
     # required check would never report — and a check that never reports doesn't
     # fail a PR, it blocks it indefinitely waiting for a status that won't come.
     name: link only (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -1573,6 +1628,8 @@ jobs:
   # ── Full install per platform ──────────────────────────────────────────────
   install:
     name: install (${{ matrix.name }})
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ${{ matrix.runs-on }}
     container: ${{ matrix.container }}
     strategy:
@@ -1718,6 +1775,8 @@ jobs:
   # meets the floor.
   nvim-floor:
     name: neovim floor (${{ matrix.name }}, mise fallback)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     container: ${{ matrix.container }}
     strategy:
@@ -1950,6 +2009,8 @@ jobs:
   # engine.
   conversions:
     name: 2* conversions (ubuntu)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2203,6 +2264,8 @@ jobs:
   # the override itself, once editorconfig declares ^11.
   audit:
     name: bun audit (transitive advisories)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2322,6 +2385,8 @@ jobs:
   # run under bun.
   toolchain:
     name: bun-only toolchain
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2465,6 +2530,8 @@ jobs:
   # bootstraps a Windows machine, which is the worst possible time.
   windows:
     name: windows (link only)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -2597,7 +2664,7 @@ jobs:
   ci-ok:
     name: ci ok
     if: always()
-    needs: [shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain, windows]
+    needs: [changes, shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -2619,13 +2686,20 @@ jobs:
           fi
           echo "ok: needs lists all $(wc -l <<<"$declared") jobs"
 
-      - name: Every job succeeded
+      # A skip passes only when `changes` itself succeeded and said this is a
+      # docs-only PR, and never for `changes` or shellcheck, which always run.
+      # If `changes` fails, FULL is empty and every skip fails here.
+      - name: Every job succeeded, or was skipped for a docs-only PR
         env:
           NEEDS: ${{ toJSON(needs) }}
+          FULL: ${{ needs.changes.outputs.full }}
         run: |
           jq -r 'to_entries[] | "\(.value.result)\t\(.key)"' <<<"$NEEDS"
-          if jq -e 'any(.[]; .result != "success")' <<<"$NEEDS" >/dev/null; then
-            echo "not every job succeeded (a skipped or cancelled job counts as not)"
+          if ! jq -e --arg full "$FULL" 'to_entries | all(
+                 .value.result == "success"
+                 or ($full == "false" and .value.result == "skipped"
+                     and (.key | IN("changes", "shellcheck") | not)))' <<<"$NEEDS" >/dev/null; then
+            echo "not every job succeeded (full=${FULL:-unknown})"
             exit 1
           fi
-          echo "ok: all jobs succeeded"
+          echo "ok: full=$FULL"
