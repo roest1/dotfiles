@@ -234,7 +234,7 @@ one alone still protects `main` if the other is disabled.
 | → require review from code owners                                                 | on                   | needs `.github/CODEOWNERS`                          |
 | → require approval of most recent push                                            | off                  |                                                     |
 | → require conversation resolution                                                 | off                  | `(depends)`                                         |
-| → require an additional approval for unattributed Copilot pull requests (preview) | off                  |                                                     |
+| → require an additional approval for unattributed Copilot pull requests (preview) | on                   |                                                     |
 | Require status checks to pass                                                     | off                  | lives in `main-ci`, below                           |
 | Block force pushes                                                                | on                   |                                                     |
 | Require code scanning results                                                     | off                  | only meaningful if CodeQL is set up                 |
