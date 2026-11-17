@@ -198,6 +198,13 @@ you write code here. Reasoning, revisit conditions and current status:
   that would have presented as "formatting silently does nothing" with no clue where to
   look. Don't "tidy" it back to stdin.
 
+  **This rule is about nvim, not the machine.** Projects (Astro, Vite, wrangler) need
+  node as their runtime, installed through mise and pinned to the LTS; bun stays the
+  package manager. **`bun` here, `bunx` only for one-offs elsewhere**: never `bunx` in
+  this repo, because what it fetches is in no lockfile, so audit and the Socket scan
+  never see it. `bunfig.toml`'s `[run] bun = true` *is* a node shim. Details:
+  [`docs/decisions/bun.md`](docs/decisions/bun.md).
+
   CI guards both: the manifest may not declare node/npm/pip, and no shim may exist. The JS
   server args are not uniform (`bash-language-server` wants `start`, not `--stdio`);
   `nvim/lsp-servers/verify.ts` proves each with a real LSP handshake.
