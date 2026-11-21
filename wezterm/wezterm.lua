@@ -4,15 +4,13 @@ local config = wezterm.config_builder()
 
 -- ─── Shared body ─────────────────────────────────────────────────────
 --
--- Fonts, the SGR 6 carrier and the rose-pine surfaces live in shared.lua, which
--- wezterm-windows.lua loads too. Only what is genuinely per-platform stays here:
--- the `mux` unix domain (a guest socket path), the Claude tab-title handler, the
--- GNOME-specific window_decorations, and this file's keys.
+-- Fonts, the SGR 6 carrier and the rose-pine surfaces live in shared.lua (see
+-- its header for why the split exists). Here: the `mux` unix domain, the Claude
+-- tab-title handler, the GNOME-specific window_decorations, and the keys.
 --
 -- dofile with an explicit path rather than require: wezterm's package.path is
--- not something to depend on, and config_dir resolves to the LINKED directory on
--- both platforms, where deps.conf and windows/install.ps1 put shared.lua next to
--- this file. It also resolves when running straight from the repo checkout,
+-- not something to depend on, and config_dir resolves to the LINKED directory,
+-- where deps.conf puts shared.lua next to this file. It also resolves when running straight from the repo checkout,
 -- since the two files are siblings there as well.
 --
 -- pcall, because a hard failure here would take the WHOLE config down and leave
@@ -104,8 +102,7 @@ config.unix_domains = {
 -- it needs every wezterm window closed and relaunched, not SUPER+r.
 config.window_decorations = "NONE"
 
--- Tab titles moved to shared.lua so the Windows host gets them too; see the
--- note there. Registered explicitly rather than folded into apply(), because
+-- Tab titles live in shared.lua. Registered explicitly rather than folded into apply(), because
 -- this one installs event handlers rather than setting config keys.
 if shared.claude_tab_titles then
 	shared.claude_tab_titles()

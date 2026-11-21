@@ -105,11 +105,6 @@ if [ "$PM" = "dnf" ] && ! command -v tree-sitter >/dev/null 2>&1; then
   pkg_install "clang-devel"
 fi
 
-# apt names fd differently; nvim's config calls it `fd`.
-if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
-  ensure_symlink "fdfind" "fd"
-fi
-
 # ── lemminx (XML language server) ────────────────────────────────────────────
 #
 # The one server with no package manager anywhere: not in dnf, apt, the aqua
@@ -212,11 +207,9 @@ install_roslyn
 
 # ── Clipboard image paste (:PasteImage) ──────────────────────────────────────
 # Lets `:PasteImage` drop a screenshot from the OS clipboard into a directory
-# (e.g. while browsing in Oil). Backend depends on the platform:
-#   • WSL2  → uses Windows PowerShell, nothing to install
-#   • Linux → xclip (X11) + wl-clipboard (Wayland); install both, harmless
+# (e.g. while browsing in Oil). xclip (X11) + wl-clipboard (Wayland); install
+# both, harmless -- which one runs is decided at paste time by the session.
 #
-# Genuinely a runtime probe (/proc/version), not something a manifest can state.
 # (A macOS branch lived here until 2026-10-26, and once ran `brew install
 # pngpaste` on a RHEL box with linuxbrew because it keyed on $PM -- the same
 # class of mistake as keying a provider on $PM; see CLAUDE.md.)
@@ -227,11 +220,7 @@ install_roslyn
 echo ""
 echo "  clipboard image paste:"
 
-if is_wsl; then
-  # powershell.exe is an .exe, so this backend is only as alive as WSL interop.
-  ensure_wsl_interop || true
-  echo "  ✅ WSL — uses Windows PowerShell, no install needed"
-elif [ -n "${PM}" ]; then
+if [ -n "${PM}" ]; then
   pkg_install "xclip" || true
   pkg_install "wl-paste" || true
 fi

@@ -176,10 +176,7 @@ pub const INDIRECT: [(&str, &str); 1] = [("lib/pkg.sh", "install")];
 
 /// Files under the repo that invoke sudo, relative to the root.
 ///
-/// Skips `windows/` — that is PowerShell running on the Windows host, where
-/// `sudo.exe` and gsudo are a different mechanism on a different machine that
-/// `dots` never invokes — and skips comments, so a note ABOUT sudo does not
-/// read as a call to it.
+/// Skips comments, so a note ABOUT sudo does not read as a call to it.
 ///
 /// It also skips QUOTED sudo, which is the same distinction one step further
 /// out: `uv/deps.sh` prints `sudo dnf remove uv` as advice for a human to
@@ -189,10 +186,10 @@ pub const INDIRECT: [(&str, &str); 1] = [("lib/pkg.sh", "install")];
 /// have changed no behaviour and cost the table its meaning.
 ///
 /// The limit, stated because the rule cannot see past it: a sudo hidden
-/// ENTIRELY inside a string that is then executed -- `bash -c "sudo apt
+/// ENTIRELY inside a string that is then executed -- `bash -c "sudo dnf
 /// install x"` -- reads as quoted and would be missed. No such line exists
 /// here, and every one that does survives the rule: `| sudo tee` keeps both
-/// the pipe and the command outside the quotes in all four of its uses.
+/// the pipe and the command outside the quotes in every use.
 pub fn sudo_files(root: &Path) -> Vec<String> {
     fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
         let Ok(entries) = fs::read_dir(dir) else {
@@ -203,10 +200,7 @@ pub fn sudo_files(root: &Path) -> Vec<String> {
             let name = e.file_name();
             let name = name.to_string_lossy();
             if path.is_dir() {
-                if matches!(
-                    name.as_ref(),
-                    ".git" | "target" | "node_modules" | "windows" | "docs"
-                ) {
+                if matches!(name.as_ref(), ".git" | "target" | "node_modules" | "docs") {
                     continue;
                 }
                 walk(&path, root, out);

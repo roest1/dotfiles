@@ -3,33 +3,10 @@
 -- The half of the terminal that is the SAME on every machine: fonts, the SGR 6
 -- font carrier, and the rose-pine surfaces.
 --
--- This exists because wezterm.lua and wezterm-windows.lua each carried their own
--- copy, with headers that said so out loud -- "Kept in sync with wezterm.lua BY
--- HAND... If you retune the colours there, retune them here." That is a standing
--- invitation to drift, and it had already produced one: the Windows config had
--- NO tab_bar block at all, so the host's tab bar sat at wezterm's default grey
--- above a themed pane -- exactly the trap the Linux config's own comment warns
--- about.
---
--- The two ENTRY POINTS still have to be separate files, and that part was never
--- the duplication:
---
---   * wezterm.lua declares the `mux` unix domain on a socket under
---     $XDG_RUNTIME_DIR -- a guest path, meaningless on the Windows host.
---   * wezterm-windows.lua cannot be loaded out of the WSL clone at all;
---     wezterm.exe will not read a config over \\wsl.localhost, and `ln -s` from
---     inside WSL onto /mnt/c writes an LX symlink Windows refuses to follow.
---
--- So: two entry points, one body. Each entry point loads this file from its own
--- config_dir, which resolves correctly in both directions -- `wezterm ls-fonts`
--- on the Windows host reports font_dirs as
--- `C:\Users\<you>\.config\wezterm/fonts`, confirming config_dir is the LINKED
--- directory rather than the symlink's target. Both the repo checkout and the
--- linked location hold shared.lua next to the entry point, so either resolves.
---
--- Linked by deps.conf on Linux and by the $Links table in
--- windows/install.ps1 on Windows -- the same pair that already links wezterm's
--- fonts directory.
+-- Split from wezterm.lua when a second entry point (the Windows host's config,
+-- retired 2026-11-21) needed the same body. With one entry point left the split
+-- is a candidate to fold back in; until then wezterm.lua dofile()s this from its
+-- own config_dir, where deps.conf links it next to the entry point.
 
 local wezterm = require("wezterm")
 
@@ -234,10 +211,8 @@ function M.apply(config)
 	--
 	-- Read straight out of the linked config directory rather than installed into
 	-- the system font path. deps.conf links wezterm/fonts → ~/.config/wezterm/fonts
-	-- and config_dir follows the config file's own path, so this resolves on Linux
-	-- and the Windows host identically -- with no fc-cache (which Windows does not
-	-- have), no per-platform font directory, and no chance of
-	-- a stale copy elsewhere on the system shadowing these. That last one is not
+	-- and config_dir follows the config file's own path -- so there is no
+	-- fc-cache, no system font directory, and no chance of a stale copy elsewhere on the system shadowing these. That last one is not
 	-- hypothetical: two files claiming family "Science Gothic Mono" style
 	-- "Regular" resolve by first match, and the loser is silently the wrong glyphs.
 	config.font_dirs = { wezterm.config_dir .. "/fonts" }
@@ -340,8 +315,7 @@ function M.apply(config)
 		--
 		-- A SEPARATE setting from `background` above, which is the trap: theming
 		-- the terminal area alone leaves the tab bar at wezterm's default grey
-		-- sitting directly above the window. Both have to be stated -- and the
-		-- Windows config stated neither until this file existed.
+		-- sitting directly above the window. Both have to be stated.
 		tab_bar = {
 			background = p.surface,
 
@@ -361,9 +335,8 @@ function M.apply(config)
 		inactive_titlebar_bg = p.base,
 
 		-- Science Gothic -- a Google Fonts variable family (OFL), installed by
-		-- wezterm/deps.sh on Linux. It is NOT installed on the Windows host,
-		-- where the fallback chain simply carries the bar; that degrades the tab
-		-- bar's face, nothing else.
+		-- wezterm/deps.sh. Where it is missing the fallback chain carries the
+		-- bar; that degrades the tab bar's face, nothing else.
 		--
 		-- Noto Color Emoji has to be listed, and BEFORE 0xProto -- the opposite of
 		-- config.font's order above. This is the font that actually draws the tab
@@ -389,21 +362,12 @@ end
 
 -- ─── Claude Code session state in the tab bar ────────────────────────────────
 --
--- Lives here, not in wezterm.lua, because it works on BOTH sides and only ever
--- ran on one. The guest emits an OSC 1337 user var from claude/settings.json's
--- hooks and the host's wezterm reads it, so nothing about this is Linux-only --
--- it simply sat in the Linux entry point, which is the same reason the tab_bar
--- block and JetBrainsMono were missing from Windows.
+-- claude/settings.json's hooks emit an OSC 1337 user var and this reads it.
 --
 -- Its own function rather than part of apply(), because it REGISTERS EVENT
 -- HANDLERS while apply() only sets config keys. Keeping the side effect
 -- separately callable means an entry point can take the config without the
 -- handlers if it ever needs to.
---
--- Caveat, stated rather than discovered later: the process-name signal
--- (CLAUDE_PROC) is weaker across the WSL boundary, where the host asks WSL what
--- a pane is running. The two title signals do not care -- they read the pane
--- title, which the guest sets -- so a Claude pane is still recognized there.
 --
 -- Claude Code already writes its state into the PANE title over OSC; nothing
 -- here has to poll or shell out. This only surfaces it in the tab, from two
@@ -509,10 +473,9 @@ local STATES = {
 	-- A `github` session, which announces itself over the same user-var channel
 	-- (`TabMark` in tui/github/src/lib.rs, previously bash_github_tui's
 	-- `_gh_tab_var` -- the writer moved from bash to Rust and the wire format
-	-- did not). The var is still named `gh_tui` after the command's old name:
-	-- it is read HERE, on the Windows host, out of a different clone than the
-	-- thing that writes it, so renaming it goes dark until `make windows` has
-	-- run. Not worth it for a name nobody types.
+	-- did not). The var is still named `gh_tui` after the command's old name;
+	-- renaming it means changing writer and reader together, which is not worth
+	-- it for a name nobody types.
 	--
 	-- U+F408 is `oct-mark_github` — GitHub's own Octicons mark, patched into
 	-- 0xProto Nerd Font. NOT an emoji: Unicode has no GitHub logo at any

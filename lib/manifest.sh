@@ -18,9 +18,7 @@
 # section filter it emits every section's lines.
 #
 # Every section is visible wherever this file is read. There is no per-section
-# platform filter, and no `platform` line type: the only section that ever
-# needed one was the Windows host's wezterm, and windows/install.ps1 declares
-# its own payload rather than parsing this manifest.
+# platform filter and no `platform` line type: every target is Fedora or RHEL.
 
 MANIFEST_FILE="${MANIFEST_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deps.conf}"
 
@@ -213,11 +211,6 @@ manifest_lines() {
 }
 
 # Validate that requested sections exist; print a useful error if not.
-#
-# `windows` gets its own message rather than a bare "Unknown section". It was a
-# section here until the Windows installer stopped reading this file, and
-# pointing at the entry point that does install it is more useful than a list
-# that conspicuously lacks the name you just typed.
 manifest_validate_sections() {
   local s rc=0
   for s in "$@"; do
@@ -225,14 +218,8 @@ manifest_validate_sections() {
       continue
     fi
 
-    if [[ "$s" == "windows" ]]; then
-      echo "There is no [windows] section: the Windows host is installed by" >&2
-      echo "  windows/install.ps1, run from PowerShell on the host itself —" >&2
-      echo "  not by this script inside WSL. It declares its own payload." >&2
-    else
-      echo "Unknown section: $s" >&2
-      echo "Available: $(manifest_sections | tr '\n' ' ')" >&2
-    fi
+    echo "Unknown section: $s" >&2
+    echo "Available: $(manifest_sections | tr '\n' ' ')" >&2
     rc=1
   done
   return $rc

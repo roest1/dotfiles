@@ -135,8 +135,7 @@ pub use steps::Steps;
 mod tests {
     use super::*;
 
-    /// The wire format, pinned. `wezterm/shared.lua` reads it on the WINDOWS
-    /// host, out of a different clone than the one that writes it, so a change
+    /// The wire format, pinned. `wezterm/shared.lua` reads it, so a change
     /// here goes dark rather than failing: the config still loads, the tab
     /// still draws, and there is simply no icon with nothing to say why. The
     /// var is still named after the command's old name for that same reason.

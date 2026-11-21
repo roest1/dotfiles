@@ -108,14 +108,14 @@ both dnfs, which matters on the work box, whose `dnf.conf` is not this repo's to
 rewrite. `make status` reports the *effective* value, as dnf resolves it after any
 drop-in.
 
-It lives in `[bash]`, beside `ensure_wsl_interop`, rather than in a section of its
+It lives in `[bash]` rather than in a section of its
 own. A section with no link and no tool is a section the `dots` console treats as
 doing nothing, and no machine would opt out of this anyway.
 
 ## What is not a provider
 
-**linuxbrew on a machine with apt or dnf.** `pkg_detect` reaches brew only when neither
-exists, so on every real target `pkg` means apt or dnf. `provider_of` disagreed: it
+**linuxbrew.** `pkg` means dnf, and `pkg_detect` never answers brew (it reached brew
+only on a machine with neither apt nor dnf, until 2026-11-21). `provider_of` disagreed: it
 answered `pkg` for any `Cellar` path, a leftover from when macOS made brew the system
 package manager. Found on the Alienware's WSL guest, 2026-11-07: 11 declared tools,
 five of them present *only* as Homebrew copies, all reading `✓ pkg`.
@@ -126,17 +126,16 @@ Now:
 - `manual`'s wildcard does not absorb it. zoxide is `pkg||manual`, and was the one
   tool still green.
 
-CI asserts both, plus the `PM=brew` direction, where brew *is* `pkg`.
+CI asserts both.
 
 **Order matters when removing it: remove linuxbrew first, then `make install`.** The
 reverse order looks safer and does nothing, because every installer short-circuits on
 `command -v`, and the brew copies answer it. Removed from the Alienware 2026-11-09. The
 inventory is in `~/.local/state/dotfiles/homebrew-removed-2026-11-09.txt` there.
 
-`bash/bashrc` still evaluates `brew shellenv` where a brew binary exists, which
-*prepends* linuxbrew to PATH. No machine in the fleet needs brew (Fedora, RHEL, and
-Ubuntu until the WSL guest moves to Fedora), so brew support goes entirely in the same
-change that drops apt.
+`bash/bashrc` used to evaluate `brew shellenv` where a brew binary existed, which
+*prepends* linuxbrew to PATH. No machine in the fleet needs brew, so that went in the
+same change that dropped apt (2026-11-21, [`windows-wsl.md`](windows-wsl.md)).
 
 ## Known mismatches, not fixed here
 

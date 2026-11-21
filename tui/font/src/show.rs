@@ -20,32 +20,6 @@
 use crate::fonts;
 use crate::lanes;
 
-/// Whether the fonts the TERMINAL will use are visible to this process.
-///
-/// Inside WSL they are not, and that is by design rather than a broken install:
-/// wezterm.exe runs on the Windows host and draws the pixels, so the families
-/// it resolves live in the host's font path. wezterm/deps.sh skips every font
-/// download in the guest for the same reason.
-///
-/// So the guest's answer to "is this family installed" is UNKNOWABLE, not "no".
-/// Reporting MISSING here would be a false red on a correctly set up machine --
-/// and, since status_fonts counts the exit code as drift, would have made
-/// `make status` red on the one platform this repo is most often driven from.
-///
-/// This duplicates is_wsl in lib/pkg.sh, which is a real cost and a small one:
-/// it is a one-line read of /proc/version, and the alternative is a flag passed
-/// in by the caller, which would make `font show` answer differently depending
-/// on who ran it.
-fn fonts_are_local() -> bool {
-    match std::fs::read_to_string("/proc/version") {
-        Ok(v) => {
-            let v = v.to_ascii_lowercase();
-            !(v.contains("microsoft") || v.contains("wsl"))
-        }
-        Err(_) => true,
-    }
-}
-
 /// The three conditions from lib/sgr.sh, and the same reasoning.
 ///
 /// Reported rather than merely tested, because "the carrier did not print" and
@@ -98,16 +72,13 @@ fn tildify(path: &str) -> String {
 /// unreadable, and a machine that is fine would report red.
 pub fn run() -> i32 {
     let state = lanes::read();
-    let local = fonts_are_local();
-    let installed = if local { fonts::families() } else { Vec::new() };
+    let installed = fonts::families();
     let mut missing = 0;
 
     println!();
     println!("  lanes");
     for (lane, value) in &state {
-        let mark = if !local {
-            "host"
-        } else if installed.iter().any(|f| f == value) {
+        let mark = if installed.iter().any(|f| f == value) {
             "ok"
         } else {
             missing += 1;
@@ -123,11 +94,6 @@ pub fn run() -> i32 {
         "    state: {}",
         tildify(&lanes::state_path().display().to_string())
     );
-    if !local {
-        println!("    `host` — this is the WSL guest, and wezterm.exe resolves these on the");
-        println!("    Windows side, so whether they are installed is not knowable from in");
-        println!("    here. `make windows` runs the host installer, which reports each face.");
-    }
     if missing > 0 {
         println!("    a lane names a family this machine does not have — run `font` to repick,");
         println!("    or `make install wezterm` to fetch the defaults.");
@@ -146,13 +112,7 @@ pub fn run() -> i32 {
             println!();
             println!("    Three different faces means the lanes are live. If they are one face,");
             println!("    wezterm is not matching font_rules on the blink attribute — the 2024");
-            println!("    stable does not, and fails silently. See windows/README.md.");
-            if !local {
-                println!();
-                println!("    This one does cross the guest boundary: the escape is written in");
-                println!("    here and drawn by wezterm.exe out there, so it is the only check");
-                println!("    on this machine that tests what you actually see.");
-            }
+            println!("    stable does not, and fails silently. Use a nightly or newer build.");
         }
         Carrier::Piped => {
             println!("    · not shown — stdout is not a terminal.");

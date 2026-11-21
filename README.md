@@ -2,7 +2,7 @@
 
 Terminal, editor and shell as one versioned unit — wezterm, neovim and bash in a
 single repo, with every symlink and every dependency declared in one manifest.
-Fedora, RHEL, Ubuntu under WSL, and the Windows host.
+Fedora and RHEL.
 
 ## Install
 
@@ -13,38 +13,6 @@ curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh |
 ```
 
 Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
-
-### Windows
-
-That line sets up a Unix shell — including WSL, run from inside your distro. The
-**Windows host** is a separate install, from PowerShell:
-
-```powershell
-irm https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.ps1 | iex
-```
-
-It installs wezterm and gives you `CTRL+SHIFT+O` — one fuzzy picker for WSL,
-PowerShell, cmd, and an admin shell.
-
-**Turn on Developer Mode first**, or creating a symlink is denied and the
-installer falls back to *copying* the config — which then stops tracking the
-repo. In PowerShell:
-
-```powershell
-start ms-settings:developers
-```
-
-That opens **Settings → System → Advanced** (Windows 10 filed the same page
-under *Privacy & security*, which is why the URI is the route given rather than
-a menu path). Turn on:
-
-| Toggle | Section | Why |
-| --- | --- | --- |
-| **Developer Mode** | For developers | **Required.** Without it symlink creation is denied and the installer copies instead, which silently stops tracking the repo. |
-| **Enable sudo** | Terminal | Optional. Only the `PowerShell (Admin)` entry in the shell picker needs it; it is omitted from the picker rather than shown broken. |
-
-**[windows/README.md](windows/README.md)** — the picker, elevation, and why the
-Windows config can't be shared with the one inside WSL.
 
 ## Just want a cool PS1?
 
@@ -85,7 +53,7 @@ commenting** — there's no flag to remember and no profile vocabulary to learn.
 ```conf
 [nvim]
 link  nvim                    ~/.config/nvim
-tool  mise||pkg    nvim       neovim     # mise first: apt's is too old
+tool  mise||pkg    nvim       neovim     # mise first: RHEL 9's is too old
 tool  mise||cargo  stylua
 tool  uv||pkg      ruff
 # tool  pkg        shfmt                 ← commented out = skipped
@@ -100,9 +68,8 @@ Three line types, and that's the whole vocabulary:
 | `tool <provider> <command> [package]` | a dependency; package defaults to the command name |
 | `post <shell command>` | runs after that section's tools |
 
-There is no `platform` line type. The Windows host declares its own payload in
-`windows/install.ps1` and reads no manifest, which retired the only section that
-ever needed one — CI rejects `platform` as an unknown line type.
+There is no `platform` line type: every target is Fedora or RHEL, and CI
+rejects `platform` as an unknown line type.
 
 | Command | What |
 | ------- | ---- |
@@ -145,7 +112,7 @@ Each `tool` line names how to install it. `||` declares a fallback chain:
 
 | Provider | Use |
 | -------- | --- |
-| `pkg`    | system package manager (apt / dnf; linuxbrew as a last resort) |
+| `pkg`    | the system package manager, dnf |
 | `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
 | `uv`     | Python tools (replaces pip; same vendor as ruff) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
@@ -157,9 +124,6 @@ there `manual` is a *preference*. The distro's uv has `uv self update` compiled
 out, so it can only ever be as current as the next package bump, and uv ships
 weekly. `ensure_uv` in `lib/pkg.sh` curls Astral's installer first and falls back
 to `pkg` only when the network is unreachable.
-
-There is no `winget` provider either, and CI rejects it. Windows packages are
-declared in `$WingetTools` at the top of `windows/install.ps1`.
 
 There is no `npm` provider, and adding one is a CI failure. See the node
 paragraph above.
@@ -191,9 +155,9 @@ It checks two things:
 - **links** — is `~/.bashrc` a symlink into *this* repo, or a stale backup or a
   hand-edited file?
 - **tools** — was this installed by the provider the manifest declares?
-  Provenance comes from asking `rpm`/`dpkg`/`brew`/`mise`/`uv` directly, not
-  from guessing at the path — `~/.local/bin` is genuinely ambiguous between a uv
-  shim, an apt rename symlink, and a hand-dropped binary.
+  Provenance comes from asking `rpm`/`mise`/`uv` directly, not from guessing at
+  the path — `~/.local/bin` is genuinely ambiguous between a uv shim and a
+  hand-dropped binary.
 
 It deliberately does **not** report "installed but not declared." Nothing here
 can tell a dotfiles dependency from a project-scoped tool, so that list is mostly
@@ -255,8 +219,6 @@ about *operating* this repo, and this is about *editing* it.
 | `deps.conf` | **the manifest** — links and dependencies, one file |
 | `bootstrap.sh` | Curl-able entry point for a fresh machine |
 | `install.sh`   | Symlinks only; walks the manifest's `link` lines |
-| `bootstrap.ps1` | The same, for the Windows host — `irm ... \| iex` |
-| `windows/install.ps1` | Windows host: links + winget. Declares its own payload — it reads no manifest |
 | `lib/manifest.sh` | Parses `deps.conf` |
 | `lib/providers.sh` | Maps a provider name to an installer; handles `\|\|` chains |
 | `lib/pkg.sh`   | The single implementation of "install a tool" |
@@ -268,13 +230,10 @@ alone despite living here.
 
 ## Portability is tested, not claimed
 
-`.github/workflows/ci.yml` runs on every push: `make link` on Ubuntu, full
-installs on apt and dnf, shellcheck, manifest validation, and a
-job that comments out the node block and asserts nvim still starts clean.
-
-This exists because the previous Makefile promised WSL support in this README
-while `make deps` hard-exited on apt. Nothing ever ran it on Ubuntu, so nobody
-noticed.
+`.github/workflows/ci.yml` runs on every push: `make link` and full installs in
+Fedora 45 and RHEL 9 (AlmaLinux) containers, shellcheck, manifest validation,
+and a job that comments out the node block and asserts nvim still starts clean.
+A support claim nothing runs is not a support claim.
 
 ## Contributing
 
@@ -296,8 +255,7 @@ screen's help.
 
 Every screen is a list with a live preview. Hover a workflow run and its jobs
 appear with only the failed steps expanded, log tail inline; a running one
-refreshes under the cursor by itself. Needs fzf ≥ 0.65 (installed via mise
-for that reason).
+refreshes under the cursor by itself.
 
 ## Layout
 
@@ -309,7 +267,6 @@ for that reason).
 ├── deps.conf                             THE MANIFEST — links + dependencies
 ├── Makefile                              Reads sections from deps.conf
 ├── bootstrap.sh                          Curl-able fresh-machine entry point
-├── bootstrap.ps1                         The same, for the Windows host
 ├── install.sh                            Symlink engine (backs up existing files)
 ├── CONTRIBUTING.md                       How to add a tool without breaking the manifest
 ├── .githooks/
@@ -330,12 +287,8 @@ for that reason).
 ├── nvim/                                 Neovim config (own Makefile + README)
 │   └── lsp-servers/                      JS language servers + prettier, run by bun
 ├── wezterm/
-│   ├── wezterm.lua                     → ~/.config/wezterm/wezterm.lua        (Linux)
-│   └── wezterm-windows.lua             → %USERPROFILE%\.config\wezterm\wezterm.lua
-├── windows/
-│   ├── install.ps1                       Windows link + winget engine
-│   ├── deps.ps1                          Nerd Font + elevation-helper fixups
-│   └── README.md                         Developer Mode, the picker, elevation
+│   ├── wezterm.lua                     → ~/.config/wezterm/wezterm.lua
+│   └── shared.lua                      → ~/.config/wezterm/shared.lua
 ├── bash/
 │   ├── bashrc                          → ~/.bashrc
 │   ├── bash_theme                → ~/.bash_theme
@@ -373,8 +326,7 @@ still stands alone.
 | `bash/bash_github`            | Plain `gh` (`gha`, `stars`) + the helpers shared with the TUI         |
 | `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
 | `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
-| `wezterm/wezterm.lua`         | Terminal on Linux — declares the `mux` domain                         |
-| `wezterm/wezterm-windows.lua` | Terminal on the Windows host — the shell picker                       |
+| `wezterm/wezterm.lua`         | Terminal — declares the `mux` domain                                  |
 
 ## Machine-local config
 

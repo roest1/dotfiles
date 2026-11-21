@@ -15,7 +15,7 @@
 #
 # What it's for: the two parts of a manifest line that are easy to get wrong.
 #
-#   * which provider owns a command (asks rpm/dpkg/brew/mise/uv, not the path)
+#   * which provider owns a command (asks rpm/mise/uv, not the path)
 #   * the package name, which often differs from the command:
 #       rg -> ripgrep   fd -> fd-find   nvim -> neovim
 #
@@ -45,8 +45,6 @@ resolve_package() {
     pkg)
       if command -v rpm >/dev/null 2>&1; then
         pkg="$(rpm -qf --qf '%{NAME}' "$resolved" 2>/dev/null)"
-      elif command -v dpkg >/dev/null 2>&1; then
-        pkg="$(dpkg -S "$resolved" 2>/dev/null | cut -d: -f1)"
       fi
       ;;
     cargo)

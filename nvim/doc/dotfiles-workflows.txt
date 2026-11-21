@@ -180,7 +180,7 @@ Find files containing text:~
 CLIPBOARD                                            *dotfiles-workflows-clipboard*
 
 Copy entire file:~
-    :%y (goes to the system clipboard, OSC52 over ssh/WSL)
+    :%y (goes to the system clipboard, OSC52 over ssh)
 
 Copy to system clipboard:~
     Select text -> y (clipboard is synced; a notification confirms it)

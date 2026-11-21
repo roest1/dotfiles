@@ -106,10 +106,8 @@ uv_has_receipt() {
 
 uv_remove_hint() {
   case "$PM" in
-    dnf)  echo "sudo dnf remove uv" ;;
-    apt)  echo "sudo apt remove uv" ;;
-    brew) echo "brew uninstall uv" ;;
-    *)    echo "remove it with your package manager" ;;
+    dnf) echo "sudo dnf remove uv" ;;
+    *)   echo "remove it with your package manager" ;;
   esac
 }
 

@@ -18,122 +18,29 @@
 #   pkg_detect          # sets $PM
 #   pkg_install rg
 
-# ─── Detect the host ─────────────────────────────────────────────────────────
+# ─── Does this tool apply on this host? ──────────────────────────────────────
 
-# WSL is Linux by every test this repo already makes — uname says Linux, apt is
-# real, $PM is apt — and yet some things belong to the Windows host rather than
-# the guest. The terminal is the whole of it today: wezterm.exe draws the pixels
-# out there, so a wezterm installed in here is a GUI nothing launches and fonts
-# nothing renders.
+# Is this tool ours to install on THIS host? Consulted by run_tools, run_check
+# and status_tools, so the three agree.
 #
-# /proc/version rather than $WSL_DISTRO_NAME: the env var is set by the WSL
-# init for interactive shells, and `make` runs neither login nor interactive,
-# so it is frequently absent exactly when this is asked. The kernel string is
-# always there.
-is_wsl() {
-  grep -qiE "microsoft|wsl" /proc/version 2>/dev/null
-}
-
-# Is this tool ours to install on THIS host?
-#
-# One case, and it earns naming a tool outside deps.conf the way the bat/batcat
-# and fd/fdfind fallbacks in run_check already do. The alternative was a section
-# applicability line in the manifest, which is the `platform` mechanism that was
-# deliberately deleted — a whole line type, a parser change and a CI rule to
-# describe a single tool.
-#
-# wezterm is the case: under WSL the terminal is wezterm.exe on the Windows
-# host. `make install` in the guest cannot install it, and `make check` calling
-# it MISSING is advice that can never be satisfied — it tells you to run
-# `make install wezterm`, which is precisely what just failed to help.
-#
-# Note this covers the TOOL only. The [wezterm] links are still made in the
-# guest: wezterm.lua declares the `mux` unix domain on a guest socket path, so
-# a wezterm-mux-server running in WSL reads it.
+# A dotnet global tool applies exactly where dotnet does. dotnet itself is a
+# project toolchain this repo does not install, so on a box without it the C#
+# server is n/a rather than MISSING -- roslyn.nvim cannot attach there either
+# way, and MISSING would send `make install nvim` to fetch something it has no
+# runtime for.
 tool_applies_here() {
   case "$1" in
-    wezterm) ! is_wsl ;;
-    # A dotnet global tool applies exactly where dotnet does. dotnet itself is
-    # a project toolchain this repo does not install, so on a box without it
-    # the C# server is n/a rather than MISSING -- roslyn.nvim cannot attach
-    # there either way, and MISSING would send `make install nvim` to fetch
-    # something it has no runtime for.
     roslyn-language-server) command -v dotnet >/dev/null 2>&1 ;;
-    *)       true ;;
+    *) true ;;
   esac
 }
 
 # Why tool_applies_here said no, for the two status lines that print it.
 tool_na_reason() {
   case "$1" in
-    wezterm) echo "Windows host — see windows/README.md" ;;
     roslyn-language-server) echo "no dotnet on this machine" ;;
     *) echo "not applicable here" ;;
   esac
-}
-
-# ─── WSL interop across systemd-binfmt restarts ─────────────────────────────
-#
-# A WSL guest runs clip.exe, cmd.exe and explorer.exe through a binfmt_misc
-# entry that WSL writes into /proc at boot, with no binfmt.d file behind it.
-# Under systemd that is fragile. A package upgrade that ships a binfmt.d rule
-# (python3.12 is one) restarts systemd-binfmt; stopping the unit unregisters
-# EVERY entry, and starting it restores only the ones that have a file. Every
-# .exe then fails with "Exec format error" until WSL next boots — which reads
-# as a PATH problem, and re-sourcing ~/.bashrc cannot touch it.
-#
-# The fix is to give the entry a file. /etc/binfmt.d rather than /usr/lib,
-# which belongs to packages. systemd-binfmt unregisters a rule of the same name
-# before registering it, so the file coexisting with WSL's own entry is safe.
-#
-# Registration is checked under both names: a systemd-enabled WSL calls its own
-# entry WSLInterop-late (see os_open in nvim/lua/options.lua), so testing for
-# WSLInterop alone would call a working machine broken.
-WSL_INTEROP_CONF=/etc/binfmt.d/WSLInterop.conf
-WSL_INTEROP_RULE=':WSLInterop:M::MZ::/init:PF'
-
-# Only systemd restarts systemd-binfmt, and only systemd reads binfmt.d — a WSL
-# without it has neither the problem nor a use for the file. A function rather
-# than an inline test so CI can force it, the way it forces is_wsl.
-is_systemd() {
-  [ -d /run/systemd/system ]
-}
-
-wsl_interop_registered() {
-  [ -e /proc/sys/fs/binfmt_misc/WSLInterop ] || [ -e /proc/sys/fs/binfmt_misc/WSLInterop-late ]
-}
-
-wsl_interop_persisted() {
-  [ "$(cat "$WSL_INTEROP_CONF" 2>/dev/null)" = "$WSL_INTEROP_RULE" ]
-}
-
-# Called from bash/deps.sh and nvim/deps.sh: the shell's clip.exe and nvim's
-# PowerShell image paste both need interop, and either section can be installed
-# alone. A re-run on a fixed guest asks for no password — sudo is only reached
-# when something is actually missing.
-ensure_wsl_interop() {
-  is_wsl     || return 0
-  is_systemd || return 0
-
-  if wsl_interop_persisted; then
-    echo "  ✅ WSL interop (persisted in $WSL_INTEROP_CONF)"
-  else
-    echo "  ➡️  Persisting WSL interop in $WSL_INTEROP_CONF..."
-    printf '%s\n' "$WSL_INTEROP_RULE" | sudo tee "$WSL_INTEROP_CONF" >/dev/null \
-      || { echo "  ⚠️  could not write $WSL_INTEROP_CONF"; return 1; }
-  fi
-
-  # Already broken, which is the state you are most likely running this from.
-  # A restart re-reads binfmt.d, so it picks up the file written above.
-  wsl_interop_registered && return 0
-  echo "  ➡️  Interop is not registered — restarting systemd-binfmt..."
-  sudo systemctl restart systemd-binfmt \
-    || { echo "  ⚠️  systemctl restart systemd-binfmt failed"; return 1; }
-  wsl_interop_registered || {
-    echo "  ❌ interop still not registered. From Windows: wsl --shutdown"
-    return 1
-  }
-  echo "  ✅ WSL interop restored"
 }
 
 # ─── dnf: one setting, never the file ───────────────────────────────────────
@@ -147,7 +54,7 @@ ensure_wsl_interop() {
 # rest of dnf.conf alone. That matters on the work RHEL box, whose dnf.conf is
 # not this repo's to rewrite. A re-run on a machine already at the value asks
 # for no password: sudo is reached only when the value is wrong. Called from
-# bash/deps.sh, next to ensure_wsl_interop, which is the same kind of thing.
+# bash/deps.sh.
 #
 # The two dnfs spell it differently, and both are in the fleet: Fedora 44 is
 # dnf5, while RHEL 9 and 10 stay on dnf4 (Red Hat does not build dnf5 for 10).
@@ -198,40 +105,23 @@ ensure_dnf_parallel() {
 
 # ─── Detect package manager ──────────────────────────────────────────────────
 
-# Distro first, linuxbrew last. brew is a supplementary manager on Linux that
-# may or may not be installed, and preferring it over the distro's was wrong:
-# a RHEL 9 box with linuxbrew present got PM=brew, so `pkg` meant "ask
-# Homebrew" for everything. Two installs failed there that dnf would have done
-# — `brew install mise` (fell back to mise.run) and a cask with no Linux bottle
-# — and the dnf-only clang/bindgen branch in nvim/deps.sh went dead because it
-# tests `$PM = dnf`.
+# dnf is the only system package manager: the fleet is Fedora and RHEL. apt
+# went with WSL and Ubuntu on 2026-11-21, and a linuxbrew that happens to be
+# installed is never `pkg` -- it was preferred over the distro once, on a RHEL
+# 9 box, and two installs failed that dnf would have done. lib/status.sh still
+# names a linuxbrew copy when it finds one, as provider `brew`.
 #
-# There is no Darwin branch: macOS support was dropped on 2026-10-26, see
-# docs/decisions/macos.md. brew stays only as the no-apt-no-dnf fallback.
+# $PM stays a variable rather than becoming a constant so an unsupported host
+# (no dnf at all) says so at install time instead of failing on each tool.
 PM=""
 pkg_detect() {
-  if command -v apt >/dev/null 2>&1; then
-    PM="apt"
-  elif command -v dnf >/dev/null 2>&1; then
+  if command -v dnf >/dev/null 2>&1; then
     PM="dnf"
-  elif command -v brew >/dev/null 2>&1; then
-    PM="brew"
   fi
   export PM
 }
 
 # ─── Name mapping (command name -> package name, where they differ) ─────────
-
-apt_pkg_name() {
-  case "$1" in
-    rg)          echo "ripgrep" ;;
-    fd)          echo "fd-find" ;;
-    node|nodejs) echo "nodejs" ;;
-    nvim)        echo "neovim" ;;
-    wl-paste)    echo "wl-clipboard" ;;
-    *)           echo "$1" ;;
-  esac
-}
 
 dnf_pkg_name() {
   case "$1" in
@@ -258,77 +148,22 @@ pkg_install() {
   echo "  ➡️  Installing $cmd..."
 
   case "$PM" in
-    brew)
-      brew install "$cmd" 2>/dev/null || { echo "  ⚠️  brew install $cmd failed"; return 1; }
-      ;;
     # stderr stays open on the sudo paths. It carries two things worth seeing:
     # the package manager's reason for failing — otherwise the ⚠️ below is the
     # only trace, and it says "failed" without saying why — and sudo's PAM
     # conversation. pam_fprintd writes "Place your finger on the fingerprint
     # reader" there while the password prompt goes to /dev/tty, so suppressing
     # stderr turns fingerprint auth into a silent 30-second stall.
-    apt)
-      local pkg
-      pkg=$(apt_pkg_name "$cmd")
-      # Ask before escalating. `sudo apt install wezterm` on a distro that has
-      # no such package still prompts for a password first and only THEN says
-      # "Unable to locate package" — so the cost of a package apt was never
-      # going to provide is an interactive stop, in the middle of an install
-      # that had been running unattended. apt-cache reads the local lists, so
-      # this costs nothing and needs no network.
-      #
-      # apt only. dnf's equivalent either hits the network or trusts a cache
-      # that may be empty, and a false "no such package" there would silently
-      # skip a package that does exist — worse than the prompt this avoids.
-      if ! apt-cache show "$pkg" >/dev/null 2>&1; then
-        echo "  ↩︎  apt has no package '$pkg'"
-        return 1
-      fi
-      sudo apt install -y "$pkg" || { echo "  ⚠️  apt install $pkg failed"; return 1; }
-      ;;
     dnf)
       local pkg
       pkg=$(dnf_pkg_name "$cmd")
       sudo dnf install -y "$pkg" || { echo "  ⚠️  dnf install $pkg failed"; return 1; }
       ;;
     *)
-      echo "  ❌ No supported package manager. Install $cmd manually."
+      echo "  ❌ No dnf on this machine (Fedora/RHEL only). Install $cmd manually."
       return 1
       ;;
   esac
-}
-
-# Create a symlink in ~/.local/bin if the target name isn't already available.
-# Used on apt where binaries have different names (fdfind -> fd, batcat -> bat).
-ensure_symlink() {
-  local src="$1" dest="$2"
-  if command -v "$dest" >/dev/null 2>&1; then
-    return 0
-  fi
-  local src_path
-  src_path=$(command -v "$src" 2>/dev/null) || return 1
-  mkdir -p "$HOME/.local/bin"
-  ln -sf "$src_path" "$HOME/.local/bin/$dest"
-  echo "  🔗 Symlinked $src -> $dest (~/.local/bin/$dest)"
-}
-
-pip_install() {
-  local tool="$1"
-
-  if command -v "$tool" >/dev/null 2>&1; then
-    echo "  ✅ $tool"
-    return 0
-  fi
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "  ⚠️  python3 not found — skipping $tool"
-    return 1
-  fi
-
-  echo "  ➡️  Installing $tool via pip (user)..."
-  python3 -m pip install --user "$tool" 2>/dev/null \
-    || python3 -m pip install "$tool" 2>/dev/null \
-    || echo "  ⚠️  pip install $tool failed"
 }
 
 # Install a cargo crate. Usage: cargo_install <command_name> [crate_name]
@@ -378,8 +213,7 @@ ensure_cargo() {
 cargo_can_link() {
   command -v cc >/dev/null 2>&1 && return 0
   echo "  ❌ cargo needs a C linker and there is no \`cc\`. Install one:"
-  echo "       sudo dnf install gcc        # Fedora / RHEL"
-  echo "       sudo apt install build-essential"
+  echo "       sudo dnf install gcc"
   return 1
 }
 
@@ -449,7 +283,7 @@ ensure_uv() {
 
 # Install a Python tool with uv. Usage: uv_install <command> [package]
 #
-# Replaces pip_install: uv installs tools into isolated environments and is made
+# uv installs tools into isolated environments and is made
 # by the same people as ruff. Where uv itself comes from is ensure_uv's call.
 uv_install() {
   local cmd="$1"
@@ -487,10 +321,8 @@ pkg_upgrade() {
   local pkg="$1"
 
   case "$PM" in
-    brew) brew upgrade "$pkg" >/dev/null 2>&1 || return 1 ;;
-    apt)  sudo apt install -y --only-upgrade "$pkg" >/dev/null 2>&1 || return 1 ;;
-    dnf)  sudo dnf upgrade -y "$pkg" >/dev/null 2>&1 || return 1 ;;
-    *)    return 1 ;;
+    dnf) sudo dnf upgrade -y "$pkg" >/dev/null 2>&1 || return 1 ;;
+    *)   return 1 ;;
   esac
 }
 
@@ -603,8 +435,8 @@ mise_global_drift() {
 # mise_install without the `command -v` short-circuit, for when the command is
 # present but not usable. `command -v` answers "does this exist", which is the
 # right question almost everywhere and the wrong one when a distro ships a
-# version too old to run the config — Ubuntu 24.04's neovim 0.9.5 against a
-# config that needs 0.10+. The caller decides it's unusable; this just installs
+# version too old to run the config — RHEL 9 EPEL's neovim 0.8.0 against a
+# config that needs 0.12. The caller decides it's unusable; this just installs
 # over it. Two callers: the version floor in nvim/deps.sh, and mise_install
 # itself when mise_global_drift says the global config is not the pin.
 mise_install_forced() {
@@ -662,7 +494,7 @@ mise_install_forced() {
   export PATH="$HOME/.local/share/mise/shims:$PATH"
 }
 
-# Ensure ~/.local/bin is on PATH for this process (apt symlinks, uv/cargo bins).
+# Ensure ~/.local/bin is on PATH for this process (uv/cargo bins).
 ensure_local_bin_on_path() {
   if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
     export PATH="$HOME/.local/bin:$PATH"

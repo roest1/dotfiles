@@ -32,7 +32,7 @@ run_tools() {
       echo "-------------------------------------------"
     fi
     if ! tool_applies_here "$cmd"; then
-      echo "  ↷  $cmd — the Windows host installs this, not the WSL guest"
+      echo "  ↷  $cmd — $(tool_na_reason "$cmd")"
       ran_any=1
       continue
     fi
@@ -49,8 +49,8 @@ run_tools() {
 # Per-section escape hatch: <section>/deps.sh, run after that section's tools.
 #
 # The manifest covers the declarative ~90%. The rest is genuinely conditional —
-# apt installing fd as `fdfind`, dnf needing clang-devel for bindgen, WSL
-# detecting a clipboard backend — and forcing that into a table would mean
+# dnf needing clang-devel for bindgen, a clipboard backend picked by display
+# server — and forcing that into a table would mean
 # inventing a DSL to express `if`. A script is the honest shape for it.
 run_hooks() {
   manifest_scope_into "$@" || return 0
@@ -105,10 +105,6 @@ run_check() {
       printf "  %-14s n/a (%s)\n" "$cmd" "$(tool_na_reason "$cmd")"
     elif command -v "$cmd" >/dev/null 2>&1; then
       printf "  %-14s ok\n" "$cmd"
-    elif [[ "$cmd" == "bat" ]] && command -v batcat >/dev/null 2>&1; then
-      printf "  %-14s ok (batcat)\n" "$cmd"
-    elif [[ "$cmd" == "fd" ]] && command -v fdfind >/dev/null 2>&1; then
-      printf "  %-14s ok (fdfind)\n" "$cmd"
     else
       printf "  %-14s MISSING\n" "$cmd"
       missing=$((missing + 1))

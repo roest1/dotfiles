@@ -20,15 +20,14 @@
 # occasions you want that inventory.
 #
 # Provenance is answered by asking each package manager rather than guessing from
-# the path, because $HOME/.local/bin is genuinely ambiguous — a uv shim, an apt
-# rename symlink (fdfind -> fd), and a hand-dropped binary all live there.
+# the path, because $HOME/.local/bin is genuinely ambiguous — a uv shim and a
+# hand-dropped binary both live there.
 
 HERE_STATUS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOTFILES_ROOT="$(cd "$HERE_STATUS/.." && pwd)"
 # shellcheck source=./manifest.sh
 source "$HERE_STATUS/manifest.sh"
-# For is_wsl / tool_applies_here: a tool that belongs to the Windows host is not
-# drift when you are looking at it from inside the WSL guest.
+# For tool_applies_here: a tool that does not apply on this host is not drift.
 # shellcheck source=./pkg.sh
 source "$HERE_STATUS/pkg.sh"
 # Sets SG / SG_B / SG_OFF — all empty unless stdout is a WezTerm terminal, so
@@ -61,15 +60,12 @@ STATUS_DRIFT_LINKS=0
 STATUS_DRIFT_TOOLS=0
 STATUS_DRIFT_STALE=0
 STATUS_DRIFT_FONTS=0
-STATUS_DRIFT_WSL=0
 STATUS_DRIFT_DNF=0
 
 _drift_link()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_LINKS=$((STATUS_DRIFT_LINKS + 1)); }
 _drift_tool()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_TOOLS=$((STATUS_DRIFT_TOOLS + 1)); }
 _drift_stale() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_STALE=$((STATUS_DRIFT_STALE + 1)); }
-_drift_windows() { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WINDOWS=$((STATUS_DRIFT_WINDOWS + 1)); }
 _drift_font()  { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_FONTS=$((STATUS_DRIFT_FONTS + 1)); }
-_drift_wsl()   { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_WSL=$((STATUS_DRIFT_WSL + 1)); }
 _drift_dnf()   { STATUS_DRIFT=$((STATUS_DRIFT + 1)); STATUS_DRIFT_DNF=$((STATUS_DRIFT_DNF + 1)); }
 
 # ── Provenance ───────────────────────────────────────────────────────────────
@@ -114,27 +110,19 @@ provider_of() {
     "$HOME"/.bun/*)        echo "manual"; return ;;
   esac
 
-  # linuxbrew is `pkg` ONLY where pkg_install would have used it: a box with
-  # neither apt nor dnf (lib/pkg.sh, pkg_detect). Everywhere else it is its own
-  # provider, `brew`, which no declaration accepts -- because `pkg` there means
-  # apt or dnf, and a Homebrew copy is something nothing in this repo installed.
-  #
-  # This used to answer `pkg` for any Cellar path, a leftover from macOS, where
-  # brew WAS the system package manager. On a WSL box with linuxbrew that made
-  # bat, eza, fd, fzf and zoxide -- present only as Homebrew copies -- read
-  # `✓ pkg`, so `make status` was green over a toolchain deps.conf never named.
+  # linuxbrew is never `pkg`: pkg is dnf. A Homebrew copy is its own provider,
+  # `brew`, which no declaration accepts, because nothing in this repo installs
+  # it. This used to answer `pkg` for any Cellar path, a macOS leftover, and on
+  # a box with linuxbrew that made bat, eza, fd, fzf and zoxide -- present only
+  # as Homebrew copies -- read `✓ pkg` over a toolchain deps.conf never named.
   # Matched on the path rather than on `command -v brew`, so a brew that has
   # left PATH still cannot launder its Cellar into `pkg`.
   case "$resolved" in
-    /home/linuxbrew/*|*/Cellar/*)
-      [[ -n "${PM:-}" ]] || pkg_detect
-      if [[ "$PM" == "brew" ]]; then echo "pkg"; else echo "brew"; fi
-      return ;;
+    /home/linuxbrew/*|*/Cellar/*) echo "brew"; return ;;
   esac
 
   # System package managers own it?
   if command -v rpm >/dev/null 2>&1 && rpm -qf "$resolved" >/dev/null 2>&1; then echo "pkg"; return; fi
-  if command -v dpkg >/dev/null 2>&1 && dpkg -S "$resolved" >/dev/null 2>&1; then echo "pkg"; return; fi
 
 
   case "$resolved" in
@@ -183,7 +171,7 @@ provider_satisfies() {
     # This only applies to a tool that IS installed: an absent one is caught by
     # the `absent` branch in status_tools before provider_satisfies is reached.
     #
-    # Except `brew`. A linuxbrew copy on an apt/dnf machine is neither an
+    # Except `brew`. A linuxbrew copy on a dnf machine is neither an
     # official installer nor an extracted build -- it is a second package
     # manager nothing here asked for -- and letting the wildcard absorb it is
     # how zoxide (`pkg||manual`) read ✓ while every sibling read ✗ brew.
@@ -201,11 +189,10 @@ provider_satisfies() {
 #
 # Prints the locations of every copy of <cmd> on PATH OTHER than the one that
 # runs, comma-separated, or nothing. Copies are compared by resolved path, so
-# usrmerge's /bin/gh -> /usr/bin/gh and apt's ~/.local/bin/fd -> fdfind are one
-# copy, not two.
+# usrmerge's /bin/gh -> /usr/bin/gh is one copy, not two.
 #
 # Labelled by location, not by provider_of: the point is "where is the other
-# one", and provider_of on every path would cost an rpm/dpkg query each.
+# one", and provider_of on every path would cost an rpm query each.
 _copy_label() {
   case "$1" in
     /home/linuxbrew/*|*/Cellar/*)  echo "linuxbrew" ;;
@@ -313,107 +300,10 @@ status_tools() {
 }
 
 # ── Everything ───────────────────────────────────────────────────────────────
-# ─── The Windows host clone, seen from the WSL guest ─────────────────────────
-#
-# The one piece of state `make status` could not previously see, and the one
-# that goes stale most often. wezterm.exe reads a SECOND clone on C:, and you
-# are almost never sitting in it -- so it falls behind main while the WSL clone
-# you do live in is current. Every wezterm symptom chased this week turned out
-# to be that: a host clone on an older commit, missing a link or a font the
-# guest had had for hours.
-#
-# Found by glob rather than by asking Windows. `powershell.exe $env:USERPROFILE`
-# costs a process launch across the VM boundary on every `make status`, and
-# wslvar needs wslu installed. The glob is local, instant, and wrong only on a
-# box with several Windows profiles -- which DOTFILES_WINDOWS_DIR overrides.
-#
-# Reports the COMMIT, not the working tree. A clone on C: legitimately shows
-# modified files to the guest's git when line endings disagree, and that is a
-# different problem with a different fix (.gitattributes) -- flagging it here
-# would cry wolf on every run.
-status_windows() {
-  is_wsl || return 0
-
-  local win="${DOTFILES_WINDOWS_DIR:-}"
-  if [[ -z "$win" ]]; then
-    local d
-    for d in /mnt/c/Users/*/dotfiles; do
-      [[ -d "$d/.git" ]] && { win="$d"; break; }
-    done
-  fi
-
-  echo ""
-  printf "%s[windows] host clone%s\n" "$SG_B" "$SG_OFF"
-
-  if [[ -z "$win" || ! -d "$win/.git" ]]; then
-    printf "%s  $MARK_NA not found under /mnt/c/Users/*/dotfiles%s\n" "$SG" "$SG_OFF"
-    echo "      wezterm.exe reads its config from a clone on C:. If you use the"
-    echo "      Windows host, see windows/README.md; if you do not, ignore this."
-    return 0
-  fi
-
-  # Compared against origin/main, NOT this clone's HEAD. You are frequently on
-  # a feature branch here, and the host clone being "different from my branch"
-  # is not news -- what matters is whether it has what shipped.
-  #
-  # Uses the origin/main ref as of the last fetch rather than asking the
-  # network: `make status` is a local question and should not block on a remote.
-  local want have branch
-  want="$(git -C "$DOTFILES_ROOT" rev-parse origin/main 2>/dev/null)"
-  have="$(git -C "$win" rev-parse HEAD 2>/dev/null)"
-  branch="$(git -C "$win" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-
-  if [[ -z "$have" ]]; then
-    printf "%s  $MARK_BAD [out of date]  cannot read HEAD in %s%s\n" "$SG" "$win" "$SG_OFF"
-    _drift_windows
-    return 0
-  fi
-
-  if [[ -z "$want" ]]; then
-    printf "%s  $MARK_NA [unknown]      no origin/main here to compare against%s\n" "$SG" "$SG_OFF"
-    return 0
-  fi
-
-  if [[ "$have" == "$want" ]]; then
-    printf "%s  $MARK_OK [up to date]   %s @ %s%s\n" "$SG" "${branch:-detached}" "${have:0:7}" "$SG_OFF"
-    return 0
-  fi
-
-  printf "%s  $MARK_BAD [out of date]  %s @ %s — origin/main is %s%s\n" \
-    "$SG" "${branch:-detached}" "${have:0:7}" "${want:0:7}" "$SG_OFF"
-  _drift_windows
-}
-
-# ─── WSL interop, seen from the guest ────────────────────────────────────────
-#
-# Two failures, both counted, and they are not the same failure. Unregistered
-# is broken NOW: every .exe exits "Exec format error". Registered but not
-# persisted works now and breaks at the next package upgrade that restarts
-# systemd-binfmt — which is where every systemd WSL guest starts out. The
-# mechanism is in lib/pkg.sh, next to ensure_wsl_interop.
-status_wsl_interop() {
-  is_wsl     || return 0
-  is_systemd || return 0
-
-  echo ""
-  printf "%s[wsl] interop%s\n" "$SG_B" "$SG_OFF"
-
-  if ! wsl_interop_registered; then
-    printf "%s  $MARK_BAD not registered — every .exe fails with 'Exec format error'%s\n" "$SG" "$SG_OFF"
-    _drift_wsl
-  elif ! wsl_interop_persisted; then
-    printf "%s  $MARK_BAD registered, but the next systemd-binfmt restart drops it%s\n" "$SG" "$SG_OFF"
-    _drift_wsl
-  else
-    printf "%s  $MARK_OK registered, and persisted in %s%s\n" "$SG" "$WSL_INTEROP_CONF" "$SG_OFF"
-  fi
-}
-
 # ── dnf ──────────────────────────────────────────────────────────────────────
 #
-# Set by bash/deps.sh (ensure_dnf_parallel) and reported here the way
-# status_wsl_interop reports its sibling: the EFFECTIVE value, as dnf itself
-# resolves it, on any machine that has dnf.
+# Set by bash/deps.sh (ensure_dnf_parallel) and reported here as the EFFECTIVE
+# value, as dnf itself resolves it, on any machine that has dnf.
 status_dnf() {
   command -v dnf >/dev/null 2>&1 || return 0
   case " $* " in *" bash "*) ;; *) return 0 ;; esac
@@ -507,13 +397,6 @@ status_fonts() {
 status_fonts_resolution() {
   local dir="$1"
 
-  # Under WSL there is no wezterm in the guest ON PURPOSE -- wezterm.exe runs on
-  # the host and draws the pixels, so the guest has no binary to ask. Not drift.
-  if is_wsl; then
-    printf "%s  $MARK_NA resolution not checked — wezterm.exe is on the Windows host%s\n" "$SG" "$SG_OFF"
-    return 0
-  fi
-
   if ! command -v wezterm >/dev/null 2>&1; then
     printf "%s  $MARK_NA resolution not checked — wezterm is not installed here%s\n" "$SG" "$SG_OFF"
     return 0
@@ -556,9 +439,7 @@ status_all() {
   STATUS_DRIFT_LINKS=0
   STATUS_DRIFT_TOOLS=0
   STATUS_DRIFT_STALE=0
-  STATUS_DRIFT_WINDOWS=0
   STATUS_DRIFT_FONTS=0
-  STATUS_DRIFT_WSL=0
   STATUS_DRIFT_DNF=0
   STATUS_SHADOWED=0
   STATUS_BREW=0
@@ -593,12 +474,9 @@ status_all() {
   status_links "${scope[@]}"
   status_tools "${scope[@]}"
   status_fonts "${scope[@]}"
-  status_windows
-  status_wsl_interop
   status_dnf "${scope[@]}"
   STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE \
-                   + STATUS_DRIFT_WINDOWS + STATUS_DRIFT_FONTS + STATUS_DRIFT_WSL \
-                   + STATUS_DRIFT_DNF ))
+                   + STATUS_DRIFT_FONTS + STATUS_DRIFT_DNF ))
 
   echo ""
   printf "%s===========================================%s\n" "$SG_B" "$SG_OFF"
@@ -615,18 +493,6 @@ status_all() {
       echo "             Run 'make install'. It moves each mise tool's global entry to the"
       echo "             pin and installs it, checked against mise.lock."
     fi
-    if [[ $STATUS_DRIFT_WINDOWS -gt 0 ]]; then
-      echo "  $MARK_BAD windows ($STATUS_DRIFT_WINDOWS) — the host clone wezterm.exe reads is behind origin/main."
-      echo "             Fix it from here:"
-      echo "               make windows"
-      echo "             That pulls the host clone and re-runs its installer, which is"
-      echo "             not optional when an update added a link or a font."
-    fi
-    if [[ $STATUS_DRIFT_WSL -gt 0 ]]; then
-      echo "  $MARK_BAD wsl ($STATUS_DRIFT_WSL) — Windows interop is not persisted, or is already gone."
-      echo "             Run 'make install bash', which writes $WSL_INTEROP_CONF"
-      echo "             and restarts systemd-binfmt. It asks for sudo."
-    fi
     if [[ $STATUS_DRIFT_DNF -gt 0 ]]; then
       echo "  $MARK_BAD dnf ($STATUS_DRIFT_DNF) — max_parallel_downloads is not $DNF_MAX_PARALLEL_DOWNLOADS."
       echo "             Run 'make install bash'. It edits that one key and asks for sudo."
@@ -642,8 +508,8 @@ status_all() {
       echo "             Either fix deps.conf to match reality, or uninstall and"
       echo "             re-run 'make install' to get the declared one."
       if [[ $STATUS_BREW -gt 0 ]]; then
-        echo "             $STATUS_BREW of them come from linuxbrew, which is not 'pkg' on a"
-        echo "             machine with apt or dnf. Remove linuxbrew FIRST, then run"
+        echo "             $STATUS_BREW of them come from linuxbrew, which is never 'pkg'."
+        echo "             Remove linuxbrew FIRST, then run"
         echo "             'make install': it skips any tool already on PATH, so with"
         echo "             the brew copies present it would install nothing."
       fi

@@ -16,15 +16,6 @@ source "$HERE/../lib/pkg.sh"
 pkg_detect
 ensure_local_bin_on_path
 
-# Debian/Ubuntu install these under different binary names than everyone else.
-# The manifest asks for `fd` and `bat`; apt delivers `fdfind` and `batcat`.
-if command -v fdfind >/dev/null 2>&1 && ! command -v fd >/dev/null 2>&1; then
-  ensure_symlink "fdfind" "fd"
-fi
-if command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
-  ensure_symlink "batcat" "bat"
-fi
-
 # zoxide: Fedora packages it, base RHEL does not. The manifest declares `pkg`
 # because that's right nearly everywhere; this catches the case where the
 # package genuinely doesn't exist. Runs only if the providers already failed.
@@ -40,14 +31,9 @@ fi
 # machine is unaffected; a machine that opts out of [uv] loses exactly
 # 2parquet/2feather/2pickle, which guard on `command -v uv` and say so.
 
-# WSL: clip.exe, and every other .exe, stops running when a package upgrade
-# restarts systemd-binfmt. See ensure_wsl_interop in lib/pkg.sh. Never fatal —
-# a guest without sudo still gets the rest of this file.
-ensure_wsl_interop || true
-
-# dnf: one setting, max_parallel_downloads, through dnf's own setter. Same
-# shape as the line above -- system config, sudo only when the value is wrong,
-# a no-op without dnf -- and here for the same reason: every machine installs
+# dnf: one setting, max_parallel_downloads, through dnf's own setter. System
+# config, sudo only when the value is wrong, a no-op without dnf -- and here
+# because every machine installs
 # [bash]. A section of its own would declare no link and no tool, which the
 # `dots` console treats as a section that does nothing.
 ensure_dnf_parallel || true
@@ -57,8 +43,7 @@ ensure_dnf_parallel || true
 # There was one, 0.65, and this is where it was enforced over an
 # already-installed distro fzf. It existed for `github`, which needed
 # `--listen` and the start/focus events for live previews and `--style` /
-# `--footer` for the chrome -- none of which apt's 0.29 (Ubuntu 22.04) or 0.44
-# (24.04) had.
+# `--footer` for the chrome -- none of which the distro fzf of the day had.
 #
 # `github` is a Rust binary now (tui/github) and uses no fzf. The menu and
 # list wrappers in bash_productivity went with it, having lost every caller.

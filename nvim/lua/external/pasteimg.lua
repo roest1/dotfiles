@@ -3,7 +3,7 @@
 -- :PasteImage — drop an image from the OS clipboard into a directory as a PNG.
 --
 -- The "screenshot → snip → paste into Oil" workflow: take a screenshot
--- (Win+Shift+S, a Linux snipper, …) so it lands on the OS
+-- (GNOME's Print Screen, …) so it lands on the OS
 -- clipboard, open Oil at the target directory, then `:PasteImage`. The new file
 -- is written to disk and Oil refreshes to show it.
 --
@@ -16,10 +16,7 @@
 --   :PasteImage --rename diagram.png  diagram.png  (.png appended if no ext)
 --   :PasteImage --rename diagram      diagram.png
 --
--- Backend is detected at runtime (mirrors the clipboard provider in
--- options.lua) so one config works on every machine:
---   • WSL2            → PowerShell -STA + System.Windows.Forms.Clipboard
---                       (no extra install — ships with Windows)
+-- Backend is detected at runtime from the session:
 --   • Linux / Wayland → wl-paste   (package: wl-clipboard)
 --   • Linux / X11     → xclip      (package: xclip)
 --
@@ -46,9 +43,6 @@ end
 -- ─── Backend detection ─────────────────────────────────────────────────────
 
 local function detect_backend()
-  if vim.fn.has 'wsl' == 1 then
-    return 'wsl'
-  end
   if vim.env.WAYLAND_DISPLAY then
     return 'wayland'
   end
@@ -59,58 +53,9 @@ local function detect_backend()
 end
 
 -- ─── Backends ──────────────────────────────────────────────────────────────
--- Each saver writes a PNG to `out_path` (a Linux path) and returns
+-- Each saver writes a PNG to `out_path` and returns
 -- (true) on success or (false, message) on failure. "No image on the
 -- clipboard" is a failure, not a crash.
-
---- Resolve powershell.exe: PATH first, then the canonical System32 location.
-local function find_powershell()
-  local ps = vim.fn.exepath 'powershell.exe'
-  if ps ~= '' then
-    return ps
-  end
-  local fallback = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
-  if vim.fn.executable(fallback) == 1 then
-    return fallback
-  end
-  return nil
-end
-
-local function save_wsl(out_path)
-  local ps = find_powershell()
-  if not ps then
-    return false, 'powershell.exe not found on PATH or in System32'
-  end
-
-  -- .NET writes through the Windows side, so it needs a Windows path.
-  local win_path = vim.trim(vim.fn.system { 'wslpath', '-w', out_path })
-  if vim.v.shell_error ~= 0 or win_path == '' then
-    return false, 'wslpath could not convert ' .. out_path
-  end
-
-  -- -STA is required: WinForms clipboard access needs a single-threaded
-  -- apartment (the default MTA throws). Single-quote the path for PowerShell,
-  -- doubling embedded quotes; backslashes are literal in single quotes.
-  local quoted = "'" .. win_path:gsub("'", "''") .. "'"
-  local script = table.concat({
-    'Add-Type -AssemblyName System.Windows.Forms;',
-    'Add-Type -AssemblyName System.Drawing;',
-    '$img = [System.Windows.Forms.Clipboard]::GetImage();',
-    "if ($img -eq $null) { 'NO_IMAGE'; exit 0 };",
-    ('$img.Save(%s, [System.Drawing.Imaging.ImageFormat]::Png); '):format(quoted),
-    "'SAVED'",
-  }, ' ')
-
-  -- List form → no shell, so no quoting surprises on the WSL side.
-  local out = vim.fn.system { ps, '-NoProfile', '-STA', '-Command', script }
-  if vim.v.shell_error ~= 0 then
-    return false, 'powershell error: ' .. vim.trim(out)
-  end
-  if out:find 'NO_IMAGE' then
-    return false, 'no image on the clipboard'
-  end
-  return true
-end
 
 local function save_wayland(out_path)
   if vim.fn.executable 'wl-paste' ~= 1 then
@@ -141,7 +86,6 @@ local function save_x11(out_path)
 end
 
 local SAVERS = {
-  wsl = save_wsl,
   wayland = save_wayland,
   x11 = save_x11,
 }
@@ -203,7 +147,7 @@ end
 local function paste(fargs)
   local backend = detect_backend()
   if not backend then
-    err 'no clipboard-image backend for this environment (need WSL, Wayland, or X11)'
+    err 'no clipboard-image backend for this environment (need Wayland or X11)'
     return
   end
 
