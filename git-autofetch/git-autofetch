@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Fetch every git repo under ~/github so the prompt's ahead/behind counts stay current.
+# Fetch only: never merges, rebases, or touches the working tree.
+#   git-autofetch            fetch all repos
+#   git-autofetch --dry-run  list repos and what would happen, no network
+set -uo pipefail
+
+root=${GIT_AUTOFETCH_ROOT:-$HOME/github}
+per_repo_timeout=${GIT_AUTOFETCH_TIMEOUT:-60}
+dry_run=0
+[[ ${1:-} == --dry-run ]] && dry_run=1
+
+# A machine without the folder (a work box, a fresh WSL) is a no-op, not a failure.
+if [[ ! -d $root ]]; then
+  echo "no $root on this machine; nothing to fetch"
+  exit 0
+fi
+
+# Never prompt: a background job has no terminal to answer a passphrase or password.
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=10}
+# Fedora/GNOME's SSH agent, in case the user manager didn't inherit SSH_AUTH_SOCK.
+if [[ -z ${SSH_AUTH_SOCK:-} && -S ${XDG_RUNTIME_DIR:-/run/user/$UID}/gcr/ssh ]]; then
+  export SSH_AUTH_SOCK=${XDG_RUNTIME_DIR:-/run/user/$UID}/gcr/ssh
+fi
+
+busy_reason() { # prints why a repo should be left alone, if anything
+  local repo=$1 f
+  for f in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG; do
+    [[ -e $(git -C "$repo" rev-parse --path-format=absolute --git-path "$f") ]] && { echo "$f in progress"; return; }
+  done
+}
+
+fetched=0 skipped=0 failed=0
+while IFS= read -r repo; do
+  name=${repo#"$root"/}
+  if [[ -z $(git -C "$repo" remote) ]]; then
+    echo "skip  $name (no remotes)"; ((skipped++)); continue
+  fi
+  reason=$(busy_reason "$repo")
+  if [[ -n $reason ]]; then
+    echo "skip  $name ($reason)"; ((skipped++)); continue
+  fi
+  if ((dry_run)); then
+    echo "would fetch  $name ($(git -C "$repo" remote | paste -sd, -))"; continue
+  fi
+  if out=$(timeout "$per_repo_timeout" git -C "$repo" fetch --all --quiet --recurse-submodules=no 2>&1); then
+    ((fetched++))
+  else
+    echo "FAIL  $name: ${out//$'\n'/ | }"; ((failed++))
+  fi
+done < <(find "$root" -maxdepth 4 -name .git -prune -printf '%h\n' | sort)
+
+((dry_run)) && exit 0
+echo "fetched $fetched, skipped $skipped, failed $failed"
+((failed == 0))

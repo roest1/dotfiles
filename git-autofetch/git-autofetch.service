@@ -1,0 +1,11 @@
+[Unit]
+Description=git fetch every repo under ~/github (no merges, no working-tree changes)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/git-autofetch
+# Stay out of the way of interactive work.
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=15min
