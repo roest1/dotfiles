@@ -1,10 +1,10 @@
 # Credential-shaped strings that must never appear INSIDE a tracked file.
 #
 # The sibling file, secret-patterns, is about PATHS -- whole files that must
-# not be tracked at all. This one is about content, and it exists because of
-# claude/user-memory.md: that file is rewritten by Claude Code itself (a `#`
-# memory-add, from any repo, during any session), so it is the one tracked
-# file in here that changes without anyone opening an editor. See
+# not be tracked at all. This one is about content. It arrived with
+# claude/user-memory.md, which Claude Code rewrote by itself; that file moved
+# to a private plugin on 2026-11-21, and the guard stayed because
+# claude/settings.json is still written by Claude Code at runtime. See
 # tools/check-content.sh for what this can and cannot prove.
 #
 # One extended-regex per line, matched against file contents. Blank lines and

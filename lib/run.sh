@@ -9,6 +9,9 @@
 #   run_check  [section...]     verify tools are present; non-zero if any missing
 
 HERE_RUN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A plugin's <section>/deps.sh sources lib/pkg.sh through this, since it lives
+# in another repo and cannot find the core by relative path.
+export DOTFILES_LIB="$HERE_RUN"
 # shellcheck source=./manifest.sh
 source "$HERE_RUN/manifest.sh"
 # shellcheck source=./providers.sh
@@ -56,7 +59,7 @@ run_hooks() {
   manifest_scope_into "$@" || return 0
   local s
   for s in ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"}; do
-    local hook="$HERE_RUN/../$s/deps.sh"
+    local hook="$MANIFEST_ROOT/$s/deps.sh"
     if [[ -f "$hook" ]]; then
       echo ""
       echo "[$s] platform fixups"
@@ -76,7 +79,7 @@ run_post() {
     echo ""
     echo "[$section] post: $cmdline"
     echo "-------------------------------------------"
-    ( cd "$HERE_RUN/.." && eval "$cmdline" ) || echo "  ⚠️  post step failed: $cmdline"
+    ( cd "$MANIFEST_ROOT" && eval "$cmdline" ) || echo "  ⚠️  post step failed: $cmdline"
   done < <(manifest_lines post ${MANIFEST_SCOPE[@]+"${MANIFEST_SCOPE[@]}"})
 }
 

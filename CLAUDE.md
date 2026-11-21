@@ -69,6 +69,18 @@ code: [`tui/CLAUDE.md`](tui/CLAUDE.md).
 
 see `make help`
 
+**Plugins are other repos run through this engine** (`lib/plugins.sh`). A plugin is a git
+repo with its own `deps.conf` in this format; which plugins a machine uses is listed in
+`~/.config/dotfiles/plugins` — machine-local, for the reason the sections file is: this repo
+is public and the list names private repos. The engine resolves every path from
+`MANIFEST_ROOT`, the manifest's own directory, so a plugin's links, `<section>/deps.sh` and
+`post` lines are relative to its clone; never reintroduce a hard-coded repo root. Bare
+`make install`/`link`/`check`/`status` include plugins, a named section never does, and
+`make link` never clones (it promises no network). **The core must work with zero plugins**:
+no file means none, and a plugin that cannot be cloned is skipped, never fatal. Anything
+personal — the global `CLAUDE.md`, employer URL rules, ssh config — belongs in a private
+plugin, not here; CI rejects a global prompt coming back.
+
 `make check` asks "does this command exist." `make status` asks "is this machine
 what the manifest says" — link targets, per-tool provenance, and the font lanes.
 Prefer `status` when the question is whether the repo is still telling the truth.

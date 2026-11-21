@@ -156,8 +156,8 @@ and clone into the matching slot.
 
 The tree was measured before the reader was written, and the obvious design —
 parse `~/github/<org>/<repo>` — is wrong on this machine four ways: the
-directory `orgs/codegig` holds the org `codegig-br`; depth is not fixed
-(`orgs/codegig/clients/shell/atlas`); some clones are other people's
+directory `orgs/acme` holds the org `acme-co`; depth is not fixed
+(`orgs/acme/clients/initech/portal`); some clones are other people's
 (`bilawalsidhu`, `yt-dlp`); one has no remote at all. So the path gives
 GROUPING and the remote gives IDENTITY, and neither can give both. Details in
 `tui/github/src/index.rs`.
