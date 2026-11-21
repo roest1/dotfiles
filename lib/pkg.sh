@@ -180,7 +180,7 @@ pkg_install() {
 # too old to build the tree fails at the END of a long install rather than at
 # the start. rustup also keeps itself current, which `dnf install rust` cannot.
 #
-# The curl-piped installer is not a new precedent here: uv, mise and zoxide all
+# The curl-piped installer is not a new precedent here: uv and mise both
 # arrive this way when a package manager cannot serve them.
 ensure_cargo() {
   command -v cargo >/dev/null 2>&1 && return 0
