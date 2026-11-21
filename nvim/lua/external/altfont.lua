@@ -75,31 +75,10 @@ local function terminal_supports_carrier()
   return true, 'wezterm with linked fonts'
 end
 
--- "A file you write", which is the whole spec. buftype is what does the work:
--- oil is 'acwrite', terminals are 'terminal', telescope/trouble/undotree and
--- every other scratch UI are 'nofile', help is 'help', quickfix is 'quickfix'.
--- Only a real file-backed buffer is ''.
---
--- The scheme test is the belt to that braces. A plugin that presents a virtual
--- filesystem through a normal buftype -- oil-ssh, fugitive's blobs -- still
--- names its buffers with a URL scheme, and those are not files you write
--- either.
-local function is_file_buf(bufnr)
-  if not vim.api.nvim_buf_is_valid(bufnr) then
-    return false
-  end
-  if vim.bo[bufnr].buftype ~= '' then
-    return false
-  end
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  if name == '' then
-    return false
-  end
-  if name:match '^%a[%w+.-]*://' then
-    return false
-  end
-  return true
-end
+-- "A file you write". Shared with theme.lua's editor lane, so the font and
+-- the colorscheme agree on which buffers are the editor; the reasoning lives
+-- with the predicate in filebuf.lua.
+local is_file_buf = require 'external.filebuf'
 
 local function define_carrier()
   -- blink and NOTHING else. Any colour here would be combined into every cell

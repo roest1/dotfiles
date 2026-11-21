@@ -26,6 +26,8 @@ Run `:checkhealth external` to verify tool availability — logic in `lua/extern
 - `lua/external/altfont.lua` — renders file buffers in a different terminal font from oil and the rest of the UI. See below.
 - `lua/external/usage.lua` — `:KeymapUsage`, counts real presses of each mapping into `stdpath('state')`, outside the work tree. See "Pruning is measured" below.
 - `lua/external/oilgit.lua` — `:OilGit`, the diffstat column in oil; loaded from `plugins/oil.lua`, not `init.lua`.
+- `lua/external/theme.lua` — colorscheme lanes (`nvim.ui`, `nvim.editor`) read from machine-local `~/.config/dotfiles/theme.conf`; the editor lane is a per-window highlight namespace. Loaded from `plugins/theme.lua`'s rose-pine `config`, not `init.lua`.
+- `lua/external/filebuf.lua` — the one definition of "a file you write", shared by `altfont` and `theme` so the font lane and the color lane cannot disagree about which windows are the editor.
 
 ## The alternate-font carrier (`altfont.lua`)
 

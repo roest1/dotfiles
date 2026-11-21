@@ -1401,7 +1401,7 @@ jobs:
         run: |
           jq -e . "$HOME/.claude/settings.json" >/dev/null \
             || { echo "FAIL: ~/.claude/settings.json is not valid JSON"; exit 1; }
-          for ev in Notification Stop; do
+          for ev in Notification PreToolUse Stop; do
             jq -e --arg ev "$ev" \
               '.hooks[$ev][0].hooks[0].command | test("SetUserVar=claude_state")' \
               "$HOME/.claude/settings.json" >/dev/null \

@@ -455,8 +455,30 @@ local STATES = {
 	working = { glyph = "🔨", cols = 2, color = "#f6c177" },
 
 	-- Claude's Notification hook fired: it is waiting on you — a permission
-	-- prompt or a follow-up question.
+	-- prompt, an MCP elicitation, or a subagent that needs input. NOT
+	-- idle_prompt: that one fires ~60s after any finished turn, and with no
+	-- matcher it repainted every finished tab from ⚡ to 💬 a minute later.
 	waiting = { glyph = "💬", cols = 2, color = "#eb6f92" },
+
+	-- Claude called AskUserQuestion (the PreToolUse hook matched on it): an
+	-- interview, multiple choice, waiting on your pick. Its own state because
+	-- that tool fires NO Notification and NO Stop -- the turn is still open,
+	-- the spinner has stopped, and so before this row the tab fell through to
+	-- whatever the LAST turn's Stop had claimed: a green bolt on a question.
+	-- U+2754 has emoji presentation by default, so no VS16 is needed. The
+	-- lavender is borrowed from the same place the green below was.
+	asking = { glyph = "\u{2754}", cols = 2, color = "#b4befe" },
+
+	-- Claude's Stop hook fired with work still in flight: the turn ended, but a
+	-- background subagent, shell, monitor or workflow will wake it again. The
+	-- hook reads Stop's own `background_tasks` array rather than counting
+	-- SubagentStart/SubagentStop, so nothing here can drift out of step: an
+	-- interrupted subagent that never reports back cannot leave a count stuck.
+	-- Crons (`session_crons`) deliberately do NOT count -- a /loop would wear
+	-- this glyph for its whole life, and that is a schedule, not work.
+	-- U+23F3 has emoji presentation by default, so no VS16. Foam, rose-pine's
+	-- own blue, so it reads as a calmer cousin of `working`'s gold.
+	background = { glyph = "\u{23F3}", cols = 2, color = "#9ccfd8" },
 
 	-- Claude's Stop hook fired: it finished responding. Distinct from `waiting`
 	-- in both glyph and hue so the two halves of "stopped" stay tellable apart
@@ -602,6 +624,10 @@ function M.claude_tab_titles()
 			st = STATES.github
 		elseif not is_claude then
 			st = STATES.plain
+		elseif claimed == "asking" then
+			st = STATES.asking
+		elseif claimed == "background" then
+			st = STATES.background
 		elseif claimed == "waiting" then
 			st = STATES.waiting
 		else

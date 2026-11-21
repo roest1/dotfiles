@@ -4,7 +4,7 @@
 > describe podman and systemd, not this repo, and reference nothing in it --
 > the same argument that removed `nvim/doc/dotfiles-motions.txt`. They are
 > parked here, in one file, until they have a home: either the notes side of
-> `my-machines`, or they become the seed of an ops section in `deps.conf`
+> `my-tech`, or they become the seed of an ops section in `deps.conf`
 > that declares real tools (`podman-tui`, `isd`, `k9s`) plus shortcut
 > functions in the `gchecko` style, at which point the prose goes and the
 > section's `deps.sh` and `h` pages carry what is left. Do not grow this
