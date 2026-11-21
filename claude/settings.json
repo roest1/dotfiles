@@ -1,9 +1,11 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "agentPushNotifEnabled": true,
   "attribution": {
     "commit": ""
   },
   "enabledPlugins": {
+    "clangd-lsp@claude-plugins-official": true,
     "lua-lsp@claude-plugins-official": true
   },
   "hooks": {
@@ -14,7 +16,19 @@
             "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'd2FpdGluZw==' >/dev/tty; } 2>/dev/null || true",
             "type": "command"
           }
-        ]
+        ],
+        "matcher": "permission_prompt|elicitation_dialog|agent_needs_input"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'YXNraW5n' >/dev/tty; } 2>/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "AskUserQuestion"
       }
     ],
     "SessionEnd": [
@@ -41,7 +55,7 @@
       {
         "hooks": [
           {
-            "command": "{ printf '\\033]1337;SetUserVar=claude_state=%s\\007' 'Y29tcGxldGU=' >/dev/tty; } 2>/dev/null || true",
+            "command": "{ n=$(jq \"(.background_tasks // []) | length\" 2>/dev/null); if [ \"${n:-0}\" -gt 0 ] 2>/dev/null; then v=YmFja2dyb3VuZA==; else v=Y29tcGxldGU=; fi; printf '\\033]1337;SetUserVar=claude_state=%s\\007' \"$v\" >/dev/tty; } 2>/dev/null || true",
             "type": "command"
           }
         ]
@@ -51,8 +65,8 @@
   "includeCoAuthoredBy": false,
   "model": "opus",
   "modelSettings": {
-    "claude-fable-5-1": {
-      "effortLevel": "xhigh"
+    "claude-fable-5-2": {
+      "effortLevel": "high"
     },
     "claude-opus-5-5": {
       "effortLevel": "high"

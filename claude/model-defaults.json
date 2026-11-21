@@ -1,8 +1,8 @@
 {
   "model": "opus",
   "modelSettings": {
-    "claude-fable-5-1": {
-      "effortLevel": "xhigh"
+    "claude-fable-5-2": {
+      "effortLevel": "high"
     },
     "claude-opus-5-5": {
       "effortLevel": "high"
