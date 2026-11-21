@@ -1,0 +1,71 @@
+name: dependabot yarn.lock
+
+# Dependabot's bun ecosystem bumps bun.lock and never touches yarn.lock, the
+# generated copy that exists only for GitHub's dependency graph (see
+# .github/dependabot.yml). ci.yml's "yarn.lock matches bun.lock" then fails
+# every Dependabot PR in nvim/lsp-servers until someone regenerates it by hand.
+# This does that one step on Dependabot's own PRs and nothing else.
+#
+# Two things here are less obvious than they look:
+#
+# - A push made with GITHUB_TOKEN starts no workflow run (GitHub's rule, to
+#   stop loops). The new head would have no `ci ok`, and the main-ci ruleset
+#   would hold the PR forever. workflow_dispatch is the documented exception,
+#   so the job dispatches ci.yml on the branch after pushing.
+# - It runs Dependabot-proposed packages with a token that can write. So
+#   --ignore-scripts: no package code executes, the install only resolves and
+#   writes lockfiles. --frozen-lockfile keeps bun.lock exactly as Dependabot
+#   wrote it. The Socket scan and bun audit in ci.yml then run on the result
+#   as on any PR.
+#
+# Pushing to Dependabot's branch stops it rebasing that PR on its own; comment
+# `@dependabot rebase`, or use "Update branch".
+
+on:
+  pull_request:
+    paths:
+      - nvim/lsp-servers/package.json
+      - nvim/lsp-servers/bun.lock
+
+permissions: {}
+
+jobs:
+  regenerate:
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push yarn.lock to the PR branch
+      actions: write    # dispatch ci.yml, which the push alone will not start
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      # Same pin as ci.yml's audit job: bun comes from mise.toml.
+      - id: bun
+        run: |
+          set -euo pipefail
+          v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
+          [ -n "$v" ] || { echo "mise.toml declares no bun version" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun.outputs.version }}
+
+      - name: Regenerate yarn.lock, push, and dispatch CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          bun install --cwd nvim/lsp-servers --yarn --frozen-lockfile --ignore-scripts
+          if git diff --quiet -- nvim/lsp-servers/yarn.lock; then
+            echo "yarn.lock already matches bun.lock"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "nvim: regenerate yarn.lock from bun.lock" -- nvim/lsp-servers/yarn.lock
+          git push origin "HEAD:$HEAD_REF"
+          gh workflow run ci.yml --ref "$HEAD_REF"
