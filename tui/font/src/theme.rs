@@ -223,7 +223,7 @@ pub fn selection() -> [u8; 3] {
 mod tests {
     use super::parse_ps1;
 
-    /// The PS1 this repo actually ships, verbatim from ps1/ps1.bash (the roest1/ps1 submodule).
+    /// The PS1 this repo actually ships, verbatim from ps1/ps1.bash (the roest1/PS1 submodule).
     const REAL: &str = "${__PS1_CONDA}\\[\\033[38;5;75m\\]\\u@\\h\\[\\033[0m\\] \\[\\033[38;5;110m\\]\\w\\[\\033[0m\\]${__PS1_GIT}\\n\\$ ";
 
     fn flat(raw: &str) -> String {

@@ -3,7 +3,7 @@
 #####################################################################
 # Bash Theme — colours for ls, eza, grep, man, git and gcc (Ayu palette)
 #
-# The prompt is not here. It is roest1/ps1, a submodule at ps1/, linked
+# The prompt is not here. It is roest1/PS1, a submodule at ps1/, linked
 # to ~/.bash_prompt by deps.conf and sourced by bashrc.
 #####################################################################
 

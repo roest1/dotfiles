@@ -16,7 +16,7 @@ Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
 
 ## Just want the prompt?
 
-The bash prompt is its own repo, [roest1/ps1](https://github.com/roest1/ps1): one file,
+The bash prompt is its own repo, [roest1/PS1](https://github.com/roest1/PS1): one file,
 with before and after pictures and a two-line install. Here it is a git submodule at
 `ps1/`, pinned to a commit and bumped by Dependabot, so a change there reaches your
 machines only through a PR in this repo.
@@ -285,7 +285,7 @@ refreshes under the cursor by itself.
 ├── bash/
 │   ├── bashrc                          → ~/.bashrc
 │   ├── bash_theme                → ~/.bash_theme
-├── ps1/                                  submodule: roest1/ps1
+├── ps1/                                  submodule: roest1/PS1
 │   └── ps1.bash                        → ~/.bash_prompt
 │   ├── bash_productivity         → ~/.bash_productivity
 │   ├── bash_git                  → ~/.bash_git
@@ -316,7 +316,7 @@ still stands alone.
 | ----------------------------------- | -------------------------------------------------------------------- |
 | `bash/bashrc`                 | Shell options, PATH, package managers, sources theme + productivity   |
 | `bash/bash_theme`             | Colors: LS_COLORS, eza, grep, man pages, git pager, gcc              |
-| `ps1/ps1.bash`                | The prompt (submodule, roest1/ps1)                                    |
+| `ps1/ps1.bash`                | The prompt (submodule, roest1/PS1)                                    |
 | `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
 | `bash/bash_git`               | Git aliases and `gprune`                                             |
 | `bash/bash_github`            | Plain `gh` (`gha`, `stars`) + the helpers shared with the TUI         |

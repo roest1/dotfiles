@@ -1026,7 +1026,7 @@ quiet terminal, and only a test asserting the runs *differed* caught it.
 The shell specimen renders **this machine's PS1**, read from `~/.bash_prompt` —
 the linked file. Change PS1 and the specimen changes. `theme::parse_ps1` is
 split out from the file reading so it can be tested against the real string,
-and CI asserts that string still matches `ps1/ps1.bash` (the roest1/ps1
+and CI asserts that string still matches `ps1/ps1.bash` (the roest1/PS1
 submodule).
 
 ## Left-column layout

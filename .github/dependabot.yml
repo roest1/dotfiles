@@ -136,7 +136,7 @@ updates:
           - "minor"
           - "patch"
 
-  # The prompt, roest1/ps1, is a submodule at ps1/. This is what moves its
+  # The prompt, roest1/PS1, is a submodule at ps1/. This is what moves its
   # pin: a push to ps1 reaches machines only after a PR here bumps the
   # commit and CI has run against it.
   - package-ecosystem: "gitsubmodule"
