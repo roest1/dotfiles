@@ -208,8 +208,8 @@ impl Root {
 
     /// What a lane is, in one line: who owns what is in it, and how much.
     ///
-    /// The owners are the point rather than the count. `orgs/codegig` holding
-    /// `codegig-br` repos is the disagreement between path and remote made
+    /// The owners are the point rather than the count. `orgs/acme` holding
+    /// `acme-co` repos is the disagreement between path and remote made
     /// visible, and it is the thing you would otherwise have to open a repo to
     /// discover.
     fn lane_detail(&self, l: usize) -> String {
@@ -467,10 +467,7 @@ mod tests {
             &[
                 ("public/mdgest", "git@github.com:roest1/mdgest.git"),
                 ("public/site", "git@github.com:roest1/site.git"),
-                (
-                    "orgs/codegig/platform",
-                    "git@github.com:codegig-br/platform.git",
-                ),
+                ("orgs/acme/platform", "git@github.com:acme-co/platform.git"),
             ],
         ))
     }
@@ -504,18 +501,14 @@ mod tests {
         walk_agrees(&mut r);
     }
 
-    /// The disagreement this screen exists to show: the lane is `orgs/codegig`
-    /// and the owner is `codegig-br`, and you can see both without opening
+    /// The disagreement this screen exists to show: the lane is `orgs/acme`
+    /// and the owner is `acme-co`, and you can see both without opening
     /// anything.
     #[test]
     fn a_lane_names_the_owners_inside_it() {
         let r = sample("detail");
-        let orgs = r
-            .lanes
-            .iter()
-            .position(|(n, _)| n == "orgs/codegig")
-            .unwrap();
-        assert_eq!(r.lane_detail(orgs), "codegig-br · 1 repo");
+        let orgs = r.lanes.iter().position(|(n, _)| n == "orgs/acme").unwrap();
+        assert_eq!(r.lane_detail(orgs), "acme-co · 1 repo");
         let public = r.lanes.iter().position(|(n, _)| n == "public").unwrap();
         assert_eq!(r.lane_detail(public), "roest1 · 2 repos");
     }
@@ -537,7 +530,7 @@ mod tests {
     fn it_can_start_focused_on_the_repo_you_are_standing_in() {
         let r = sample("focused");
         let root = r.root.clone();
-        let here = index::current(&root.join("orgs/codegig/platform"), &root).expect("a repo");
+        let here = index::current(&root.join("orgs/acme/platform"), &root).expect("a repo");
         let mut r = r.focused_on(&here);
         let sel = r.initial_sel();
         let rows = r.rows();

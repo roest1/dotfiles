@@ -45,6 +45,20 @@ It spends **one process per prompt** inside a repo and none outside one —
 anything needing the network, or a real merge, is read from a cache that a
 detached job refreshes. [`bash/bash_theme`](bash/bash_theme) explains why.
 
+## Plugins
+
+Other repos can ride the same engine: a repo with its own `deps.conf` is a plugin. List the
+ones a machine wants in `~/.config/dotfiles/plugins` (machine-local, never in this repo):
+
+```conf
+# name   git-url                            [clone dir]
+roest    git@github.com:roest1/roest.git    ~/roest
+```
+
+`make install` clones what is missing and installs it; `make link`, `check` and `status`
+include plugins; naming a section (`make install bash`) leaves them alone. No file means no
+plugins, and one you cannot clone is skipped — the core never needs any.
+
 ## Everything lives in `deps.conf`
 
 One file declares every config symlink and every dependency. **Toggling is

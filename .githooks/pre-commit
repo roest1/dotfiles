@@ -24,11 +24,10 @@ set -euo pipefail
 #
 # The path guard above asks "is this a file that must never be here".
 # This asks "is this a line that must never be here", which is a
-# different question and became worth asking when claude/user-memory.md
-# arrived: it is linked to ~/.claude/CLAUDE.md, so Claude Code writes
-# to it by itself whenever you add a memory with `#`, from any repo.
-# It is the one tracked file that can change without anyone opening an
-# editor, and this repo is public.
+# different question. It became worth asking when a file Claude Code
+# rewrites by itself was tracked here (the global CLAUDE.md, now in a
+# private plugin); claude/settings.json is still one, and this repo is
+# public.
 #
 # Shared with CI through tools/check-content.sh, same as the two
 # guards either side of it. Its header says what it can and cannot

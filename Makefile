@@ -67,7 +67,7 @@ $(eval $(ARGS):;@:)
 #
 # CI asserts this list stays complete, because the failure is invisible until
 # a path happens to share a target's name.
-.PHONY: help install link check status lint sync prune test shell update sections mise-lock mono-font $(SECTIONS)
+.PHONY: help install link check status plugins lint sync prune test shell update sections mise-lock mono-font $(SECTIONS)
 
 # One recipe line, not twelve, because lib/sgr.sh has to be sourced in the same
 # shell that uses it — make runs each recipe line in its own.
@@ -99,20 +99,33 @@ help: ## Show this help
 sections: ## List sections declared in deps.conf
 	@echo "$(SECTIONS)" | tr ' ' '\n'
 
+# Plugins (lib/plugins.sh) ride along only when NO section is named: `make
+# install nvim` means this repo's [nvim] and nothing else, and a plugin's
+# sections are not this repo's to name. `make link` links plugins already
+# cloned but never clones one -- it promises no network.
+PLUGINS := source "$(DOTFILES_DIR)/lib/plugins.sh" &&
+
 install: ## Link config + install tools (optionally: make install <section>...)
 	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_tools $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_post $(ARGS)
+	@$(if $(ARGS),:,$(PLUGINS) plugins_fetch && plugins_run install || true)
 	@$(MAKE) --no-print-directory check $(ARGS)
 
 link: ## Symlink config only — no sudo, no network, nothing installed
 	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
+	@$(if $(ARGS),:,$(PLUGINS) plugins_run link || true)
 
 check: ## Verify enabled tools are present (optionally: make check <section>...)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_check $(ARGS) || true
+	@$(if $(ARGS),:,$(PLUGINS) plugins_run check || true)
 
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true
+	@$(if $(ARGS),:,$(PLUGINS) plugins_run status || true)
+
+plugins: ## Clone + install the plugins in ~/.config/dotfiles/plugins
+	@$(PLUGINS) plugins_fetch && plugins_run install && plugins_run check
 
 # No file list here either — tools/lint.sh holds it, and .githooks/pre-commit
 # and the CI job call the same script. This is the whole-tree sweep, which is

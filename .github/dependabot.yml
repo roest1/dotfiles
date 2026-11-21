@@ -47,7 +47,7 @@ version: 2
 #      Do not merge them as-is; they would not update bun.lock.
 #
 # That second point is not theoretical. Verified against a bun-only sibling repo
-# (codegig-br/kinesics): its SBOM contains exactly 27 npm packages — precisely
+# (a bun-only sibling repo): its SBOM contains exactly 27 npm packages — precisely
 # its two package.json files' direct deps, each recorded as an unresolved range
 # ("react@^18.3.1") rather than a resolved version — while its uv backend
 # contributes 87 fully-resolved transitive pypi packages from uv.lock. When that
