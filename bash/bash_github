@@ -51,8 +51,32 @@
 
 # ─── Quick status ─────────────────────────────────────────────────
 #
-# Uses __duration_str and __relative_time from bash_theme, which bashrc
-# sources first. The github screens already depend on them the same way.
+# Its own time helpers, not the prompt's: PS1 is another repo, and a
+# function there is its internals, free to change. GNU date only, which is
+# every machine this repo targets.
+
+# _gha_ago <iso> -> now / 2m / 1h / 3d / 2w
+_gha_ago() {
+  local t0 now s
+  t0=$(date -d "$1" +%s 2>/dev/null) || return
+  now=$(date +%s); s=$(( now - t0 ))
+  if   (( s < 60 ));     then printf 'now'
+  elif (( s < 3600 ));   then printf '%dm' $(( s / 60 ))
+  elif (( s < 86400 ));  then printf '%dh' $(( s / 3600 ))
+  elif (( s < 604800 )); then printf '%dd' $(( s / 86400 ))
+  else                        printf '%dw' $(( s / 604800 ))
+  fi
+}
+
+# _gha_duration <start_iso> <end_iso> -> 2m15s / 8s / nothing on bad input
+_gha_duration() {
+  local a b d
+  a=$(date -d "$1" +%s 2>/dev/null) || return
+  b=$(date -d "$2" +%s 2>/dev/null) || return
+  (( b > a )) || return 0
+  d=$(( b - a ))
+  if (( d >= 60 )); then printf '%dm%ds' $(( d / 60 )) $(( d % 60 )); else printf '%ds' "$d"; fi
+}
 
 # Horizontal rule: _gha_rule <left> <mid> <right> <w>...
 _gha_rule() {
@@ -158,7 +182,7 @@ gha() { # gha: workflow status for HEAD, as a table
     # 3-byte "—" would come out two columns narrow.
     dur="-"
     [[ "$started" != "-" && "$completed" != "-" ]] \
-      && dur=$(__duration_str "$started" "$completed")
+      && dur=$(_gha_duration "$started" "$completed")
 
     # Truncate rather than let a long name break the border alignment.
     local shown="$name"
@@ -172,7 +196,7 @@ gha() { # gha: workflow status for HEAD, as a table
     # Same reason, worse trap: ✅ ❌ ⏳ are East-Asian Wide (two columns) but
     # one character and three bytes, so neither %s width is right. ⏭ is
     # Neutral — one column — so it needs a space the others don't. This is
-    # the same fact bash_theme's prompt encodes, where the right side adds 2
+    # the same fact the prompt (ps1.bash) encodes, where the right side adds 2
     # per emoji to its running width as it builds the string.
     local sw=2
     [[ "$status" == "⏭" ]] && sw=1
@@ -211,7 +235,7 @@ gha() { # gha: workflow status for HEAD, as a table
   summary="${summary%   }"
 
   local age=""
-  [[ -n "$latest" ]] && age=$(__relative_time "$latest")
+  [[ -n "$latest" ]] && age=$(_gha_ago "$latest")
 
   printf '  %s%s%s%s\n' "$summary" \
     "${age:+   $dim·$off   }" "${age}" "${age:+ ago}"

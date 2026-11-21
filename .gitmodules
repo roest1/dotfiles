@@ -1,0 +1,3 @@
+[submodule "ps1"]
+	path = ps1
+	url = https://github.com/roest1/PS1.git

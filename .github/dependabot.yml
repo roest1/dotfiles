@@ -1,7 +1,7 @@
 version: 2
 
-# Three ecosystems, because those are the three Dependabot can parse here. The
-# fourth lane, mise.toml, is Renovate's (renovate.json): Dependabot has no mise
+# Four ecosystems: bun, cargo, Actions, and the ps1 submodule. The fifth
+# lane, mise.toml, is Renovate's (renovate.json): Dependabot has no mise
 # ecosystem.
 #
 #   nvim/lsp-servers  the JS language servers. Moving them out of Mason and into
@@ -139,6 +139,20 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  # The prompt, roest1/PS1, is a submodule at ps1/. This is what moves its
+  # pin: a push to ps1 reaches machines only after a PR here bumps the
+  # commit and CI has run against it.
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ps1"
+    labels:
+      - "dependencies"
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"

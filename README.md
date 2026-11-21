@@ -14,36 +14,12 @@ curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh |
 
 Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
 
-## Just want a cool PS1?
+## Just want the prompt?
 
-![The bash prompt: user@host, path, repo visibility, branch, branch protection, and GitHub Actions status](docs/images/prompt.png)
-
-Take the prompt on its own. It is one self-contained file — no framework, no
-plugin manager, nothing else from this repo:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bash/bash_theme -o ~/.bash_theme
-echo 'source ~/.bash_theme' >> ~/.bashrc
-exec bash
-```
-
-| | |
-|---|---|
-| 🌍 / 🔒 | repo is public / private |
-| 🛡️ | branch has protection rules |
-| `2 staged  1 unstaged  2 untracked` | working tree |
-| 🔼2&nbsp;🔽3 | commits to push / to pull — both at once means diverged |
-| `2 conflicting` | that pull would conflict, in 2 files |
-| `[11/11 ✅ 22h]` | GitHub Actions for this commit, last run 22h ago |
-
-Bash 5. `git` is the only hard requirement;
-`gh` and `jq` add the bracketed CI status and the 🌍/🔒/🛡️ markers. Every tool
-is behind a `command -v` guard, so a missing one drops its segment rather than
-breaking the prompt.
-
-It spends **one process per prompt** inside a repo and none outside one —
-anything needing the network, or a real merge, is read from a cache that a
-detached job refreshes. [`bash/bash_theme`](bash/bash_theme) explains why.
+The bash prompt is its own repo, [roest1/PS1](https://github.com/roest1/PS1): one file,
+with before and after pictures and a two-line install. Here it is a git submodule at
+`ps1/`, pinned to a commit and bumped by Dependabot, so a change there reaches your
+machines only through a PR in this repo.
 
 ## Plugins
 
@@ -309,6 +285,8 @@ refreshes under the cursor by itself.
 ├── bash/
 │   ├── bashrc                          → ~/.bashrc
 │   ├── bash_theme                → ~/.bash_theme
+├── ps1/                                  submodule: roest1/PS1
+│   └── ps1.bash                        → ~/.bash_prompt
 │   ├── bash_productivity         → ~/.bash_productivity
 │   ├── bash_git                  → ~/.bash_git
 │   ├── bash_github               → ~/.bash_github
@@ -337,7 +315,8 @@ still stands alone.
 | File                                | Controls                                                             |
 | ----------------------------------- | -------------------------------------------------------------------- |
 | `bash/bashrc`                 | Shell options, PATH, package managers, sources theme + productivity   |
-| `bash/bash_theme`             | Prompt, colors, LS_COLORS, man page colors                            |
+| `bash/bash_theme`             | Colors: LS_COLORS, eza, grep, man pages, git pager, gcc              |
+| `ps1/ps1.bash`                | The prompt (submodule, roest1/PS1)                                    |
 | `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
 | `bash/bash_git`               | Git aliases and `gprune`                                             |
 | `bash/bash_github`            | Plain `gh` (`gha`, `stars`) + the helpers shared with the TUI         |

@@ -70,7 +70,7 @@ HISTFILESIZE=100000 # on disk (hard drive) .bash_history
 # line as soon as it has run; HISTTIMEFORMAT makes bash store an epoch stamp
 # with each line (the format only governs how `history` prints it).
 #
-# Append to PROMPT_COMMAND, do not assign: bash_theme and zoxide both add to
+# Append to PROMPT_COMMAND, do not assign: the prompt and zoxide both add to
 # it later and each checks for its own entry, so this follows the same guard
 # and `reload` stays idempotent. ~/.bash_history itself stays where bash puts
 # it, in $HOME and outside the work tree -- nothing here writes a log that
@@ -217,6 +217,10 @@ fi
 export DOTFILES_ROOT
 
 source ~/.bash_theme
+# Guarded, unlike its neighbours: after a `git pull` that brought the ps1
+# submodule but before `make install` checked it out, there is no file yet,
+# and a missing prompt beats an error in every new shell.
+[[ -f ~/.bash_prompt ]] && source ~/.bash_prompt
 [[ -f ~/.bash_password_commands ]] && source ~/.bash_password_commands
 source ~/.bash_productivity
 source ~/.bash_git

@@ -58,6 +58,15 @@ link_file() {
     return
   fi
 
+  # A source that is not there would still back up whatever is at $dest and
+  # leave a link to nothing, which prune_orphans then deletes: the real file
+  # ends up in a backup folder and nothing replaces it. An unchecked-out
+  # submodule is the ordinary way to get here.
+  if [[ ! -e "$src" ]]; then
+    echo "  ⚠️  ${src#"$ROOT"/} does not exist — $dest left alone"
+    return
+  fi
+
   if [[ -e "$dest" || -L "$dest" ]]; then
     mkdir -p "$BACKUP_DIR"
     mv "$dest" "$BACKUP_DIR/"
@@ -117,6 +126,33 @@ prune_orphans() {
 }
 
 echo ""
+# --- Submodules ----------------------------------------------------
+#
+# Before linking, because link lines may point into a submodule (ps1/). Only
+# submodules that are NOT checked out are touched: `submodule update` on one
+# you are working in would move its HEAD back to the pinned commit.
+#
+# Fetching needs the network, so only `make install` asks for it
+# (DOTFILES_FETCH_SUBMODULES=1); `make link` promises none and only says what
+# is missing. submodule.recurse makes a later `git pull` move each checkout
+# to the commit the pull pinned, which is how a bump reaches a machine.
+# Repo-local, and allowed to fail, for the reasons the hooks block gives.
+if [[ -f "$ROOT/.gitmodules" ]] && command -v git >/dev/null 2>&1; then
+  if [[ "$(git -C "$ROOT" config --local --get submodule.recurse 2>/dev/null)" != true ]]; then
+    git -C "$ROOT" config --local submodule.recurse true 2>/dev/null || true
+  fi
+  while read -r sub; do
+    [[ -n "$sub" ]] || continue
+    if [[ "${DOTFILES_FETCH_SUBMODULES:-}" == 1 ]]; then
+      echo "  ➡️  checking out submodule $sub"
+      git -C "$ROOT" submodule update --init --quiet -- "$sub" \
+        || echo "  ⚠️  submodule $sub: could not check out (offline?) — links into it are skipped"
+    else
+      echo "  ⚠️  submodule $sub is not checked out — run \`make install\` (needs network)"
+    fi
+  done < <(git -C "$ROOT" submodule status 2>/dev/null | sed -n 's/^-[0-9a-f]* \([^ ]*\).*/\1/p')
+fi
+
 echo "Linking from $ROOT"
 echo "Sections: ${SECTIONS[*]}"
 echo "-------------------------------------------"

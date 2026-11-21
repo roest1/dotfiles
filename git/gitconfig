@@ -23,7 +23,7 @@
 [url "git@github.com:"]
 	pushInsteadOf = https://github.com/
 [color "status"]
-	; Match the PS1 untracked segment (__C_UNTRACKED in bash/bash_theme).
+	; Match the PS1 untracked segment (__C_UNTRACKED in ps1/ps1.bash).
 	untracked = 180
 [filter "lfs"]
 	clean = git-lfs clean -- %f
