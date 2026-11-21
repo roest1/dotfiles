@@ -1,6 +1,6 @@
 # dotfiles/Makefile
 #
-# Dotfiles + nvim monorepo. Fedora/RHEL (dnf), Ubuntu/WSL (apt), and the Windows host.
+# Dotfiles + nvim monorepo. Fedora and RHEL (dnf).
 # Every target is idempotent — safe to re-run.
 #
 # Everything this repo installs or links is declared in deps.conf. This file
@@ -25,11 +25,9 @@ export PATH := $(HOME)/.local/bin:$(HOME)/.local/share/mise/shims:$(HOME)/.cargo
 
 UNAME := $(shell uname -s)
 # make's own functions split their argument on whitespace, so $(abspath) and
-# $(dir) cannot survive a path with a space in it. On a clone at
-# /mnt/c/Users/Riley Oest/dotfiles they saw TWO words and rejoined the pieces as
-# "/mnt/c/Users/ Oest/dotfiles/" -- the cd then failed, $(shell) returned empty,
-# and every later $(DOTFILES_DIR)/lib/... resolved to /lib/..., so `make help`
-# died three times before printing anything.
+# $(dir) cannot survive a path with a space in it: every later
+# $(DOTFILES_DIR)/lib/... would resolve to /lib/... and `make help` would die
+# before printing anything.
 #
 # CURDIR is set by make itself and never passes through a make function, so it
 # survives the space. The trade is that this Makefile must be run from its own
@@ -44,8 +42,7 @@ DOTFILES_DIR := $(CURDIR)
 # Sections come from the manifest, not from this file.
 #
 # Through lib/manifest.sh rather than a local sed, so one parser decides what a
-# section is. Every section here is installable from bash; the Windows host is
-# not a section at all, because windows/install.ps1 declares its own payload.
+# section is.
 SECTIONS := $(shell bash -c 'source "$(DOTFILES_DIR)/lib/manifest.sh" && manifest_sections')
 
 # Section names passed on the command line (`make install nvim`) are arguments,
@@ -62,15 +59,15 @@ $(eval $(ARGS):;@:)
 #  Targets                                                                     #
 # --------------------------------------------------------------------------- #
 
-# EVERY target belongs here, not just the ones that have bitten. `windows`
-# collides with the windows/ DIRECTORY, so without it make answers
-# "'windows' is up to date" and runs nothing -- a target that silently does
-# nothing is worse than one that errors. `lint` had the same latent bug and
-# had simply never met a file called lint.
+# EVERY target belongs here, not just the ones that have bitten. A target that
+# shares a name with a file or directory makes make answer "'<name>' is up to
+# date" and run nothing -- a target that silently does nothing is worse than
+# one that errors. `windows` did exactly that against the old windows/
+# directory, and `lint` had the same latent bug.
 #
 # CI asserts this list stays complete, because the failure is invisible until
 # a path happens to share a target's name.
-.PHONY: help install link check windows status lint sync prune test shell update sections mise-lock mono-font $(SECTIONS)
+.PHONY: help install link check status lint sync prune test shell update sections mise-lock mono-font $(SECTIONS)
 
 # One recipe line, not twelve, because lib/sgr.sh has to be sourced in the same
 # shell that uses it — make runs each recipe line in its own.
@@ -102,52 +99,17 @@ help: ## Show this help
 sections: ## List sections declared in deps.conf
 	@echo "$(SECTIONS)" | tr ' ' '\n'
 
-# ─── The wrong clone ─────────────────────────────────────────────────────────
-#
-# A checkout under /mnt/ is the WINDOWS host's clone seen from the guest. It
-# exists so wezterm.exe can read a config on C:, and `make install` in it would
-# point ~/.bashrc, ~/.config/nvim and the rest at a 9p mount -- slow on every
-# shell start, and gone the moment the drive is not mounted. install.sh also
-# prunes orphans, so the guest's real links would be removed on the way past.
-#
-# Read-only targets stay allowed: `make help` and `make status` there are
-# harmless, and status is actively useful -- it is what tells you this clone is
-# behind origin/main.
-.PHONY: _guard_wrong_clone
-_guard_wrong_clone:
-	@case "$(CURDIR)" in \
-	  /mnt/*) \
-	    echo "This is the Windows host's clone ($(CURDIR))."; \
-	    echo ""; \
-	    echo "  Installing from here would link your WSL config onto /mnt/c."; \
-	    echo "  Use the Linux clone for that:"; \
-	    echo "      cd ~/dotfiles && make $(firstword $(MAKECMDGOALS))"; \
-	    echo ""; \
-	    echo "  This clone is installed from PowerShell on the host instead:"; \
-	    echo "      powershell -NoProfile -ExecutionPolicy Bypass -File .\\windows\\install.ps1"; \
-	    exit 1 ;; \
-	esac
-
-install: _guard_wrong_clone ## Link config + install tools (optionally: make install <section>...)
+install: ## Link config + install tools (optionally: make install <section>...)
 	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_tools $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_post $(ARGS)
 	@$(MAKE) --no-print-directory check $(ARGS)
 
-link: _guard_wrong_clone ## Symlink config only — no sudo, no network, nothing installed
+link: ## Symlink config only — no sudo, no network, nothing installed
 	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 
 check: ## Verify enabled tools are present (optionally: make check <section>...)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_check $(ARGS) || true
-
-# The counterpart to `make status`'s [windows] line: it tells you the host clone
-# is behind, this fixes it -- from the side you are actually sitting on.
-#
-# Deliberately NOT part of `make install`. That would make the common case spawn
-# a Windows process and touch a 9p mount, and a Linux-only machine would pay for
-# a host it does not have.
-windows: ## Update the Windows host's clone and run its installer (from WSL)
-	@bash "$(DOTFILES_DIR)/tools/windows-update.sh"
 
 status: ## Sync status: is the machine what deps.conf says? (declared vs. actual)
 	@source "$(DOTFILES_DIR)/lib/status.sh" && status_all $(ARGS) || true

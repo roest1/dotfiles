@@ -12,11 +12,9 @@ implementation on purpose: it was planned to become a `reticle` crate alongside
 memory instead of one. That paid off exactly as intended — the command you type
 did not change on the day the thing underneath it did.
 
-The wezterm user-var is still `gh_tui`, and that reasoning outlived the file
-too. It is a WIRE name: the TUI writes it in the WSL guest and
-`wezterm/shared.lua` reads it on the Windows host, out of a separate clone, so
-renaming it leaves the tab mark dark until `make windows` has pulled the other
-side. The writer moved from bash's `_gh_tab_var` to Rust's `TabMark`; the name
+The wezterm user-var is still `gh_tui`. It is a WIRE name: the TUI writes it
+and `wezterm/shared.lua` reads it, so renaming it means changing both together
+for a name nobody types. The writer moved from bash's `_gh_tab_var` to Rust's `TabMark`; the name
 and the bytes did not.
 
 **Code:** `tui/github/` · **Parity record:** `docs/decisions/github-parity.md`

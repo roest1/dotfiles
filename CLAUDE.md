@@ -2,16 +2,21 @@
 
 ## Overview
 
-Cross-platform dotfiles — terminal, editor and shell as one versioned unit. Installed personally on Linux Fedora, WSL Ubuntu, and SERHEL. Bash-based. Windows installation exists. A monorepo.
+Dotfiles — terminal, editor and shell as one versioned unit. Installed personally on Fedora Workstation (GNOME) and RHEL. Bash-based. A monorepo.
 
 **macOS is not supported, since 2026-10-26.** There is no Mac to run this on,
 and the two `macos-latest` CI jobs that were the whole of the support claim are
 gone with every Darwin branch, brew cask and bash 3.2 workaround they existed
 for. The rule they imposed -- prefer the construct BSD userland can run -- is
-retired with them: the targets are Fedora, RHEL, Ubuntu under WSL and the
-Windows host, and GNU spellings are fine. Portable constructs already in the
+retired with them, and GNU spellings are fine. Portable constructs already in the
 tree were left where they cost nothing. What was removed and what it would take
 to bring it back: [`docs/decisions/macos.md`](docs/decisions/macos.md).
+
+**Windows, WSL and Ubuntu are not supported, since 2026-11-21.** Every machine
+moved to Fedora or RHEL, so the Windows installer, the WSL guest/host split,
+the interop fix and every apt branch went together. CI runs in `fedora:45` and
+`almalinux:9` containers. What was removed and how to get it back:
+[`docs/decisions/windows-wsl.md`](docs/decisions/windows-wsl.md).
 
 ## Setup Workflow
 
@@ -89,19 +94,18 @@ satisfied by any member, so a tool installed by two providers reads `✓` while 
 alone decides which copy runs — and the dormant copy is typically older than the pinned
 one. Each shadowed copy is named under its tool (`also on PATH, shadowed: linuxbrew`) and
 summed in a `shadowed` line that does not touch the exit code, because the machine works.
-Copies are compared by resolved path, so usrmerge's `/bin` and apt's `fd`→`fdfind` link
-are one copy, not two. Removal is still manual and per-provider:
+Copies are compared by resolved path, so usrmerge's `/bin` is one copy, not two. Removal is still manual and per-provider:
 [`docs/decisions/tool-duplication.md`](docs/decisions/tool-duplication.md).
 
-**A linuxbrew copy is `brew`, not `pkg`, on any machine with apt or dnf** — and `manual`'s
-wildcard does not absorb it. It used to answer `pkg` for any `Cellar` path, a macOS
-leftover, which is how eleven Homebrew copies on a WSL box read `✓ pkg`. Which provider a
+**A linuxbrew copy is `brew`, never `pkg`** — and `manual`'s wildcard does not absorb
+it. It used to answer `pkg` for any `Cellar` path, a macOS leftover, which is how eleven
+Homebrew copies on one box read `✓ pkg`. Which provider a
 tool *should* have is a rule, not a per-machine choice:
 [`docs/decisions/toolchain-policy.md`](docs/decisions/toolchain-policy.md).
 
 When adding a tool, add a `tool` line to the right section. **Don't add install logic** —
 `lib/pkg.sh` holds the only implementation of "install a tool" (`pkg_install`,
-`uv_install`, `mise_install`, `cargo_install`, `ensure_symlink`), and
+`uv_install`, `mise_install`, `cargo_install`), and
 `lib/providers.sh` dispatches to it. Every helper short-circuits on `command -v`, which is
 what makes overlapping tools (`rg`, `fd` appear in both `[bash]` and `[nvim]`) safe.
 **`mise_install` is the one that looks past it**: when the global mise config lists the
@@ -114,39 +118,14 @@ installer or an extracted build is an acceptable source, so `make status` doesn'
 correct state as drift (zoxide's curl installer, wezterm extracted into `~/.local`, bun's
 own installer). The actual install goes in the section's `deps.sh`.
 
-**Windows is the one exception to "`deps.conf` is the source of truth", and it is
-deliberate.** `windows/install.ps1` declares its payload in two tables at the top of the
-file — `$Links` and `$WingetTools` — and reads no manifest at all. Adding a Windows
-config is an edit to that script, not to `deps.conf`.
-
-That is a reversal, so the reasoning matters. The script used to parse `deps.conf` in
-PowerShell to keep the "nothing else enumerates links" rule true across both entry
-points. It cost ~130 lines of comment-stripping and two-pass section reading to describe
-**one symlink and one winget package**, and it forced a `platform` mechanism into
-`lib/manifest.sh` whose only job was arbitrating between the two — `[wezterm]` and
-`[windows]` both named `~/.config/wezterm/wezterm.lua`, so without a filter a bare
-`./install.sh` inside WSL overwrote the Linux config with the Windows one.
-
-The parity was never real either: the two parsers read `platform` with deliberately
-_opposite_ defaults, because a shared reading would have linked `bashrc` into
-`%USERPROFILE%`. Declaring the payload where the Windows installer can read it directly
-retired the second parser, the `platform` mechanism and the conflict in one move. **There
-is no `platform` line type and no `winget` provider** — CI rejects both.
-
-What survives is the part that was doing real work: idempotent linking, stale-link
-detection, backup-before-replace, and the symlink→copy fallback with Developer Mode
-guidance. A `windows-latest` CI job still asserts the config lands, matches the repo,
-re-runs idempotently, and touches no Linux destination — that last one because `$Links`
-is hand-written now, so a Linux path pasted into it would otherwise install unopposed.
-
 Prefer `pkg` for anything the distro ships; `mise` for tools distros don't reliably carry;
 `||` chains rather than conditionals. **Never key provider choice on `$PM`** — that's a
 proxy for facts it can't see. The old code ran `cargo_install tree-sitter` whenever
 `$PM = dnf`, citing RHEL 9's glibc 2.35, and so burned minutes compiling on Fedora 44,
 which ships `tree-sitter-cli` and glibc 2.43. Write `pkg||cargo` instead.
 
-Genuinely conditional platform logic (apt's `fdfind`/`batcat` names, dnf's `clang-devel`
-for bindgen, WSL clipboard probing) belongs in an optional `<section>/deps.sh`, which
+Genuinely conditional logic (dnf's `clang-devel` for bindgen, the Wayland/X11 clipboard
+backend) belongs in an optional `<section>/deps.sh`, which
 `lib/run.sh` runs after that section's tools. Declarative for the common case, script for
 the rest — don't force an `if` into the manifest.
 
@@ -206,10 +185,9 @@ you write code here. Reasoning, revisit conditions and current status:
   domain that the Jarvis sidecar connects to (`JARVIS_WEZTERM_DOMAIN` defaults to `'mux'`
   in `jarvis-ui/server/workerSession.ts`). Don't replace it with a stock config.
 
-  `wezterm/wezterm-windows.lua` is a **different file for a different job**, not a variant
-  to be merged back in. It configures `wezterm.exe` on the Windows host, whose purpose is
-  to get you into WSL; it declares no `unix_domains`, because that socket path is a Linux
-  path belonging to a process inside the guest.
+  `wezterm/shared.lua` is the rest of the terminal config (fonts, carrier, palette, tab
+  titles), dofile()d from `wezterm.lua`. The split existed for a second, Windows entry
+  point; with that gone it is a candidate to fold back in.
 
 - **`make` output is rendered in Science Gothic Mono, and the carrier is `SGR 6`.**
   `lib/sgr.sh` is the only thing that emits it, and every escape it defines is empty
@@ -328,17 +306,12 @@ you write code here. Reasoning, revisit conditions and current status:
   the tab bar only because that is proportional text laid out proportionally.
 
   **The fonts are read via `font_dirs`, never installed into the system font path.**
-  `deps.conf` links `wezterm/fonts` → `~/.config/wezterm/fonts` and both configs say
-  `wezterm.config_dir .. "/fonts"`. That is what makes this portable in one line each:
-  no `fc-cache` (which Windows hasn't got), no per-platform font directory
-  split, and — the real reason — no chance of a stale copy elsewhere shadowing it. Two
+  `deps.conf` links `wezterm/fonts` → `~/.config/wezterm/fonts` and the config says
+  `wezterm.config_dir .. "/fonts"`. No `fc-cache`, no system font directory, and — the
+  real reason — no chance of a stale copy elsewhere shadowing it. Two
   files claiming family `Science Gothic Mono` style `Regular` resolve by first match,
   and the loser is silently the wrong glyphs. That already happened once during
   development and cost an afternoon.
-
-  `wezterm-windows.lua` needs the same rules, and it is easy to talk yourself out of:
-  `make` runs in the WSL guest, but the guest only writes the escape — `wezterm.exe` on
-  the host draws it.
 
   **The two `.ttf` files are OFL, not MIT, and `LICENSE` carves them out explicitly.**
   That is required, not tidy: OFL 1.1 §5 says the font must be distributed *entirely*
@@ -348,38 +321,6 @@ you write code here. Reasoning, revisit conditions and current status:
   Upstream declares **no** Reserved Font Name, which is the only OFL clause that would
   have restricted the derivative's name, so `Science Gothic Mono` is permissible. CI
   asserts both the licence file and the carve-out survive.
-
-- **Inside WSL, `[wezterm]` installs no wezterm and no fonts — deliberately.** WSL passes
-  every test the rest of the repo makes (uname says Linux, `$PM` is apt) and the terminal
-  is still not in there: `wezterm.exe` runs on the host and draws the pixels, the guest
-  only writes escape sequences into it. So a wezterm installed in the guest is a GUI
-  nothing launches, and fonts installed into the guest's fontconfig are glyphs nothing
-  renders — both have to exist on the *Windows* side, which is what `windows/deps.ps1`
-  and the `wezterm\fonts` entry in `windows/install.ps1` are for.
-
-  `tool_applies_here` in `lib/pkg.sh` is the whole mechanism, consulted by `run_tools`,
-  `run_check` and `status_tools`. It names one tool outside `deps.conf`, which is a real
-  cost — but the alternative was a section-applicability line in the manifest, i.e. the
-  `platform` mechanism that was deliberately deleted, reintroduced as a line type, a
-  parser change and a CI rule to describe a single tool. `run_check` already special-cases
-  `bat`/`batcat` and `fd`/`fdfind`, so this is the shape that file was already in.
-
-  **The links are NOT skipped, and that is the part to not "tidy".** `wezterm.lua`
-  declares the `mux` unix domain on a socket path under `$XDG_RUNTIME_DIR` — a *guest*
-  path, belonging to a process inside WSL — so a `wezterm-mux-server` running in there
-  reads it. Only the binary and the font downloads drop out. No CI runner is WSL, so both
-  directions of the predicate are asserted in the `manifest` job by overriding `is_wsl`:
-  under WSL it must suppress wezterm and **nothing else**, and on a plain Linux box it
-  must suppress nothing, or wezterm silently stops installing everywhere.
-
-- **`pkg_install` asks `apt-cache` before it asks `sudo`.** `sudo apt install wezterm` on
-  a distro with no such package still prompts for a password *first* and only then says
-  `Unable to locate package` — so a package apt was never going to provide costs an
-  interactive stop in the middle of an otherwise unattended install. The probe reads the
-  local lists, so it needs no network. It is **apt-only on purpose**: dnf's equivalent
-  either hits the network or trusts a cache that may be empty, and a false "no such
-  package" there would silently skip a package that does exist, which is worse than the
-  prompt this avoids.
 
 - **The blink attribute is now fully spent — both halves.** SGR 6 is Science Gothic
   Mono, above; **SGR 5** (slow blink, `text_blink_rate = 0`) is the file you are editing
@@ -392,8 +333,7 @@ you write code here. Reasoning, revisit conditions and current status:
 
   The same three-condition guard applies, for the same reason: outside WezTerm SGR 5 is
   blinking text, so `altfont.lua` refuses unless `TERM_PROGRAM=WezTerm` **and** the fonts
-  are linked. `wezterm-windows.lua` needs these rules too — nvim runs in the WSL guest,
-  but `wezterm.exe` on the host draws what it emits.
+  are linked.
 
   The four lanes are `shell`, `nvim.ui`, `nvim.editor` and `claude`. `nvim.ui` is NOT
   "oil" — oil is the most visible thing it draws, but the lane is the window's base font
@@ -426,21 +366,18 @@ you write code here. Reasoning, revisit conditions and current status:
   wins over PATH, so a `font()` would silently shadow it. CI asserts both.
   Details next to the code: [`tui/CLAUDE.md`](tui/CLAUDE.md).
 
-- **A wezterm symptom is a stale-process or wrong-clone question before it is a
-  wezterm question.** `wezterm --config <name>=<value> start` opens a window with
+- **A wezterm symptom is a stale-process question before it is a wezterm question.** `wezterm --config <name>=<value> start` opens a window with
   that value forced, independent of any file, symlink or reload — so it separates
   "the setting does not work" from "this process never read the setting" in one
   command. It settled a multi-hour hunt in which `text_blink_rate_rapid = 0`
-  appeared to be ignored: the value was correct, the running GUI predated it, and
-  the Windows clone was on an older commit besides.
+  appeared to be ignored: the value was correct and the running GUI predated it.
 
   Two corollaries worth reaching for before reading any renderer source.
   `wezterm ls-fonts` prints the file each rule resolved to, which is the only way
   to tell a correct config from a font shadowed by a system-installed copy of the
   same family. And a running wezterm does not pick up a pulled config: a tab
-  switch is not a reload, and the file watcher does not reliably follow a symlink
-  across a volume boundary, so `Get-Process wezterm* | Stop-Process -Force` is
-  part of the test rather than an afterthought.
+  switch is not a reload, and the file watcher does not reliably follow a symlink,
+  so `pkill -x wezterm-gui` is part of the test rather than an afterthought.
 
   The asymmetry that makes this bite: wezterm **warns** when a `font_rule` cannot
   be matched, and says **nothing** when a fallback resolves. A wrong-but-valid
@@ -457,91 +394,12 @@ you write code here. Reasoning, revisit conditions and current status:
   2026-11-10 and left a plaintext token in `~/.git-credentials` on every machine
   that linked the file. A new machine needs an SSH key on GitHub before it can
   pull this repo after `make link`.
-- **`ln -s` run inside WSL onto `/mnt/c` produces a link Windows cannot follow.** It
-  writes an _LX symlink_; Windows fails on it with `STATUS_IO_REPARSE_TAG_NOT_HANDLED`.
-  Ordinary file _writes_ to `/mnt/c` are fine — this is specific to symlinks. Nor will
-  `wezterm.exe` load a config over `\\wsl.localhost\...`; the maintainer has said the WSL
-  filesystem isn't visible to the host that way. Hence a second clone on `C:` and a
-  PowerShell installer, rather than teaching `install.sh` to reach across.
-- **`Exec format error` from `clip.exe` is a lost binfmt entry, not a PATH problem.** A
-  WSL guest runs `.exe` files through a `binfmt_misc` entry WSL writes into `/proc` at
-  boot, with no `binfmt.d` file behind it. With `systemd=true`, any package upgrade that
-  ships a `binfmt.d` rule (python3.12 did) restarts `systemd-binfmt`, which unregisters
-  every entry and restores only those with a file, so interop is gone until WSL reboots.
-  Re-sourcing `~/.bashrc` can't reach it. `ensure_wsl_interop` in `lib/pkg.sh` writes
-  `/etc/binfmt.d/WSLInterop.conf` (both `bash/deps.sh` and `nvim/deps.sh` call it), and
-  `make status` reports it under `[wsl] interop`. Check for both `WSLInterop` and
-  `WSLInterop-late`: a systemd WSL registers the latter, so testing one name alone calls
-  a working machine broken.
-- **`.ps1` files must be pure ASCII.** Windows PowerShell 5.1 reads a `.ps1` without a BOM
-  as ANSI (cp1252), not UTF-8. An em dash (`E2 80 94`) decodes as three cp1252 characters
-  ending in `0x94`, which in cp1252 is `"` — and PowerShell treats that as a **string
-  delimiter**. A single em dash inside a _comment_ opened a string that swallowed the rest
-  of the file; the error it reported was a bogus "invalid variable reference" 200 lines
-  away, in a comment that was never the problem. Don't chase the reported line — check for
-  non-ASCII first. CI enforces this in the `shellcheck` job. A UTF-8 BOM would also work,
-  but ASCII survives an editor stripping the BOM.
-- **The PowerShell targets Windows PowerShell 5.1, not pwsh 7.** 5.1 is what a fresh box
-  runs when the bootstrap line is pasted, so: no ternaries, no `??`, no `$IsWindows`,
-  `Join-Path` takes exactly two arguments, and `$ErrorActionPreference = 'Stop'` does
-  **not** catch a native command's failure — check `$LASTEXITCODE` after `winget` and
-  `git`. `bootstrap.ps1` also keeps its whole body inside an invoked scriptblock, because
-  a top-level `exit` under `irm | iex` terminates the user's shell. Nothing on Linux can
-  parse any of this; the `windows` CI job is the only thing that checks it.
-
-- **Developer Mode being ON does not make `New-Item -ItemType SymbolicLink` work under
-  Windows PowerShell 5.1.** It fails with `NewItemSymbolicLinkElevationRequired` —
-  *"Administrator privilege required for this operation"* — because 5.1's implementation
-  never passes `SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE`. PowerShell 7's does, which
-  is exactly why this is easy to miss: it works when you test it in pwsh and fails for
-  every user who pastes the bootstrap line into the shell a fresh box actually opens.
-
-  `cmd`'s `mklink` **does** pass the flag, and has since Windows 10 1703. Measured on
-  Windows 11 24H2 (build 26100.9168), Developer Mode on, unelevated, same shell:
-  `New-Item` denied, `mklink` succeeded for both a file and a `/D` directory. So
-  `Install-ConfigLink` tries `New-Item`, then `mklink`, and only then copies.
-
-  Don't "tidy" the second attempt away as redundant — without it the installer silently
-  degrades to copies on the default Windows shell, and a copy stops tracking the repo
-  while still looking like a successful install. Pass each path as its own argument
-  rather than building one command string: the destination is under `%USERPROFILE%`,
-  which routinely contains a space.
-
-- **`winget install` reports "already installed, nothing to upgrade" as a failure.** Exit
-  `0x8A15002B` / `-1978335189` (`APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE`) is the
-  state `Install-WingetTool` is *trying to reach*, not an error. It surfaces on any re-run
-  where the shell's `PATH` predates the install: `Get-Command wezterm` misses it, winget is
-  asked to install again, and answers that it is already current — so a correctly
-  configured machine printed `FAILED wezterm` and `1 item(s) failed`.
-
-  The fix is the rule `lib/providers.sh` already states — *trust the tool, not the
-  installer's exit code*. `Install-WingetTool` rebuilds `$env:Path` from the registry
-  (same idiom `bootstrap.ps1` uses after installing git) and checks `Get-Command` before
-  it looks at `$LASTEXITCODE` at all, with the specific exit code as a second chance for
-  packages whose binary this shell still cannot see. Don't reduce it back to a bare
-  `if ($LASTEXITCODE -ne 0)`.
-
-- **`sudo.exe` ships in `System32` on Windows 11 24H2+ whether or not the feature is
-  enabled**, so `Test-Path` on the binary answers "did Microsoft ship it", not "will it
-  run". `windows/deps.ps1` reported `ok sudo` on a machine with **Enable sudo** switched
-  off, which is a green line for something that then fails at the point of use. The
-  switch is `HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Sudo` → `Enabled`, and on a
-  machine that has never enabled it the value is **absent rather than 0** — so treat "no
-  such property" as disabled.
-
-  `wezterm-windows.lua` still uses the binary test, and therefore can still offer a
-  `PowerShell (Admin)` entry that fails. That is a known gap rather than an oversight:
-  the config is evaluated several times per process and deliberately does no
-  `run_child_process`, so it has no cheap way to read the registry. The failure is at
-  least self-describing — `sudo` prints why it is disabled — but if this needs closing,
-  the route is `deps.ps1` writing a marker the Lua can `io.open`, with the staleness that
-  implies.
 
 ## Key Conventions
 
-- **OS portability:** Linux only on the shell side (Fedora, RHEL, Ubuntu under WSL); the Windows host has its own installer. There is no `_OS` variable any more. WSL is detected at runtime (`is_wsl`) where the guest and the host differ.
+- **OS portability:** Fedora and RHEL only, both dnf. There is no `_OS` variable and no WSL detection any more.
 - **Bash version:** bash 5 on every target. The `BASH_VERSINFO` guards and 3.2-safe constructs in the tree are from when macOS was one, and stay because they cost nothing.
-- **Tool dependencies:** `zoxide`, `fzf`, `bat`, `eza`, `fd`, `ripgrep`, `gh`, `jq`. All optional — features degrade gracefully via `command -v` guards. Declared in `deps.conf`'s `[bash]` section, installed via brew/apt/dnf. Some tools have alternate binary names on RHEL/Debian (`bat` → `batcat`, `fd` → `fdfind`) — handled with fallback checks.
+- **Tool dependencies:** `zoxide`, `fzf`, `bat`, `eza`, `fd`, `ripgrep`, `gh`, `jq`. All optional — features degrade gracefully via `command -v` guards. Declared in `deps.conf`'s `[bash]` section, installed via dnf.
 - **Symlink pattern:** `install.sh` symlinks `bash/*` to `~/.*` (e.g. `bash/bashrc` → `~/.bashrc`), driven entirely by the `link` lines in `deps.conf`. It hard-codes no filenames — adding or renaming a config file is a manifest edit and nothing else. Renames are safe because `install.sh` **prunes orphans**: a symlink pointing into this repo whose target no longer exists is removed, so the retired name can't survive next to the new one. That test is structural on purpose — don't replace it with a list of old names, which would need maintaining and would silently stop covering the next rename.
 - **Navigation UX: there are no interactive fzf commands left.** `__fzf_menu`/`__fzf_list` in `bash/bash_productivity` held the menu-and-list contract — `-`/`q` back, `?` help, type-to-filter, `esc` back — defined once because it had been 18 copies of the same `--bind` string. All 18 call sites were in `bash_github_tui`, so the Rust port left the wrappers with zero callers and they were deleted with the layer they served (`bash_git` never invoked fzf). The only fzf left in the shell is fzf's own Ctrl+R / Ctrl+T / Alt+C integration.
 
@@ -579,7 +437,7 @@ you write code here. Reasoning, revisit conditions and current status:
 
 ## When Editing
 
-- Test on bash 5 (Fedora, RHEL 9, Ubuntu 24.04). bash 3.2 stopped being a target with macOS.
+- Test on bash 5 (Fedora 45, RHEL 9). bash 3.2 stopped being a target with macOS.
 - Guard all tool usage with `command -v` checks.
 - Keep the `h` help function in `bash_productivity` in sync with any command changes.
 - The README is intentionally concise: install + new-machine flow + GitHub tools pointer + "what goes where" table. Prose explanations of bash internals belong here in `CLAUDE.md`, not in the README.

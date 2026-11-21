@@ -123,14 +123,9 @@ alert() {
 
 export PATH="$HOME/bin:$PATH"
 
-# linuxbrew, where a machine has it. (The Darwin half of this went with macOS
-# support on 2026-10-26 -- docs/decisions/macos.md.)
-#
-# Tests the BINARY, not the directory. Uninstalling Homebrew as a normal user
-# empties /home/linuxbrew/.linuxbrew but cannot delete it -- /home/linuxbrew is
-# root's -- so a `-d` test kept firing and every new shell printed
-# "brew: No such file or directory" until someone ran sudo.
-[[ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# No linuxbrew shellenv: brew is not a provider here (docs/decisions/
+# toolchain-policy.md), and `brew shellenv` PREPENDS it, which would let a
+# stray Homebrew copy shadow the dnf one. `make status` names any it finds.
 
 # ─── .NET ──────────────────────────────────────────────────────────
 export DOTNET_ROOT="$HOME/.dotnet"

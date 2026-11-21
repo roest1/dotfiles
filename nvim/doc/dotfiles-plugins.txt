@@ -77,13 +77,6 @@ raw bytes anyway, use `:noautocmd e file.pdf`.
 buffer. Images are not rendered inside nvim because wezterm's kitty graphics
 support is too incomplete for snacks.image or image.nvim to rely on.
 
-Under WSL the file goes to the WINDOWS default viewer, via explorer.exe. It
-does not go through vim.ui.open there: nvim tries xdg-open before wslview, and
-WSLg supplies a working xdg-open, so the file would be handed to whatever
-Linux desktop entry the guest happens to have -- xpdf for a .pdf, and for a
-.png usually nothing at all, failing into a discarded stderr. See the comment
-above os_open() for the whole chain.
-
 On a machine with no desktop handler at all (headless RHEL, a container), it
 warns and loads the file normally instead -- the same binary buffer you got
 before this existed. It never becomes a silent no-op.
@@ -111,8 +104,7 @@ Drop an image off the OS clipboard into a directory as a PNG -- the
 file manager.
 
     1. Take a screenshot to the clipboard:
-         Windows/WSL   Win+Shift+S         (Snipping Tool)
-         Linux         your snipper's "copy to clipboard" option
+         GNOME         Print Screen, then "copy to clipboard"
     2. Open Oil at the destination directory (`-`).
     3. Run a command:
          :PasteImage                    Screenshot-YYYYMMDD-HHMMSS.png
@@ -123,7 +115,6 @@ image lands in the current file's directory (or the cwd).
 
 The clipboard backend is detected at runtime, so the same command works
 everywhere:
-    WSL2            Windows PowerShell        (no install needed)
     Linux / Wayland wl-paste                  (pkg: wl-clipboard)
     Linux / X11     xclip                     (pkg: xclip)
 

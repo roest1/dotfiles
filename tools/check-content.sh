@@ -96,10 +96,9 @@ done
 #
 # Scoped to the `link` sources in deps.conf, and computed from the
 # manifest rather than listed here, for the reason deps.conf states
-# about itself. Those files are installed verbatim on Fedora, WSL and
-# SERHEL, so /home/<someone> in one of them is a portability bug before
-# it is a privacy one -- it names a path the other two machines do not
-# have. README.md and docs/ are not linked anywhere and legitimately
+# about itself. Those files are installed verbatim on every Fedora and
+# RHEL machine, so /home/<someone> in one of them is a portability bug
+# before it is a privacy one -- it names a path the others do not have. README.md and docs/ are not linked anywhere and legitimately
 # quote terminal output containing such paths, which is exactly the
 # distinction the manifest already draws.
 #

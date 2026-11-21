@@ -5,9 +5,8 @@ useful to send.
 
 ## What's welcome
 
-- **Portability fixes.** Something breaks on a distro or platform I don't run —
-  Arch, Alpine, WSL quirks. This is the most valuable
-  kind of PR, because I can only test what I have.
+- **Fedora and RHEL fixes.** Something breaks on a Fedora or RHEL setup unlike
+  mine. Those are the only targets; other distros are out of scope.
 - **Bugs in the machinery** — the manifest parser, provider dispatch, drift
   detection, install/link logic.
 - **Stale or wrong docs.** Including this file.
@@ -103,8 +102,8 @@ Three rules, each of which exists because breaking it caused a real bug here:
    any `deps.sh` runs — `manual||pkg` would install the distro copy first and
    never reach the installer it is meant to prefer.
 
-Genuinely conditional logic — apt naming `fd` as `fdfind`, dnf needing
-`clang-devel` for bindgen, probing `/proc/version` for WSL — belongs in
+Genuinely conditional logic — dnf needing `clang-devel` for bindgen, a
+clipboard backend picked by display server — belongs in
 `<section>/deps.sh`, not in the manifest. Don't invent an `if` syntax for a
 config file.
 

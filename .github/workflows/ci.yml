@@ -1,11 +1,16 @@
 name: portability
 
-# The point of this workflow is to make "clone and get running on any platform"
-# provable rather than claimed. The previous Makefile promised WSL support in its
-# README while `make deps` hard-exited on apt — a bug that survived because
-# nothing ever ran it on Ubuntu.
+# The point of this workflow is to make "clone and get running" provable rather
+# than claimed. A support claim nothing runs is not a support claim: an earlier
+# README promised WSL support while `make deps` hard-exited on apt, and nothing
+# ran it.
 #
-# Every job is a fresh machine, which is the only honest test of a bootstrap.
+# The targets are Fedora and RHEL, so every job that makes a PLATFORM claim
+# (link-only, install, nvim-floor) runs in a fedora:45 or almalinux:9
+# container. The rest -- lint, manifest unit checks, the Rust build, audits --
+# test repo logic, not a distro, and use GitHub's default runner as a neutral
+# host. Every job is a fresh machine, which is the only honest test of a
+# bootstrap.
 
 on:
   push:
@@ -26,7 +31,7 @@ on:
 # runner IP failed it with a 429 that lib/pkg.sh then hid (issue #12). The
 # workflow's own token is good for 1000 an hour, scoped to this repo, and
 # costs nothing to hand over; workflow-level so the install matrix, which also
-# reaches mise for whatever apt or dnf cannot provide, gets the same limit.
+# reaches mise for whatever dnf cannot provide, gets the same limit.
 env:
   MISE_GITHUB_TOKEN: ${{ github.token }}
 
@@ -89,7 +94,7 @@ jobs:
 
       # A Makefile target that shares a name with a real path is not an error --
       # make decides the target is already up to date and runs NOTHING. `make
-      # windows` did exactly that against the windows/ directory: no output, no
+      # windows` once did exactly that against a windows/ directory: no output, no
       # failure, no install. .PHONY is the fix, and the reason this is a CI
       # check rather than a code review note is that the bug is invisible until
       # a path happens to collide, which can be years later and in a commit that
@@ -111,14 +116,12 @@ jobs:
           bad=0
           [ -e wezterm/MIN_VERSION ] \
             && { echo "wezterm/MIN_VERSION is back -- a build stamp cannot answer this; see status_fonts"; bad=1; }
-          # Comment lines are stripped first, deliberately: both files EXPLAIN
+          # Comment lines are stripped first, deliberately: the file EXPLAINS
           # at length why the floor is gone, and naming the thing you removed is
           # how the next person finds out not to re-add it. Only a real read of
           # it is the regression.
-          for f in wezterm/deps.sh windows/deps.ps1; do
-            grep -v '^[[:space:]]*#' "$f" | grep -q 'MIN_VERSION' \
-              && { echo "$f reads MIN_VERSION again"; bad=1; }
-          done
+          grep -v '^[[:space:]]*#' wezterm/deps.sh | grep -q 'MIN_VERSION' \
+            && { echo "wezterm/deps.sh reads MIN_VERSION again"; bad=1; }
           grep -q '^status_fonts()' lib/status.sh \
             || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
           # The scope is the sections-file-narrowed list since status honors
@@ -131,22 +134,6 @@ jobs:
           grep -q '_drift_font' lib/status.sh \
             || { echo "status_fonts records no drift at all -- the provable half should"; bad=1; }
           [ $bad -eq 0 ] && echo "ok: no floor, and status_fonts asks only answerable questions"
-          exit $bad
-
-      # The host installs the NIGHTLY package, and that is load-bearing rather
-      # than a channel preference: wez.wezterm tops out at the Feb 2024 tag,
-      # which predates font_rules matching blink, so it renders the SGR 6 and
-      # SGR 5 lanes in the base font with no warning. An id, not a --version --
-      # the nightlies are a separate winget package.
-      - name: The Windows host installs a wezterm that can run this config
-        run: |
-          set -uo pipefail
-          bad=0
-          grep -q "Package = 'wez.wezterm.nightly'" windows/install.ps1 \
-            || { echo "windows/install.ps1 no longer installs wez.wezterm.nightly"; bad=1; }
-          grep -qE "Package = 'wez\.wezterm'" windows/install.ps1 \
-            && { echo "windows/install.ps1 installs the 2024 stable -- the font lanes fail silently on it"; bad=1; }
-          [ $bad -eq 0 ] && echo "ok: host gets the nightly"
           exit $bad
 
       - name: Every Makefile target is .PHONY
@@ -217,29 +204,6 @@ jobs:
       # feeds it just the staged paths.
       - name: No credential-shaped content, no home paths in linked files
         run: tools/check-content.sh
-
-      # Runs here rather than on the Windows runner so it fails in seconds,
-      # but the reason is pure Windows PowerShell 5.1.
-      - name: PowerShell sources are ASCII-only
-        run: |
-          # 5.1 reads a .ps1 with no BOM as ANSI (cp1252), not UTF-8. An em
-          # dash (E2 80 94) then decodes as three cp1252 characters ending in
-          # 0x94 — which in cp1252 is RIGHT DOUBLE QUOTATION MARK, and
-          # PowerShell treats that as a string delimiter. One em dash inside a
-          # COMMENT opened a string that swallowed the rest of the file, and
-          # the reported error was a bogus "invalid variable reference" 200
-          # lines further down.
-          #
-          # A UTF-8 BOM also fixes it. ASCII-only is the fix that survives an
-          # editor helpfully stripping the BOM.
-          if bad=$(grep -rnP '[^\x00-\x7F]' --include='*.ps1' . 2>/dev/null); then
-            echo "non-ASCII in PowerShell sources:"
-            echo "$bad"
-            echo ""
-            echo "Windows PowerShell 5.1 mis-parses these. Use ASCII punctuation."
-            exit 1
-          fi
-          echo "ok: all .ps1 sources are ASCII"
 
       # ~/.gitconfig is a symlink to git/gitconfig, so `gh auth setup-git`
       # (the "Authenticate Git?" prompt in `gh auth login` / `refresh`) and any
@@ -487,36 +451,13 @@ jobs:
           # and the carve-out in LICENSE are both compliance, not tidiness.
           [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
           grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
-          # The carrier moved into wezterm/shared.lua, which both entry points
-          # dofile(). Asserting it per-entry-point would now fail for a config
-          # that is entirely correct -- but dropping the assertion would let the
-          # 0 disappear silently, and wezterm's renderer only skips the blink
-          # animation when text_blink_rate_rapid is exactly 0
-          # (screen_line.rs: `if blink_rate != 0`). Without it every line of
-          # `make` output flashes on every platform.
-          #
-          # So: assert it once where it lives, and separately that each entry
-          # point still picks the body up. An entry point that stopped loading
-          # shared.lua would have no carrier and no font rules at all.
-          grep -q 'text_blink_rate_rapid = 0' wezterm/shared.lua \
-            || { echo "shared.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
-          grep -q 'Science Gothic Mono' wezterm/shared.lua \
-            || { echo "shared.lua: no font_rule for the carrier"; fail=1; }
-          for cfg in wezterm/wezterm.lua wezterm/wezterm-windows.lua; do
-            grep -q 'shared.lua' "$cfg" \
-              || { echo "$cfg: does not load shared.lua, so it has no lanes at all"; fail=1; }
-          done
-
-          # Both carriers live in shared.lua now, which both entry points
-          # dofile(). Asserting them per-entry-point would fail for a correct
-          # pair; asserting them nowhere would let a rate silently vanish, and
-          # wezterm only skips the blink animation when the rate is exactly 0
-          # (screen_line.rs: `if blink_rate != 0`). A missing 0 is a terminal
-          # that flashes.
-          #
-          # Both, including on the Windows side: nvim runs in the WSL guest but
-          # wezterm.exe on the host is what draws what it emits, so a lane
-          # missing out there is a source file that BLINKS.
+          # Both carriers live in wezterm/shared.lua, which wezterm.lua
+          # dofile()s. An entry point that stopped loading it would have no
+          # carrier and no font rules at all; a missing rate would let it
+          # flash, because wezterm only skips the blink animation when the rate
+          # is exactly 0 (screen_line.rs: `if blink_rate != 0`).
+          grep -q 'shared.lua' wezterm/wezterm.lua \
+            || { echo "wezterm.lua does not load shared.lua, so it has no lanes at all"; fail=1; }
           grep -q 'text_blink_rate_rapid = 0' wezterm/shared.lua \
             || { echo "shared.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
           grep -q 'text_blink_rate = 0' wezterm/shared.lua \
@@ -538,16 +479,10 @@ jobs:
           [ "$n" -eq 4 ] \
             || { echo "shared.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
 
-          # Every font family shared.lua NAMES has to be installed on BOTH
-          # platforms. wezterm/deps.sh and windows/deps.ps1 are separate files
-          # that nothing else reads together, and the failure is nearly silent:
-          # wezterm falls through the fallback chain to something plausible.
-          #
-          # This has now happened twice. JetBrainsMono shipped Linux-only and
-          # greeted the Windows host with a warning toast on every launch.
-          # Science Gothic shipped Linux-only and the Windows tab bar quietly
-          # rendered in 0xProto instead -- no warning at all for that one,
-          # because a fallback that RESOLVES is not an error, it is just wrong.
+          # Every font family shared.lua NAMES has to be installed by
+          # wezterm/deps.sh, and the failure is nearly silent: wezterm falls
+          # through the fallback chain to something plausible -- a fallback
+          # that RESOLVES is not an error, it is just wrong.
           #
           # Scans DEFAULT_FONTS *and* window_frame. Scanning only the first is
           # exactly how the tab bar font was missed.
@@ -572,9 +507,7 @@ jobs:
               needle=${fam% Nerd Font}
               grep -q "$needle" wezterm/deps.sh \
                 || { echo "wezterm/deps.sh does not install '$fam'"; exit 1; }
-              grep -q "$needle" windows/deps.ps1 \
-                || { echo "windows/deps.ps1 does not install '$fam'"; exit 1; }
-              echo "  ok both platforms install $fam"
+              echo "  ok wezterm/deps.sh installs $fam"
             done || fail=1
 
           # The writer half. Without this the lane is configured and nothing
@@ -684,10 +617,6 @@ jobs:
             for p in ${provider//||/ }; do
               case "$p" in
                 pkg|uv|cargo|mise|manual) ;;
-                # No windows entry point reads this file any more, so winget
-                # here would install nothing and report nothing. Name it
-                # explicitly rather than letting it fall into "unknown".
-                winget) echo "[$section] winget is not installable from this manifest — declare it in windows/install.ps1"; bad=1 ;;
                 *) echo "[$section] unknown provider '$p' for $cmd"; bad=1 ;;
               esac
             done
@@ -700,14 +629,6 @@ jobs:
           while IFS=$'\t' read -r section src dest; do
             [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
           done < <(manifest_lines link)
-          # windows/install.ps1 declares its own payload, so manifest_lines
-          # cannot see it. Read the Source values straight out of its $Links
-          # table: without this, deleting wezterm-windows.lua would only be
-          # caught on the windows runner, or by whoever next ran the bootstrap.
-          while read -r src; do
-            [ -n "$src" ] || continue
-            [ -e "$src" ] || { echo "[windows] missing link source: $src"; bad=1; }
-          done < <(grep -oP "Source\s*=\s*'\K[^']+" windows/install.ps1 | tr '\\' '/')
           exit $bad
 
       # The reverse of the check above, and the direction that breaks new
@@ -764,7 +685,7 @@ jobs:
       # parse that fails is one CI never ran.
       #
       # The fix is an `unalias` before the definition — the same guard `bashrc`
-      # already uses for `alert`, where the stale alias comes from Ubuntu's
+      # already uses for `alert`, where the stale alias comes from a distro's
       # default bashrc instead of from our own history. This asserts the guard
       # exists for every name that made that transition.
       - name: Aliases turned into functions are unaliased first
@@ -986,100 +907,29 @@ jobs:
             echo "links drifted immediately after make link"; exit 1
           fi
 
-      # shared.lua only works if BOTH entry points can find it next to
-      # themselves, and the two link declarations live in different files that
-      # nothing else cross-checks. Declaring it on one side only is silent: the
-      # pcall in the other entry point degrades to an unstyled terminal rather
-      # than erroring, so the platform you did not test just quietly looks wrong.
-      - name: shared.lua is linked on both platforms
+      # shared.lua only works if it is linked next to wezterm.lua. The pcall
+      # there degrades to an unstyled terminal rather than erroring, so a
+      # missing link is silent.
+      - name: shared.lua is linked and loaded
         run: |
           set -euo pipefail
           source lib/manifest.sh
-          bad=0
-
           manifest_lines link wezterm | awk -F'\t' '{print $2}' | grep -qx 'wezterm/shared.lua' || {
-            echo "deps.conf [wezterm] does not link wezterm/shared.lua"; bad=1; }
+            echo "deps.conf [wezterm] does not link wezterm/shared.lua"; exit 1; }
+          grep -q 'shared.lua' wezterm/wezterm.lua || { echo "wezterm.lua does not load shared.lua"; exit 1; }
+          echo "ok: shared.lua linked and loaded"
 
-          grep -oP "Source\s*=\s*'\K[^']+" windows/install.ps1 | tr '\\' '/' \
-            | grep -qx 'wezterm/shared.lua' || {
-            echo "windows/install.ps1 \$Links does not carry wezterm/shared.lua"; bad=1; }
-
-          # And both entry points must actually load it, or the link is dead weight.
-          for f in wezterm/wezterm.lua wezterm/wezterm-windows.lua; do
-            grep -q 'shared.lua' "$f" || { echo "$f does not load shared.lua"; bad=1; }
-          done
-
-          [ $bad -eq 0 ] && echo "ok: shared.lua linked and loaded on both platforms"
-          exit $bad
-
-      # No runner here is WSL, so every direction of this is invisible to
-      # whoever writes the code — the same problem the SGR 6 guard has. Assert
-      # both, by overriding the predicate rather than by faking /proc/version.
-      #
-      # It matters in both directions. If tool_applies_here wrongly said "not
-      # here" on a normal Linux box, wezterm would silently stop installing and
-      # `make check` would report n/a for a tool that genuinely is missing.
-      - name: wezterm is skipped under WSL, and only under WSL
+      # Nothing is suppressed on a normal box. If tool_applies_here wrongly
+      # said "not here", a tool would silently stop installing and `make check`
+      # would report n/a for one that genuinely is missing.
+      - name: tool_applies_here suppresses nothing but a dotnet-less roslyn
         run: |
           set -euo pipefail
           source lib/pkg.sh
-
-          # Real predicate, real runner: CI is not WSL, so nothing is suppressed.
-          if is_wsl; then echo "runner reports WSL — it isn't"; exit 1; fi
-          tool_applies_here wezterm || { echo "wezterm suppressed on plain Linux"; exit 1; }
-
-          # Forced off: wezterm still installs, on every platform CI does run.
-          is_wsl() { return 1; }
-          tool_applies_here wezterm || { echo "not-WSL: wezterm must apply"; exit 1; }
-          tool_applies_here rg      || { echo "not-WSL: rg must apply"; exit 1; }
-
-          # Forced on: wezterm is the ONLY thing that drops out. A predicate that
-          # started suppressing rg would break the shell inside every WSL guest.
-          is_wsl() { return 0; }
-          if tool_applies_here wezterm; then echo "WSL: wezterm must not apply"; exit 1; fi
-          tool_applies_here rg || { echo "WSL: rg must still apply"; exit 1; }
-          for t in fzf bat eza gh jq nvim bun uv; do
-            tool_applies_here "$t" || { echo "WSL: $t must still apply"; exit 1; }
+          for t in wezterm rg fzf bat eza gh jq nvim bun uv; do
+            tool_applies_here "$t" || { echo "$t must apply"; exit 1; }
           done
-          echo "ok: WSL suppresses wezterm and nothing else"
-
-      # Same blind spot, and this one writes to /etc with sudo. The not-WSL
-      # direction is the one with teeth: a binfmt rule claiming every MZ file for
-      # a nonexistent /init would take PE binaries away from whatever runs them
-      # on that box. And a re-run on a WSL guest that is already fixed must not
-      # ask for a password at all.
-      - name: WSL interop is persisted under WSL with systemd, and nowhere else
-        run: |
-          set -euo pipefail
-          source lib/pkg.sh
-
-          # Record every sudo instead of running it; tee's stdin is what it writes.
-          log=$(mktemp)
-          sudo() { printf '%s\n' "$*" >> "$log"; if [ "$1" = tee ]; then cat >> "$log"; fi; }
-
-          is_wsl() { return 1; }; is_systemd() { return 0; }
-          ensure_wsl_interop
-          [ ! -s "$log" ] || { echo "not-WSL: must not sudo:"; cat "$log"; exit 1; }
-
-          is_wsl() { return 0; }; is_systemd() { return 1; }
-          ensure_wsl_interop
-          [ ! -s "$log" ] || { echo "WSL without systemd: must not sudo:"; cat "$log"; exit 1; }
-
-          is_wsl() { return 0; }; is_systemd() { return 0; }
-          wsl_interop_persisted() { return 0; }; wsl_interop_registered() { return 0; }
-          ensure_wsl_interop
-          [ ! -s "$log" ] || { echo "WSL, already fixed: a re-run must not sudo:"; cat "$log"; exit 1; }
-
-          # Broken guest: the rule is written verbatim, then systemd-binfmt re-reads
-          # it. Registration never appears here, so the call itself reports failure.
-          wsl_interop_persisted() { return 1; }; wsl_interop_registered() { return 1; }
-          ensure_wsl_interop || true
-          fail=0
-          grep -qx "tee $WSL_INTEROP_CONF" "$log" || { echo "did not write $WSL_INTEROP_CONF"; fail=1; }
-          grep -qx ':WSLInterop:M::MZ::/init:PF' "$log" || { echo "wrote the wrong rule"; fail=1; }
-          grep -qx 'systemctl restart systemd-binfmt' "$log" || { echo "did not restart systemd-binfmt"; fail=1; }
-          [ $fail -eq 0 ] || { cat "$log"; exit 1; }
-          echo "ok: interop persisted under WSL+systemd only, and a fixed guest is left alone"
+          echo "ok: every ordinary tool applies"
 
       # `uv tool list` was matched with `^${cmd}\b`, and \b matches before a
       # hyphen — so git-filter-repo, installed as a uv tool, made /usr/bin/git
@@ -1101,11 +951,10 @@ jobs:
           echo "ok: git is $(provider_of git), ruff is uv"
 
       # A Cellar path answered `pkg` unconditionally -- a macOS leftover -- so on
-      # a WSL box with linuxbrew, five [bash] tools that existed ONLY as Homebrew
-      # copies read `✓ pkg`. brew is `pkg` only where pkg_install would have
-      # used it (no apt, no dnf). Both directions, plus the `manual` wildcard,
-      # which must not absorb brew either (zoxide is `pkg||manual`).
-      - name: linuxbrew is pkg only where there is no apt or dnf
+      # a box with linuxbrew, five [bash] tools that existed ONLY as Homebrew
+      # copies read `✓ pkg`. brew is never `pkg`, and the `manual` wildcard
+      # must not absorb it either (zoxide is `pkg||manual`).
+      - name: linuxbrew is never pkg
         run: |
           set -euo pipefail
           source lib/status.sh
@@ -1115,17 +964,15 @@ jobs:
           ln -s "$t/Cellar/foo/1.0/bin/foo" "$t/bin/foo"
           export PATH="$t/bin:$PATH"
           mise() { return 1; }; uv() { :; }
-          PM=apt;  got=$(provider_of foo); [ "$got" = brew ] || { echo "PM=apt: Cellar copy reported '$got', want brew"; exit 1; }
-          PM=dnf;  got=$(provider_of foo); [ "$got" = brew ] || { echo "PM=dnf: Cellar copy reported '$got', want brew"; exit 1; }
-          PM=brew; got=$(provider_of foo); [ "$got" = pkg ]  || { echo "PM=brew: Cellar copy reported '$got', want pkg"; exit 1; }
+          PM=dnf; got=$(provider_of foo); [ "$got" = brew ] || { echo "Cellar copy reported '$got', want brew"; exit 1; }
           ! provider_satisfies 'pkg'         brew || { echo "pkg accepted brew"; exit 1; }
           ! provider_satisfies 'pkg||manual' brew || { echo "manual wildcard absorbed brew"; exit 1; }
           provider_satisfies 'pkg||manual' cargo  || { echo "manual wildcard no longer accepts other sources"; exit 1; }
-          echo "ok: brew is its own provider beside apt/dnf, and pkg where it is the only one"
+          echo "ok: brew is its own provider, never pkg"
 
       # The reporting half of docs/decisions/tool-duplication.md. Two distinct
-      # copies must be reported; a symlink to the active copy (usrmerge's /bin,
-      # apt's ~/.local/bin/fd -> fdfind) is the SAME copy and must not be.
+      # copies must be reported; a symlink to the active copy (usrmerge's /bin)
+      # is the SAME copy and must not be.
       - name: make status names shadowed copies, and only real ones
         run: |
           set -euo pipefail
@@ -1246,9 +1093,6 @@ jobs:
           done
           echo "ok: SessionStart and SessionEnd both refresh the stat"
 
-      # The links are NOT part of that skip, and the reason is easy to lose:
-      # wezterm.lua declares the `mux` unix domain on a guest socket path, so a
-      # wezterm-mux-server running inside WSL reads it. Only the tool drops out.
       # Named rather than counted. A bare count told you the number was wrong
       # and nothing else -- it fired when shared.lua was added, which was a
       # correct change, while a swap that kept the count would have passed
@@ -1260,10 +1104,10 @@ jobs:
           source lib/manifest.sh
           links=$(manifest_lines link wezterm | awk -F'\t' '{print $2}')
           bad=0
-          # the config itself: without it the guest has no wezterm.lua at all
+          # the config itself: without it there is no wezterm.lua at all
           grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
             echo "[wezterm] no longer links wezterm.lua"; bad=1; }
-          # the shared body: both entry points dofile() it, and its absence
+          # the shared body: wezterm.lua dofile()s it, and its absence
           # degrades silently through the pcall rather than erroring
           grep -qx 'wezterm/shared.lua' <<<"$links" || {
             echo "[wezterm] no longer links shared.lua — the config would load unstyled"; bad=1; }
@@ -1509,22 +1353,29 @@ jobs:
           exit $fail
 
   link-only:
-    # The name is a stable literal, NOT ${{ matrix.os }}. Required status checks
-    # match by exact name: if the name embedded the runner label and that label
-    # ever changed (pinning to ubuntu-24.04, GitHub retiring a label), the
-    # required check would never report — and a check that never reports doesn't
-    # fail a PR, it blocks it indefinitely waiting for a status that won't come.
+    # A stable literal name rather than the image tag. Only `ci ok` is a
+    # required check today, but a name that embeds an image tag changes under
+    # anyone who later requires it.
     name: link only (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.full == 'true'
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: linux
-            os: ubuntu-latest
+          - name: fedora 45
+            container: fedora:45
+          - name: rhel 9
+            container: almalinux:9
     steps:
+      # git before checkout, so actions/checkout makes a real clone (install.sh
+      # sets core.hooksPath on it). jq and diffutils (cmp) are what the claude
+      # assertions below read with; minimal images ship neither.
+      - name: Container prerequisites
+        run: dnf install -y git make findutils jq diffutils
+
       - uses: actions/checkout@v7
       - name: make link
         run: make link
@@ -1636,15 +1487,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ubuntu / apt
+          # Pinned to the release the fleet runs, not `latest`: a new Fedora
+          # landing mid-week would otherwise change what this row proves
+          # without a commit. Bump it with the workstations.
+          - name: fedora 45 / dnf5
             runs-on: ubuntu-latest
-            container: ''
-          # Pinned to the release the fleet runs (the ThinkPad, and the WSL
-          # guest once it moves), not `latest`: a new Fedora landing mid-week
-          # would otherwise change what this row proves without a commit.
-          - name: fedora 44 / dnf5
-            runs-on: ubuntu-latest
-            container: fedora:44
+            container: fedora:45
           # The work PowerEdge is RHEL 9.8. AlmaLinux is binary-compatible and
           # tracks the same point release (rockylinux:9 on Docker Hub is stuck at
           # 9.3). EPEL on and CRB off, because that is how the real box is set:
@@ -1658,7 +1506,6 @@ jobs:
         run: dnf install -y epel-release
 
       - name: Bootstrap container prerequisites
-        if: matrix.container != ''
         # curl is here for [uv]: ensure_uv fetches Astral's installer, and both
         # images ship curl-minimal, which is not guaranteed to stay. Swapping it
         # for curl needs --allowerasing on the EL image.
@@ -1666,21 +1513,9 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      # The runner image ships apt lists from the day it was built, and the
-      # mirror drops superseded .debs as security updates land. Once one of a
-      # package's dependencies has been superseded, `apt install` resolves the
-      # old version from the stale list, 404s fetching it, and the tool reads
-      # MISSING — bat and eza both, through libgit2, from 2026-10-05 until this.
-      # pkg_install does not refresh the lists itself, and a CI-only step is
-      # the narrower fix: on a real machine `apt update` is the owner's call.
-      - name: Refresh apt lists
-        if: matrix.name == 'ubuntu / apt'
-        run: sudo apt-get update -qq
-
       # Before [bash] runs, because [bash] is what sets dnf's one key -- the
       # assertion after it compares every OTHER line against this.
       - name: Snapshot dnf.conf
-        if: matrix.container != ''
         run: grep -v '^max_parallel_downloads' /etc/dnf/dnf.conf > /tmp/dnf.rest.before
 
       - name: Install the bash section
@@ -1697,8 +1532,7 @@ jobs:
 
       # [uv] is installed on every platform in this matrix, and Fedora is the
       # one that makes it worth doing: dnf HAS a uv package, so if the
-      # preference ever regresses to `pkg` this job gets /usr/bin/uv and fails,
-      # where ubuntu (no package) would still pass by accident.
+      # preference ever regresses to `pkg` this job gets /usr/bin/uv and fails.
       #
       # The assertion is provenance, not presence. `make check uv` would go
       # green for the distro build — the tool exists, it just cannot update
@@ -1716,9 +1550,6 @@ jobs:
 
           if command -v rpm >/dev/null 2>&1 && rpm -qf "$resolved" >/dev/null 2>&1; then
             echo "uv came from rpm — ensure_uv preferred the distro package"; exit 1
-          fi
-          if command -v dpkg >/dev/null 2>&1 && dpkg -S "$resolved" >/dev/null 2>&1; then
-            echo "uv came from dpkg — ensure_uv preferred the distro package"; exit 1
           fi
           # Not a distro build is necessary, not sufficient: pip --user also
           # installs into ~/.local/bin, and that copy cannot self-update
@@ -1741,7 +1572,6 @@ jobs:
       # it; every other line of dnf.conf survives; and a re-run on a machine
       # already at the value never reaches sudo.
       - name: "[bash] sets one dnf key and nothing else"
-        if: matrix.container != ''
         run: |
           set -euo pipefail
           source lib/pkg.sh
@@ -1763,9 +1593,9 @@ jobs:
           echo "ok: one key, effective value $got, idempotent without sudo"
 
   # ── the neovim floor holds on the platform that can't meet it ──────────────
-  # Two platforms cannot satisfy the 0.12 floor from the distro: Ubuntu 24.04
-  # (0.9.5) and RHEL 9 + EPEL (0.8.0). Those are the only places the mise
-  # fallback actually runs -- and until this job existed, nothing exercised it. The other
+  # RHEL 9 + EPEL (0.8.0) cannot satisfy the 0.12 floor from the distro, so it
+  # is the platform where the mise route is the whole answer -- and until this
+  # job existed, nothing exercised it. The other
   # install jobs run `make install bash`, which never touches neovim.
   #
   # This drives the real lib/ code rather than re-implementing the decision, but
@@ -1783,37 +1613,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ubuntu
-            container: ''
-          # RHEL 9's EPEL ships neovim 0.8.0 -- further below the floor than
-          # Ubuntu -- so this is the second platform where the fallback is the
-          # whole answer, and the only one on old glibc (2.34). It proves the
-          # prebuilt binary mise fetches actually RUNS there.
+          # RHEL 9's EPEL ships neovim 0.8.0, and it is the fleet's oldest
+          # glibc (2.34): this proves the prebuilt binary mise fetches actually
+          # RUNS there.
           - name: rhel 9
             container: almalinux:9
     steps:
+      # util-linux for script(1), which the carrier step drives nvim's TUI
+      # through.
       - name: Container prerequisites (EPEL on, as on the RHEL box)
-        if: matrix.container != ''
         run: |
           dnf install -y epel-release
-          dnf install -y --allowerasing git make sudo findutils curl
+          dnf install -y --allowerasing git make sudo findutils curl util-linux
 
       - uses: actions/checkout@v7
 
-      # Reports what apt offers; deliberately does NOT fail when that improves.
-      # This job is a required check, and Ubuntu shipping a newer neovim is good
-      # news — blocking every PR on it would mean an upstream improvement stops
+      # Reports what the distro offers; deliberately does NOT fail when that
+      # improves. EPEL shipping a newer neovim is good news — blocking every
+      # PR on it would mean an upstream improvement stops
       # unrelated work until someone edits CI. The assertion that matters is the
       # one below: one nvim, at or above the floor. That holds either way.
       - name: What the distro offers (informational)
         run: |
           set -euo pipefail
-          if command -v apt-cache >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            cand=$(apt-cache policy neovim | awk '/Candidate:/ {print $2}')
-          else
-            cand=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' neovim)
-          fi
+          cand=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' neovim)
           echo "distro candidate: $cand"
           case "$cand" in
             0.[0-9].*|0.1[01].*)
@@ -1854,9 +1677,6 @@ jobs:
           echo "nvim binaries on PATH: $n"
           type -ap nvim
           [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
-          if command -v dpkg >/dev/null 2>&1 && dpkg -s neovim >/dev/null 2>&1; then
-            echo "apt's neovim got installed after all"; exit 1
-          fi
           if command -v rpm >/dev/null 2>&1 && rpm -q neovim >/dev/null 2>&1; then
             echo "dnf's neovim got installed after all"; exit 1
           fi
@@ -1903,7 +1723,7 @@ jobs:
       # passing if that path changed.
       - name: nvim emits the alternate-font carrier only under wezterm
         # Once is enough: it tests altfont.lua's guard, not the platform.
-        if: matrix.name == 'ubuntu'
+        if: matrix.name == 'rhel 9'
         run: |
           set -uo pipefail
           fail=0
@@ -2008,7 +1828,7 @@ jobs:
   # that path is exercised by 2csv already. What is new here is the python
   # engine.
   conversions:
-    name: 2* conversions (ubuntu)
+    name: 2* conversions
     needs: changes
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
@@ -2461,11 +2281,10 @@ jobs:
       # in the plugin spec precisely so they can be tested like this: `--clean`
       # loads no plugins, so there's no 26-repo clone and no treesitter compile
       # standing between the assertion and the cmd lines it's about.
-      # NOT `apt-get install neovim`. Ubuntu 24.04 ships 0.9.5, and this config
-      # documents 0.10+ — lsp_servers.lua uses vim.fs.joinpath, added in 0.10.
-      # So the apt version failed every run with "attempt to call field
-      # 'joinpath' (a nil value)", which read as a broken config rather than as
-      # CI testing against a version the config never claimed to support.
+      # NOT the runner's distro neovim. Ubuntu 24.04 ships 0.9.5, and this
+      # config needs 0.12 — the distro version failed every run with "attempt
+      # to call field 'joinpath' (a nil value)", which read as a broken config
+      # rather than as CI testing a version the config never claimed to support.
       #
       # Pinned and sha256-verified, the same treatment lemminx gets in
       # nvim/deps.sh. Bump both the version and the hash together; a mismatch
@@ -2523,131 +2342,6 @@ jobs:
             grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
           done
 
-  # ── Windows host ───────────────────────────────────────────────────────────
-  # The only job that executes the PowerShell entry point. Every other job here
-  # runs on Linux, where windows/install.ps1 is unreachable — so
-  # without this, a syntax error in it ships and is discovered by whoever next
-  # bootstraps a Windows machine, which is the worst possible time.
-  windows:
-    name: windows (link only)
-    needs: changes
-    if: needs.changes.outputs.full == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # The mklink fallback cannot be reached on this runner - CI runs elevated,
-      # so New-Item succeeds and the catch block never executes. What IS worth
-      # guarding is the invocation form, because the fragile part is quoting:
-      # the real destination lives under %USERPROFILE%, which routinely contains
-      # a space ("C:\Users\Riley Oest\..."), and building one command string
-      # instead of passing each path as its own argument silently produces a
-      # link with a truncated name.
-      - name: mklink invocation survives a path with a space
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $dir = Join-Path $env:RUNNER_TEMP 'a b c'
-          New-Item -ItemType Directory -Path $dir -Force | Out-Null
-          $target = Join-Path $dir 'the target.txt'
-          Set-Content -LiteralPath $target -Value 'payload'
-          $link = Join-Path $dir 'the link.txt'
-
-          & cmd.exe /c mklink $link $target 2>&1 | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "mklink failed (exit $LASTEXITCODE)" }
-          if (-not (Test-Path -LiteralPath $link)) { throw 'mklink reported success but made no link' }
-          if ((Get-Content -LiteralPath $link) -ne 'payload') { throw 'link does not resolve to the target' }
-
-          $srcDir = Join-Path $dir 'src dir'
-          New-Item -ItemType Directory -Path $srcDir -Force | Out-Null
-          Set-Content -LiteralPath (Join-Path $srcDir 'f.txt') -Value 'in dir'
-          $linkDir = Join-Path $dir 'link dir'
-          & cmd.exe /c mklink /D $linkDir $srcDir 2>&1 | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "mklink /D failed (exit $LASTEXITCODE)" }
-          if ((Get-Content -LiteralPath (Join-Path $linkDir 'f.txt')) -ne 'in dir') {
-            throw 'directory link does not resolve'
-          }
-          Write-Host 'ok: mklink handles spaces for both a file and a directory'
-
-      # `shell: powershell` is Windows PowerShell 5.1, deliberately, NOT pwsh 7.
-      # 5.1 is what a fresh box runs when the bootstrap line is pasted, and it
-      # is where the syntax these scripts avoid (ternaries, ??, $IsWindows,
-      # multi-arg Join-Path) would actually blow up.
-      - name: PowerShell parses under 5.1
-        shell: powershell
-        run: |
-          $bad = 0
-          foreach ($f in @('bootstrap.ps1', 'windows\install.ps1', 'windows\deps.ps1')) {
-            $errors = $null
-            $null = [System.Management.Automation.Language.Parser]::ParseFile(
-              (Resolve-Path $f).Path, [ref] $null, [ref] $errors)
-            if ($errors) {
-              # Line and column, not just the message. A parse error reported
-              # without a position is nearly useless when the only machine that
-              # can reproduce it is this runner.
-              foreach ($e in $errors) {
-                Write-Host ('{0}({1},{2}): {3}' -f $f,
-                  $e.Extent.StartLineNumber, $e.Extent.StartColumnNumber, $e.Message)
-                Write-Host ('    >>> ' + $e.Extent.Text)
-              }
-              $bad = 1
-            }
-          }
-          exit $bad
-
-      - name: install.ps1 -LinkOnly
-        shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1 -LinkOnly
-
-      - name: The Windows config is in place and matches the repo
-        shell: powershell
-        run: |
-          $dest = Join-Path $env:USERPROFILE '.config\wezterm\wezterm.lua'
-          if (-not (Test-Path -LiteralPath $dest)) { throw "not installed: $dest" }
-          # Accept either a symlink or the copy fallback: whether symlink
-          # creation is permitted depends on the runner's privileges, and both
-          # outcomes are correct behaviour. What must hold is the CONTENT.
-          $got  = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
-          $want = (Get-FileHash -LiteralPath '.\wezterm\wezterm-windows.lua' -Algorithm SHA256).Hash
-          if ($got -ne $want) { throw "content differs from wezterm/wezterm-windows.lua" }
-          Write-Host "ok: $dest"
-
-      # This used to guard a parser: the bash side reads a section with no
-      # `platform` line as "every platform", and a PowerShell parser inheriting
-      # that reading would link bashrc into %USERPROFILE%. There is no second
-      # parser now, so the failure it caught cannot happen the same way.
-      #
-      # Kept because the risk moved rather than left. install.ps1's $Links
-      # table is hand-written, and a Linux destination pasted into it would be
-      # installed without anything else objecting.
-      - name: install.ps1 links only Windows destinations
-        shell: powershell
-        run: |
-          # Asserts on what install.ps1 REPORTED, not on whether these paths
-          # exist. The runner image ships its own %USERPROFILE%\.gitconfig, so
-          # "must not exist" would fail for a reason that has nothing to do
-          # with this repo.
-          $out = powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1 -LinkOnly | Out-String
-          Write-Host $out
-          foreach ($leaked in @('.bashrc', '.gitconfig', 'nvim')) {
-            if ($out -match [regex]::Escape($leaked)) {
-              throw "install.ps1 touched a non-windows destination: $leaked"
-            }
-          }
-          if ($out -notmatch 'wezterm\.lua') { throw 'install.ps1 did not link the wezterm config' }
-          Write-Host 'ok: only windows sections were linked'
-
-      - name: Re-running is idempotent
-        shell: powershell
-        run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\windows\install.ps1 -LinkOnly
-          if ($LASTEXITCODE -ne 0) { throw "second run exited $LASTEXITCODE" }
-          $dest = Join-Path $env:USERPROFILE '.config\wezterm\wezterm.lua'
-          $got  = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
-          $want = (Get-FileHash -LiteralPath '.\wezterm\wezterm-windows.lua' -Algorithm SHA256).Hash
-          if ($got -ne $want) { throw "second run left the wrong content in place" }
-          Write-Host 'ok: idempotent'
-
   # ── The one required check ─────────────────────────────────────────────────
   # The main-ci ruleset requires this job and nothing else. Required checks
   # are a list of job NAMES typed into the ruleset, and GitHub never updates
@@ -2664,7 +2358,7 @@ jobs:
   ci-ok:
     name: ci ok
     if: always()
-    needs: [changes, shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain, windows]
+    needs: [changes, shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

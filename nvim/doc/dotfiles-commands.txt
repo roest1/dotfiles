@@ -190,9 +190,7 @@ Usage:~
 
 Behavior:~
     - Yanks full buffer to + register
-    - Uses OSC52 for compatibility with:
-        - WSL
-        - SSH sessions
+    - Uses OSC52 over SSH sessions
 
 Location: lua/keymaps.lua
 
@@ -228,7 +226,6 @@ Behavior:~
     - Won't overwrite an existing file
 
 Backend (auto-detected):~
-    WSL2            Windows PowerShell    (no install)
     Linux/Wayland   wl-paste              (pkg: wl-clipboard)
     Linux/X11       xclip                 (pkg: xclip)
 

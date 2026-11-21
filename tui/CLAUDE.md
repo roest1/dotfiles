@@ -144,11 +144,6 @@ pins that.
   stays green over ssh, in a pipe and on a non-wezterm terminal — all places the
   carrier is unreadable and the machine is fine.
 
-  Inside WSL it reports `host` rather than MISSING, and exits 0. The guest has
-  no fonts on purpose: wezterm.exe resolves families on the Windows side, so
-  presence is UNKNOWABLE from in here, not false. Reporting MISSING would have
-  made `make status` red on the platform this repo is most often driven from.
-
 - **A screen's type is public; everything else can stay crate-private.**
   `lib.rs` re-exports `FontScreen`, `Preview` and `specimen` at the crate ROOT
   rather than making callers reach into `picker::`, because that is where they
@@ -747,8 +742,8 @@ pins that.
 
   It writes to `/dev/tty`, not stdout: the escape is addressed to the terminal
   and must not land in a pipe. The var name and the base64 values are the wire
-  format, read on the WINDOWS host out of a different clone, so a change here
-  goes dark rather than failing — `lib.rs`'s test pins the exact bytes.
+  format `wezterm/shared.lua` reads, so a change here goes dark rather than
+  failing — `lib.rs`'s test pins the exact bytes.
 
 - **`index` groups by PATH and identifies by REMOTE, because on the real tree
   neither can do both.** Measured before the reader was written:

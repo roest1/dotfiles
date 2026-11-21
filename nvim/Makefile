@@ -1,6 +1,6 @@
 # dotfiles-nvim/Makefile
 #
-# Installer for Fedora/RHEL and Ubuntu (WSL).
+# Installer for Fedora/RHEL.
 # Every target is idempotent — safe to re-run.
 #
 # Usage:
