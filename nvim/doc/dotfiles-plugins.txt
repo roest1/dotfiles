@@ -341,7 +341,44 @@ Commands:
 ==============================================================================
 ROSE-PINE (THEME)                                        *dotfiles-plugins-theme*
 
-Colorscheme: rose-pine-moon with transparent background.
+Colorscheme: rose-pine-moon with transparent background. That is the repo's
+default; a machine overrides it in ~/.config/dotfiles/theme.conf, outside
+the work tree so a pull never touches it.
+
+Two lanes, the same two `font` has:
+    nvim.ui       oil, telescope, floats, the gutter and statusline
+    nvim.editor   windows showing a file you write
+
+    nvim.ui                  = rose-pine-moon
+    nvim.ui.transparent      = true
+    nvim.editor              = onedark
+    nvim.editor.transparent  = false
+
+An editor key left out follows the ui lane. Missing file means the default.
+
+transparent = true clears every highlight whose background is the scheme's
+own base color (Normal, EndOfBuffer past the last line, LineNr and
+SignColumn in the gutter), so wezterm's background shows through all of
+it. Highlights with a color of their own -- cursor line, statusline,
+selection, diagnostic badges -- keep it.
+An unknown colorscheme falls back to rose-pine-moon with a warning. Changes
+apply on the next nvim start.
+
+The gutter and statusline of an editor window stay in the ui lane's colors,
+matching where the editor font stops. Floats over a file stay ui too.
+
+Location: lua/external/theme.lua (lanes), lua/external/filebuf.lua (what
+counts as a file, shared with |dotfiles-commands-altfont|)
+
+Also installed, loaded only on demand:
+    dracula     Mofiqul/dracula.nvim. Opaque and transparent both kept.
+    onedark     navarasu/onedark.nvim (Atom One Dark). Opaque only.
+
+To try one in the current session only (ui lane; editor windows keep
+their lane when the two differ):
+    :colorscheme dracula              its own background
+    :lua ColorMyPencils('dracula')    transparent, over wezterm's base
+    :lua ColorMyPencils()             back to rose-pine-moon
 
 Location: lua/external/plugins/theme.lua
 
