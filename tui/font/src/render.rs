@@ -91,7 +91,7 @@ impl Canvas {
             let mut enc = png::Encoder::new(&mut out, self.w as u32, self.h as u32);
             // The sheet is re-sent whenever the selection moves, so its size is
             // per-keystroke pty bandwidth, not a one-off.
-            enc.set_compression(png::Compression::Best);
+            enc.set_compression(png::Compression::High);
             enc.set_color(png::ColorType::Rgb);
             enc.set_depth(png::BitDepth::Eight);
             let mut w = enc.write_header().ok()?;
