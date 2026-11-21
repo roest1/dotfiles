@@ -59,6 +59,9 @@ roest    git@github.com:roest1/roest.git    ~/roest
 include plugins; naming a section (`make install bash`) leaves them alone. No file means no
 plugins, and one you cannot clone is skipped — the core never needs any.
 
+A plugin adds shell code by linking a `*.bash` file into `~/.config/dotfiles/bashrc.d/`,
+which `~/.bashrc` sources last.
+
 ## Everything lives in `deps.conf`
 
 One file declares every config symlink and every dependency. **Toggling is

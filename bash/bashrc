@@ -223,3 +223,13 @@ source ~/.bash_git
 source ~/.bash_github
 
 export PATH="$HOME/.local/bin:$PATH"
+
+# ─── Plugin drop-ins ──────────────────────────────────────────────
+# Shell code from plugins (see lib/plugins.sh), linked here by their own
+# deps.conf. Sourced LAST so a drop-in can wrap anything above. This repo
+# ships nothing into it and names nothing that does: it is the hook that
+# lets a private repo add a function without this file knowing.
+for _dropin in "${XDG_CONFIG_HOME:-$HOME/.config}"/dotfiles/bashrc.d/*.bash; do
+  [[ -f "$_dropin" ]] && source "$_dropin"
+done
+unset _dropin

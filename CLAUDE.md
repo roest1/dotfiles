@@ -79,7 +79,8 @@ is public and the list names private repos. The engine resolves every path from
 `make link` never clones (it promises no network). **The core must work with zero plugins**:
 no file means none, and a plugin that cannot be cloned is skipped, never fatal. Anything
 personal — the global `CLAUDE.md`, employer URL rules, ssh config — belongs in a private
-plugin, not here; CI rejects a global prompt coming back.
+plugin, not here; CI rejects a global prompt coming back. A plugin's shell code goes in
+`~/.config/dotfiles/bashrc.d/*.bash`, which `bashrc` sources last so it can wrap anything above.
 
 `make check` asks "does this command exist." `make status` asks "is this machine
 what the manifest says" — link targets, per-tool provenance, and the font lanes.
