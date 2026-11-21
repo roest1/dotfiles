@@ -403,10 +403,10 @@ picomatch@^4.0.4:
   resolved "https://registry.npmjs.org/picomatch/-/picomatch-4.0.5.tgz"
   integrity sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==
 
-prettier@^3.8.1, prettier@^3.9.10:
-  version "3.9.10"
-  resolved "https://registry.npmjs.org/prettier/-/prettier-3.9.10.tgz"
-  integrity sha512-skGHTH1Yb9QvaTC4hWnRTzEYtCpApF0UMBPz+t/0ZPzP8ihefo/btKd+QA7pUE0fEwA1SbS/NmhyEcstdXOIdA==
+prettier@^3.10.1, prettier@^3.8.1:
+  version "3.10.1"
+  resolved "https://registry.npmjs.org/prettier/-/prettier-3.10.1.tgz"
+  integrity sha512-70vp3ZUYoPlFbF9uiTdXHUUCGEIp7d4+6p+8DYbkm2jP7x/3i/paXVF6dopSI3zd/CEitrZN1rc4i85xWmmXlg==
 
 queue-microtask@^1.2.2:
   version "1.2.3"
