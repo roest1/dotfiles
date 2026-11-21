@@ -1345,25 +1345,6 @@ jobs:
             || { echo "[tui] does not declare cargo"; fail=1; }
           exit $fail
 
-      # The shell specimen renders this repo's real PS1, and its test pins the
-      # exact string. A test pinned to a string nobody re-checks is a test that
-      # passes while describing a prompt that no longer exists.
-      - name: The PS1 the specimen test pins is the PS1 ps1 ships
-        run: |
-          shipped=$(sed -n "s/^PS1='\(.*\)'$/\1/p" ps1/ps1.bash)
-          [ -n "$shipped" ] || { echo "no PS1= line in ps1/ps1.bash (submodule checked out?)"; exit 1; }
-          # The Rust literal doubles every backslash; undo that to compare.
-          pinned=$(sed -n 's/^[[:space:]]*const REAL: &str = "\(.*\)";$/\1/p' \
-            tui/font/src/theme.rs | sed 's/\\\\/\\/g')
-          [ -n "$pinned" ] || { echo "no REAL const in tui/font/src/theme.rs"; exit 1; }
-          if [ "$shipped" != "$pinned" ]; then
-            echo "ps1.bash PS1 and the specimen test have drifted:"
-            echo "  shipped: $shipped"
-            echo "  pinned : $pinned"
-            exit 1
-          fi
-          echo "ok: $shipped"
-
       # The binary shadows nothing and nothing shadows it. A bash function named
       # `font` would win over the binary on PATH, silently reinstating the fzf
       # picker this replaced.

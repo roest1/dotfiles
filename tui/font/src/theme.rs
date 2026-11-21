@@ -6,9 +6,10 @@
 //! tells you whether you want to live in this font.
 //!
 //! Colours come from `reticle::term_info()`, which asked the terminal rather
-//! than parsing `wezterm/wezterm.lua`. The prompt comes from `~/.bash_prompt` —
-//! the linked file, not a copy of its contents — so changing PS1 changes the
-//! specimen with nothing here aware that it did.
+//! than parsing `wezterm/wezterm.lua`. The prompt is `~/.bash_prompt` as bash
+//! itself expands it — not a copy of its contents, and not a parse of its PS1
+//! line — so changing PS1 or its colours changes the specimen with nothing
+//! here aware that it did.
 
 use reticle::term_info;
 
@@ -95,44 +96,65 @@ fn home() -> String {
 
 /// Render this machine's PS1 as coloured runs.
 ///
-/// Handles the subset a prompt actually uses: `\[`/`\]` (zero-width markers,
-/// dropped), SGR 38;5;N and 0, and the `\u \h \w \n \$` escapes. `${...}`
-/// segments are dropped — they are filled by PROMPT_COMMAND at runtime and
-/// there is nothing honest to put there — except the git slot, which gets a
-/// representative branch so the specimen shows the width a real prompt has.
+/// Bash expands it, not this file. PS1 takes its colours from variables
+/// (`PS1_COLOR_*`, see roest1/PS1), so the text of the `PS1='…'` line no
+/// longer says what colour anything is; only sourcing the prompt does. A
+/// non-interactive bash sources `~/.bash_local` first, as bashrc does, so the
+/// specimen shows this machine's overrides and not just the defaults.
+///
+/// Runtime-only segments are set by hand before `${PS1@P}`: conda to nothing,
+/// and the git slot to a representative branch in the branch colour, so the
+/// specimen shows the width a real prompt has. Anything going wrong -- no
+/// file, no bash, empty output -- falls back to a fixed two-run prompt.
 pub fn prompt_lines() -> Vec<Line> {
     let path = format!("{}/.bash_prompt", home());
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return fallback_prompt();
-    };
-    let Some(raw) = text
-        .lines()
-        .find(|l| l.starts_with("PS1='"))
-        .and_then(|l| l.strip_prefix("PS1='"))
-        .and_then(|l| l.strip_suffix('\''))
-    else {
-        return fallback_prompt();
-    };
-
-    let user = std::env::var("USER").unwrap_or_else(|_| "you".into());
-    let host = std::fs::read_to_string("/etc/hostname")
-        .map(|h| h.trim().to_string())
-        .unwrap_or_else(|_| "host".into());
-
-    let lines = parse_ps1(raw, &user, &host);
-    if lines.is_empty() {
-        return fallback_prompt();
-    }
-    lines
+    let local = format!("{}/.bash_local", home());
+    render_prompt(&path, Some(&local)).unwrap_or_else(fallback_prompt)
 }
 
-/// Split out from `prompt_lines` so it can be tested against the PS1 this repo
-/// actually ships, without a filesystem or a terminal in the way.
-fn parse_ps1(raw: &str, user: &str, host: &str) -> Vec<Line> {
+const EXPAND: &str = r#"
+[ -n "$2" ] && [ -f "$2" ] && . "$2" >/dev/null 2>&1
+. "$1" >/dev/null 2>&1 || exit 1
+__PS1_CONDA=""
+__PS1_GIT=" ${__NP_ON}${__C_BRANCH}${__NP_OFF}main${__NP_ON}${__C_OFF}${__NP_OFF}"
+cd "$HOME/dotfiles" 2>/dev/null || cd "$HOME"
+printf '%s' "${PS1@P}"
+"#;
+
+fn render_prompt(prompt: &str, local: Option<&str>) -> Option<Vec<Line>> {
+    if !std::path::Path::new(prompt).is_file() {
+        return None;
+    }
+    let out = std::process::Command::new("bash")
+        .args([
+            "--norc",
+            "--noprofile",
+            "-c",
+            EXPAND,
+            "bash",
+            prompt,
+            local.unwrap_or(""),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let lines = parse_rendered(&String::from_utf8_lossy(&out.stdout));
+    (!lines.is_empty()).then_some(lines)
+}
+
+/// Split a prompt bash has already expanded into coloured runs: `\x01`/`\x02`
+/// (readline's zero-width markers) dropped, `\n` starting a line, and SGR
+/// `0`, `38;5;N` and `38;2;R;G;B` changing colour. Bold and anything else in an
+/// SGR are ignored -- the specimen shows colour, not weight.
+fn parse_rendered(text: &str) -> Vec<Line> {
     let mut lines: Vec<Line> = vec![Vec::new()];
     let mut color = fg();
-    let mut chars = raw.chars().peekable();
     let mut pending = String::new();
+    let mut chars = text.chars().peekable();
 
     macro_rules! flush {
         () => {
@@ -145,51 +167,28 @@ fn parse_ps1(raw: &str, user: &str, host: &str) -> Vec<Line> {
 
     while let Some(c) = chars.next() {
         match c {
-            '\\' => match chars.next() {
-                Some('[') | Some(']') => {}
-                Some('u') => pending.push_str(user),
-                Some('h') => pending.push_str(host),
-                Some('w') => pending.push_str("~/dotfiles"),
-                Some('$') => pending.push('$'),
-                Some('n') => {
-                    flush!();
-                    lines.push(Vec::new());
-                }
-                Some('0') => {
-                    // \033[...m — an SGR run.
-                    let mut seq = String::new();
-                    for d in chars.by_ref() {
-                        if d == 'm' {
-                            break;
-                        }
-                        seq.push(d);
-                    }
-                    flush!();
-                    color = match seq.rsplit(';').next().and_then(|n| n.parse::<u8>().ok()) {
-                        Some(n) if seq.contains("38;5;") => idx(n, fg()),
-                        _ => fg(),
-                    };
-                }
-                Some(other) => pending.push(other),
-                None => {}
-            },
-            '$' if chars.peek() == Some(&'{') => {
-                // Skip to the closing brace; substitute only the git slot.
-                let mut name = String::new();
+            '\x01' | '\x02' => {}
+            '\n' => {
+                flush!();
+                lines.push(Vec::new());
+            }
+            '\x1b' if chars.peek() == Some(&'[') => {
                 chars.next();
+                let mut seq = String::new();
                 for d in chars.by_ref() {
-                    if d == '}' {
+                    if d.is_ascii_alphabetic() {
+                        if d != 'm' {
+                            seq.clear();
+                        }
                         break;
                     }
-                    name.push(d);
+                    seq.push(d);
                 }
-                if name.contains("GIT") {
-                    flush!();
-                    lines
-                        .last_mut()
-                        .unwrap()
-                        .push((" \u{e0a0} main".into(), idx(108, [0x9c, 0xcf, 0xd8])));
+                if seq.is_empty() {
+                    continue;
                 }
+                flush!();
+                color = sgr_color(&seq).unwrap_or_else(fg);
             }
             _ => pending.push(c),
         }
@@ -197,6 +196,20 @@ fn parse_ps1(raw: &str, user: &str, host: &str) -> Vec<Line> {
     flush!();
     lines.retain(|l| !l.is_empty());
     lines
+}
+
+/// The foreground an SGR parameter list sets, if it sets one.
+fn sgr_color(seq: &str) -> Option<[u8; 3]> {
+    let p: Vec<u16> = seq.split(';').filter_map(|n| n.parse().ok()).collect();
+    let at = p.iter().position(|&n| n == 38)?;
+    match p.get(at + 1)? {
+        5 => p.get(at + 2).map(|&n| idx(n as u8, fg())),
+        2 => match (p.get(at + 2), p.get(at + 3), p.get(at + 4)) {
+            (Some(&r), Some(&g), Some(&b)) => Some([r as u8, g as u8, b as u8]),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// No ~/.bash_prompt — not linked, or a machine that never installed the shell.
@@ -221,53 +234,61 @@ pub fn selection() -> [u8; 3] {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_ps1;
+    use super::{parse_rendered, render_prompt, xterm256};
 
-    /// The PS1 this repo actually ships, verbatim from ps1/ps1.bash (the roest1/PS1 submodule).
-    const REAL: &str = "${__PS1_CONDA}\\[\\033[38;5;75m\\]\\u@\\h\\[\\033[0m\\] \\[\\033[38;5;110m\\]\\w\\[\\033[0m\\]${__PS1_GIT}\\n\\$ ";
+    /// The prompt this repo pins: the ps1 submodule, two levels up.
+    fn shipped() -> String {
+        let p = format!("{}/../../ps1/ps1.bash", env!("CARGO_MANIFEST_DIR"));
+        assert!(
+            std::path::Path::new(&p).is_file(),
+            "{p} is missing -- is the ps1 submodule checked out?"
+        );
+        p
+    }
 
-    fn flat(raw: &str) -> String {
-        parse_ps1(raw, "roest", "fedora")
+    fn flat(lines: &[super::Line]) -> String {
+        lines
             .iter()
             .map(|l| l.iter().map(|(t, _)| t.as_str()).collect::<String>())
             .collect::<Vec<_>>()
             .join("\n")
     }
 
-    /// \\u \\h \\w are substituted, the zero-width \\[ \\] markers vanish, and
-    /// \\n really starts a second line — the prompt is two lines and a
-    /// specimen that drew it as one would be lying about its shape.
+    /// The real file, expanded by real bash: two lines, the zero-width markers
+    /// gone, the git slot filled, and user@host in PS1's default host colour.
+    /// This replaced a CI step pinning the PS1 string, which could not survive
+    /// the colours moving into variables.
     #[test]
-    fn renders_this_machines_prompt() {
-        let out = flat(REAL);
-        assert!(out.starts_with("roest@fedora ~/dotfiles"), "got {out:?}");
-        assert!(out.contains('\n'), "the \\n was not honoured: {out:?}");
+    fn renders_the_shipped_prompt() {
+        let lines = render_prompt(&shipped(), None).expect("bash rendered nothing");
+        let out = flat(&lines);
+        assert_eq!(lines.len(), 2, "the prompt is two lines: {out:?}");
+        assert!(out.contains("main"), "git slot missing: {out:?}");
         assert!(out.ends_with("$ "), "got {out:?}");
-        assert!(!out.contains('['), "zero-width markers leaked: {out:?}");
+        assert!(
+            !out.contains('\x01') && !out.contains('\x1b'),
+            "escapes leaked: {out:?}"
+        );
+        assert_eq!(
+            lines[0][0].1,
+            xterm256(75),
+            "user@host is not PS1's default colour"
+        );
+        assert!(lines[0][0].1 != lines[0][1].1, "runs share a colour");
     }
 
-    /// The git slot is filled with something representative, because a prompt
-    /// specimen that omits it understates how wide a real prompt runs.
     #[test]
-    fn the_git_segment_is_represented() {
-        assert!(flat(REAL).contains("main"));
+    fn parses_256_truecolor_reset_and_markers() {
+        let lines = parse_rendered("\x01\x1b[38;5;75m\x02a\x01\x1b[0m\x02 \x1b[1;38;2;1;2;3mb\nc");
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0][0], ("a".into(), xterm256(75)));
+        assert_eq!(lines[0][2], ("b".into(), [1, 2, 3]));
+        assert_eq!(flat(&lines), "a b\nc");
     }
 
-    /// PROMPT_COMMAND fills these at runtime; there is nothing honest to put
-    /// there, so they are dropped rather than printed literally.
     #[test]
-    fn runtime_only_segments_are_dropped() {
-        assert!(!flat(REAL).contains("__PS1_CONDA"));
-        assert!(!flat(REAL).contains('$') || flat(REAL).ends_with("$ "));
-    }
-
-    /// Colour runs are split at every SGR change, so each gets its own colour.
-    #[test]
-    fn colour_changes_split_the_runs() {
-        let lines = parse_ps1(REAL, "roest", "fedora");
-        let first = &lines[0];
-        assert!(first.len() >= 2, "expected several runs, got {first:?}");
-        assert!(first[0].1 != first[1].1, "runs share a colour");
+    fn a_missing_prompt_file_is_none() {
+        assert!(render_prompt("/nonexistent/ps1.bash", None).is_none());
     }
 }
 

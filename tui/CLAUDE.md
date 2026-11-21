@@ -1023,11 +1023,13 @@ xterm. That is what keeps the query an improvement instead of a dependency:
 falling back to the foreground colour made the prompt specimen monochrome on a
 quiet terminal, and only a test asserting the runs *differed* caught it.
 
-The shell specimen renders **this machine's PS1**, read from `~/.bash_prompt` —
-the linked file. Change PS1 and the specimen changes. `theme::parse_ps1` is
-split out from the file reading so it can be tested against the real string,
-and CI asserts that string still matches `ps1/ps1.bash` (the roest1/PS1
-submodule).
+The shell specimen renders **this machine's PS1**, as bash expands it: a
+non-interactive bash sources `~/.bash_local` (where `PS1_COLOR_*` overrides
+live) and then `~/.bash_prompt`, fills the runtime-only slots by hand, and
+prints `${PS1@P}`. It does not parse the `PS1='…'` line any more, because since
+roest1/PS1#2 that line names colour variables, not colours. The unit test runs
+the same expansion over the pinned submodule, `ps1/ps1.bash`, so a PS1 change
+that breaks the specimen fails `cargo test` in CI.
 
 ## Left-column layout
 
