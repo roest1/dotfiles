@@ -467,10 +467,7 @@ mod tests {
             &[
                 ("public/mdgest", "git@github.com:roest1/mdgest.git"),
                 ("public/site", "git@github.com:roest1/site.git"),
-                (
-                    "orgs/acme/platform",
-                    "git@github.com:acme-co/platform.git",
-                ),
+                ("orgs/acme/platform", "git@github.com:acme-co/platform.git"),
             ],
         ))
     }
@@ -510,11 +507,7 @@ mod tests {
     #[test]
     fn a_lane_names_the_owners_inside_it() {
         let r = sample("detail");
-        let orgs = r
-            .lanes
-            .iter()
-            .position(|(n, _)| n == "orgs/acme")
-            .unwrap();
+        let orgs = r.lanes.iter().position(|(n, _)| n == "orgs/acme").unwrap();
         assert_eq!(r.lane_detail(orgs), "acme-co · 1 repo");
         let public = r.lanes.iter().position(|(n, _)| n == "public").unwrap();
         assert_eq!(r.lane_detail(public), "roest1 · 2 repos");

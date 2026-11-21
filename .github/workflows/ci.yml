@@ -925,6 +925,9 @@ jobs:
       - name: Plugins run through the same engine, and the core needs none
         run: |
           set -euo pipefail
+          # The runner sets XDG_CONFIG_HOME, which the plugins and sections
+          # files are read under; a throwaway HOME alone would miss them.
+          unset XDG_CONFIG_HOME XDG_DATA_HOME
           t=$(mktemp -d); export HOME="$t/home"; mkdir -p "$HOME/.config/dotfiles"
           git config --global user.name ci; git config --global user.email ci@example.invalid
           p="$t/plug"; mkdir -p "$p/cfg"; git -C "$p" init -q
