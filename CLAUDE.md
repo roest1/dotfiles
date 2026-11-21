@@ -128,7 +128,7 @@ otherwise a bumped pin never reaches a machine that already has the tool
 
 There's also a `manual` provider. It installs nothing — it declares that an official
 installer or an extracted build is an acceptable source, so `make status` doesn't flag a
-correct state as drift (zoxide's curl installer, wezterm extracted into `~/.local`, bun's
+correct state as drift (a zoxide from its own installer, wezterm extracted into `~/.local`, bun's
 own installer). The actual install goes in the section's `deps.sh`.
 
 Prefer `pkg` for anything the distro ships; `mise` for tools distros don't reliably carry;
@@ -368,8 +368,8 @@ you write code here. Reasoning, revisit conditions and current status:
   cargo is REQUIRED by this section, not preferred, and it fails loudly rather
   than skipping: these binaries are built from the tree, so there is no route to
   them without a toolchain. `tui/deps.sh` calls `ensure_cargo` in `lib/pkg.sh`,
-  which installs rustup when it has to — the same curl-piped route `uv`, `mise`
-  and `zoxide` already take, kept in the one file allowed to hold it.
+  which installs rustup when it has to — the same curl-piped route `uv` and `mise`
+  already take, kept in the one file allowed to hold it.
 
   That is affordable only because opting out is durable: leave `tui` out of
   `~/.config/dotfiles/sections` and the section is never swept. An offline
