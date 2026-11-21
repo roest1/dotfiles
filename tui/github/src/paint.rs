@@ -1,7 +1,7 @@
 //! The eight colours, in one place.
 //!
 //! The same indices `_gh_palette` uses in `bash/bash_github_tui`, which are the
-//! ones this repo's prompt uses (`bash/bash_theme`) -- so the screens read as
+//! ones this repo's prompt uses (`ps1/ps1.bash`) -- so the screens read as
 //! part of the shell rather than as a visitor in it. Keeping them identical is
 //! also what makes the port a move rather than a reskin: a run that was red
 //! before is the same red now.

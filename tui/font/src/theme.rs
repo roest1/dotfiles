@@ -6,7 +6,7 @@
 //! tells you whether you want to live in this font.
 //!
 //! Colours come from `reticle::term_info()`, which asked the terminal rather
-//! than parsing `wezterm/wezterm.lua`. The prompt comes from `~/.bash_theme` —
+//! than parsing `wezterm/wezterm.lua`. The prompt comes from `~/.bash_prompt` —
 //! the linked file, not a copy of its contents — so changing PS1 changes the
 //! specimen with nothing here aware that it did.
 
@@ -101,7 +101,7 @@ fn home() -> String {
 /// there is nothing honest to put there — except the git slot, which gets a
 /// representative branch so the specimen shows the width a real prompt has.
 pub fn prompt_lines() -> Vec<Line> {
-    let path = format!("{}/.bash_theme", home());
+    let path = format!("{}/.bash_prompt", home());
     let Ok(text) = std::fs::read_to_string(&path) else {
         return fallback_prompt();
     };
@@ -199,7 +199,7 @@ fn parse_ps1(raw: &str, user: &str, host: &str) -> Vec<Line> {
     lines
 }
 
-/// No ~/.bash_theme — not linked, or a machine that never installed the shell.
+/// No ~/.bash_prompt — not linked, or a machine that never installed the shell.
 fn fallback_prompt() -> Vec<Line> {
     vec![vec![
         ("you@host".into(), idx(75, [0x5f, 0xaf, 0xff])),
@@ -223,7 +223,7 @@ pub fn selection() -> [u8; 3] {
 mod tests {
     use super::parse_ps1;
 
-    /// The PS1 this repo actually ships, verbatim from bash/bash_theme.
+    /// The PS1 this repo actually ships, verbatim from ps1/ps1.bash (the roest1/ps1 submodule).
     const REAL: &str = "${__PS1_CONDA}\\[\\033[38;5;75m\\]\\u@\\h\\[\\033[0m\\] \\[\\033[38;5;110m\\]\\w\\[\\033[0m\\]${__PS1_GIT}\\n\\$ ";
 
     fn flat(raw: &str) -> String {

@@ -91,7 +91,7 @@ plugins_run() {
         link)    bash "$DOTFILES_CORE/install.sh" ;;
         # No check here: `make install` runs `make check` last, which covers
         # plugins, and `make plugins` asks for it separately.
-        install) bash "$DOTFILES_CORE/install.sh" &&
+        install) DOTFILES_FETCH_SUBMODULES=1 bash "$DOTFILES_CORE/install.sh" &&
                    bash -c 'source "$0/lib/run.sh" && run_tools && run_post' "$DOTFILES_CORE" ;;
         check)   bash -c 'source "$0/lib/run.sh" && run_check' "$DOTFILES_CORE" ;;
         status)  bash -c 'source "$0/lib/status.sh" && STATUS_DRIFT=0 && status_links && status_tools &&

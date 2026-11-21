@@ -82,6 +82,14 @@ personal — the global `CLAUDE.md`, employer URL rules, ssh config — belongs 
 plugin, not here; CI rejects a global prompt coming back. A plugin's shell code goes in
 `~/.config/dotfiles/bashrc.d/*.bash`, which `bashrc` sources last so it can wrap anything above.
 
+**A public component this repo depends on is a git submodule, not a plugin.** The prompt is
+`roest1/ps1` at `ps1/`, linked to `~/.bash_prompt`. A submodule pins a commit, so a push there
+reaches machines only through a bump PR here (Dependabot's `gitsubmodule` entry), after CI ran
+against it; a plugin is never pinned. `make install` checks out any submodule that is not
+checked out, and never touches one that is; `install.sh` sets `submodule.recurse` so `git
+pull` moves the checkout to the new pin. A link whose source is missing is skipped, never
+backed up. To change the prompt, change roest1/ps1, then bump the pointer here.
+
 `make check` asks "does this command exist." `make status` asks "is this machine
 what the manifest says" — link targets, per-tool provenance, and the font lanes.
 Prefer `status` when the question is whether the repo is still telling the truth.

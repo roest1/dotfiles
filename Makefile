@@ -106,7 +106,7 @@ sections: ## List sections declared in deps.conf
 PLUGINS := source "$(DOTFILES_DIR)/lib/plugins.sh" &&
 
 install: ## Link config + install tools (optionally: make install <section>...)
-	@bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
+	@DOTFILES_FETCH_SUBMODULES=1 bash "$(DOTFILES_DIR)/install.sh" $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_tools $(ARGS)
 	@source "$(DOTFILES_DIR)/lib/run.sh" && run_post $(ARGS)
 	@$(if $(ARGS),:,$(PLUGINS) plugins_fetch && plugins_run install || true)

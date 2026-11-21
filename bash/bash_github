@@ -51,8 +51,8 @@
 
 # ─── Quick status ─────────────────────────────────────────────────
 #
-# Uses __duration_str and __relative_time from bash_theme, which bashrc
-# sources first. The github screens already depend on them the same way.
+# Uses __duration_str and __relative_time from the prompt (~/.bash_prompt),
+# which bashrc sources first. The github screens already depend on them the same way.
 
 # Horizontal rule: _gha_rule <left> <mid> <right> <w>...
 _gha_rule() {
@@ -172,7 +172,7 @@ gha() { # gha: workflow status for HEAD, as a table
     # Same reason, worse trap: ✅ ❌ ⏳ are East-Asian Wide (two columns) but
     # one character and three bytes, so neither %s width is right. ⏭ is
     # Neutral — one column — so it needs a space the others don't. This is
-    # the same fact bash_theme's prompt encodes, where the right side adds 2
+    # the same fact the prompt (ps1.bash) encodes, where the right side adds 2
     # per emoji to its running width as it builds the string.
     local sw=2
     [[ "$status" == "⏭" ]] && sw=1

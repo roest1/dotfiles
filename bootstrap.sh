@@ -55,7 +55,9 @@ else
     echo "$DOTFILES_DIR exists but is not a git repo. Move it aside and re-run."
     exit 1
   fi
-  git clone "$REPO_URL" "$DOTFILES_DIR"
+  # Submodules too: the prompt (ps1/) is one, and a fresh machine should
+  # not need a second step to get it.
+  git clone --recurse-submodules "$REPO_URL" "$DOTFILES_DIR"
 fi
 
 # --- hand off to make ----------------------------------------------

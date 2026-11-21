@@ -204,7 +204,7 @@ const SAMPLE: &str = "The quick brown fox 0O1lI {}[]";
 /// A pangram tells you the letterforms and nothing about whether the font can
 /// do the work. For `claude` that work is a tool-call transcript, and the two
 /// glyphs it leans on — U+23FA and U+23BF — are exactly the ones most coding
-/// fonts lack. For `shell` it is the real PS1 out of ~/.bash_theme, because a
+/// fonts lack. For `shell` it is the real PS1 out of ~/.bash_prompt, because a
 /// prompt you look at fifty times a day is the honest test.
 pub fn specimen(lane: &str) -> Vec<theme::Line> {
     let fg = theme::fg();
