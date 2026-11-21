@@ -3,7 +3,7 @@
 //! ─── Why ask rather than read the config ─────────────────────────────────
 //!
 //! The colours live in `wezterm/wezterm.lua` and the prompt's in
-//! `bash/bash_theme`, and both are Lua and shell respectively — parsing either
+//! `ps1/ps1.bash`, and both are Lua and shell respectively — parsing either
 //! from here would be a second implementation of somebody else's format, wrong
 //! the first time either file is rearranged. The terminal already resolved all
 //! of it. OSC 10/11/4 ask it what it resolved TO, so a theme change is picked

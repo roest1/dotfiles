@@ -91,6 +91,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # A Makefile target that shares a name with a real path is not an error --
       # make decides the target is already up to date and runs NOTHING. `make
@@ -235,6 +237,7 @@ jobs:
       # merge base, which a shallow clone doesn't have.
       - uses: actions/checkout@v7
         with:
+          submodules: true
           fetch-depth: 0
       # Regression guard: ARGS was once a blocklist, so any goal not in it got a
       # stub rule that silently overrode the real target — `make help` printed
@@ -660,7 +663,7 @@ jobs:
       - name: Bash configs source without emitting output
         run: |
           bad=0
-          for f in bash/bash_theme bash/bash_productivity bash/bash_git \
+          for f in bash/bash_theme ps1/ps1.bash bash/bash_productivity bash/bash_git \
                    bash/bash_github; do
             # expand_aliases because that is how these files are really read.
             # Without it bash skips alias expansion entirely, which is a
@@ -952,6 +955,24 @@ jobs:
           [ -z "$(plugins_list)" ] || { echo "no plugins file still listed plugins"; exit 1; }
           echo "ok: plugins link from their clone, skip what cannot be cloned, and stay out of named sections"
 
+      # A link whose source is missing -- an unchecked-out submodule, a file
+      # not copied in yet -- must leave the destination alone. Without the
+      # guard, install.sh backed the real file up, linked nothing, and
+      # prune_orphans deleted the dangling link: the file was simply gone.
+      - name: A missing link source leaves the destination alone
+        run: |
+          set -euo pipefail
+          unset XDG_CONFIG_HOME XDG_DATA_HOME
+          t=$(mktemp -d); export HOME="$t/home"; mkdir -p "$HOME"
+          m="$t/m"; mkdir -p "$m"
+          printf '[demo]\nlink  nothere/conf  ~/.democonf\n' > "$m/deps.conf"
+          echo keep > "$HOME/.democonf"
+          out=$(MANIFEST_FILE="$m/deps.conf" DOTFILES_SECTIONS_FILE="" bash install.sh)
+          [ -f "$HOME/.democonf" ] && [ ! -L "$HOME/.democonf" ] && [ "$(cat "$HOME/.democonf")" = keep ] \
+            || { echo "the real file was moved or replaced"; echo "$out"; exit 1; }
+          grep -q 'does not exist' <<<"$out" || { echo "no warning printed"; echo "$out"; exit 1; }
+          echo "ok: destination untouched"
+
       # Nothing is suppressed on a normal box. If tool_applies_here wrongly
       # said "not here", a tool would silently stop installing and `make check`
       # would report n/a for one that genuinely is missing.
@@ -1220,6 +1241,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - name: Toolchain
         run: rustup component add rustfmt clippy
       - name: Format
@@ -1325,16 +1348,16 @@ jobs:
       # The shell specimen renders this repo's real PS1, and its test pins the
       # exact string. A test pinned to a string nobody re-checks is a test that
       # passes while describing a prompt that no longer exists.
-      - name: The PS1 the specimen test pins is the PS1 bash_theme ships
+      - name: The PS1 the specimen test pins is the PS1 ps1 ships
         run: |
-          shipped=$(sed -n "s/^PS1='\(.*\)'$/\1/p" bash/bash_theme)
-          [ -n "$shipped" ] || { echo "no PS1= line in bash/bash_theme"; exit 1; }
+          shipped=$(sed -n "s/^PS1='\(.*\)'$/\1/p" ps1/ps1.bash)
+          [ -n "$shipped" ] || { echo "no PS1= line in ps1/ps1.bash (submodule checked out?)"; exit 1; }
           # The Rust literal doubles every backslash; undo that to compare.
           pinned=$(sed -n 's/^[[:space:]]*const REAL: &str = "\(.*\)";$/\1/p' \
             tui/font/src/theme.rs | sed 's/\\\\/\\/g')
           [ -n "$pinned" ] || { echo "no REAL const in tui/font/src/theme.rs"; exit 1; }
           if [ "$shipped" != "$pinned" ]; then
-            echo "bash_theme PS1 and the specimen test have drifted:"
+            echo "ps1.bash PS1 and the specimen test have drifted:"
             echo "  shipped: $shipped"
             echo "  pinned : $pinned"
             exit 1
@@ -1413,11 +1436,16 @@ jobs:
         run: dnf install -y git make findutils jq diffutils
 
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - name: make link
         run: make link
       - name: Config is symlinked into the repo
         run: |
           test -L "$HOME/.bashrc"
+          # The prompt is a submodule: linked AND resolving, or the checkout
+          # above lost `submodules: true` and bashrc's guard hid it.
+          test -f "$HOME/.bash_prompt" && test -L "$HOME/.bash_prompt"
           test -L "$HOME/.config/nvim"
           test -L "$HOME/.config/wezterm/wezterm.lua"
           test -L "$HOME/.claude/settings.json"
@@ -1560,6 +1588,8 @@ jobs:
         run: dnf install -y --allowerasing git make sudo findutils curl
 
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # Before [bash] runs, because [bash] is what sets dnf's one key -- the
       # assertion after it compares every OTHER line against this.
@@ -1675,6 +1705,8 @@ jobs:
           dnf install -y --allowerasing git make sudo findutils curl util-linux
 
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # Reports what the distro offers; deliberately does NOT fail when that
       # improves. EPEL shipping a newer neovim is good news — blocking every
@@ -1882,6 +1914,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # _dotfiles_dir finds tabular.py by resolving ~/.bashrc's symlink, so the
       # config has to be linked before any of these commands can work. That the
@@ -2137,6 +2171,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # setup-bun rather than `curl https://bun.com/install | bash`. This job's
       # whole purpose is objecting to unreviewed code entering the build, so
@@ -2258,6 +2294,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
 
       # The ACTION is pinned and Dependabot-watched, rather than piping an
       # unpinned installer script into bash. Note this puts bun somewhere other
