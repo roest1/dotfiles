@@ -65,7 +65,7 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │           ├── oil.lua             File browser
 │           ├── roslyn.lua          C# language server
 │           ├── telescope.lua       Fuzzy finder
-│           ├── theme.lua           Rose Pine Moon colorscheme
+│           ├── theme.lua           Colorschemes on offer (default Rose Pine Moon)
 │           ├── todo-comments.lua   TODO/FIXME highlighting
 │           ├── treesitter.lua      Syntax highlighting
 │           ├── trouble.lua         Diagnostics panel
