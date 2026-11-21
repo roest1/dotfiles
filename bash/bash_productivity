@@ -25,15 +25,11 @@ fi
 if command -v fzf &>/dev/null; then
   eval "$(fzf --bash 2>/dev/null)" || source /usr/share/bash-completion/completions/fzf 2>/dev/null
   export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
-  _fd=""
-  command -v fd &>/dev/null && _fd=fd
-  command -v fdfind &>/dev/null && _fd=fdfind
-  if [[ -n "$_fd" ]]; then
-    export FZF_DEFAULT_COMMAND="$_fd --type f --hidden --exclude .git"
+  if command -v fd &>/dev/null; then
+    export FZF_DEFAULT_COMMAND="fd --type f --hidden --exclude .git"
     export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
-    export FZF_ALT_C_COMMAND="$_fd --type d --hidden --exclude .git"
+    export FZF_ALT_C_COMMAND="fd --type d --hidden --exclude .git"
   fi
-  unset _fd
 fi
 
 # ─── The two fzf shapes, and why they are gone ────────────────────────────────
