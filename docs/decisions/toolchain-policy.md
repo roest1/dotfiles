@@ -123,8 +123,8 @@ five of them present *only* as Homebrew copies, all reading `✓ pkg`.
 Now:
 
 - a linuxbrew copy reports as `brew`, and no declaration accepts it;
-- `manual`'s wildcard does not absorb it. zoxide is `pkg||manual`, and was the one
-  tool still green.
+- `manual`'s wildcard does not absorb it. zoxide was `pkg||manual` then, and was the
+  one tool still green.
 
 CI asserts both.
 

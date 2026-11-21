@@ -16,14 +16,6 @@ source "$HERE/../lib/pkg.sh"
 pkg_detect
 ensure_local_bin_on_path
 
-# zoxide: Fedora packages it, base RHEL does not. The manifest declares `pkg`
-# because that's right nearly everywhere; this catches the case where the
-# package genuinely doesn't exist. Runs only if the providers already failed.
-if ! command -v zoxide >/dev/null 2>&1; then
-  echo "  ➡️  zoxide not packaged here — using the official installer..."
-  curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
-fi
-
 # uv is NOT installed here, and the absence is deliberate. It moved to its own
 # [uv] section, because this section may not depend on a curl-piped installer
 # (see CONTRIBUTING.md) and uv can no longer come from `pkg` — the distro build
