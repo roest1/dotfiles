@@ -24,7 +24,6 @@
 # hand-dropped binary both live there.
 
 HERE_STATUS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTFILES_ROOT="$(cd "$HERE_STATUS/.." && pwd)"
 # shellcheck source=./manifest.sh
 source "$HERE_STATUS/manifest.sh"
 # For tool_applies_here: a tool that does not apply on this host is not drift.
@@ -224,7 +223,7 @@ status_links() {
       current="$section"; echo ""; printf "%s[%s] links%s\n" "$SG_B" "$section" "$SG_OFF"
     fi
 
-    target="$DOTFILES_ROOT/$src"
+    target="$MANIFEST_ROOT/$src"
 
     if [[ -L "$dest" ]]; then
       local actual; actual="$(readlink "$dest")"

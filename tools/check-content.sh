@@ -4,13 +4,12 @@ set -euo pipefail
 #####################################################################
 # Content guards for files this repo publishes.
 #
-# This repo is PUBLIC, and claude/user-memory.md is linked to
-# ~/.claude/CLAUDE.md -- which Claude Code rewrites on its own, from
-# any session in any repo, whenever you add a memory with `#`. Every
-# other tracked file here changes because someone opened an editor and
-# will see the diff. That one can grow a line you never typed into
-# this repo, so the usual "you read your own diff" defence is weaker
-# for it than for anything else in the tree.
+# This repo is PUBLIC, and some tracked files are written by programs
+# rather than by someone in an editor -- claude/settings.json is
+# rewritten by Claude Code at runtime. (The global CLAUDE.md, which
+# Claude Code rewrote from any session, moved to a private plugin on
+# 2026-11-21.) A file like that can grow a line you never typed, so the
+# usual "you read your own diff" defence is weaker for it.
 #
 # WHAT THIS PROVES, AND WHAT IT CANNOT.
 #

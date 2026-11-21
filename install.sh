@@ -26,6 +26,11 @@ BACKUP_DIR="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
 # shellcheck source=lib/manifest.sh
 source "$DOTFILES_DIR/lib/manifest.sh"
 
+# What the manifest's paths are relative to: this repo, or a plugin's clone
+# when lib/plugins.sh runs this with MANIFEST_FILE pointing into one. Links,
+# orphan pruning and the hooks below all follow it, never DOTFILES_DIR.
+ROOT="$MANIFEST_ROOT"
+
 # Named sections are validated and used as given; with none named this falls
 # back to the machine's own set (see manifest_scope). Naming one always wins,
 # so `./install.sh claude` still links Claude on a machine that opted out of it.
@@ -96,7 +101,7 @@ prune_orphans() {
     for link in "$dir"/* "$dir"/.*; do
       [[ -L "$link" ]] || continue
       target="$(readlink "$link")"
-      [[ "$target" == "$DOTFILES_DIR"/* ]] || continue
+      [[ "$target" == "$ROOT"/* ]] || continue
       [[ -e "$target" ]] && continue
       if [[ $header -eq 0 ]]; then
         echo ""
@@ -112,12 +117,8 @@ prune_orphans() {
 }
 
 echo ""
-echo "Linking dotfiles from $DOTFILES_DIR"
-if [[ ${#SECTIONS[@]} -gt 0 ]]; then
-  echo "Sections: ${SECTIONS[*]}"
-else
-  echo "Sections: ${SECTIONS[*]}"
-fi
+echo "Linking from $ROOT"
+echo "Sections: ${SECTIONS[*]}"
 echo "-------------------------------------------"
 
 # --- Walk the manifest's link lines --------------------------------
@@ -131,7 +132,7 @@ while IFS=$'\t' read -r section src dest; do
     echo ""
     echo "[$section]"
   fi
-  link_file "$DOTFILES_DIR/$src" "$dest"
+  link_file "$ROOT/$src" "$dest"
   linked_any=1
 done < <(manifest_lines link "${SECTIONS[@]}")
 
@@ -156,12 +157,15 @@ prune_orphans
 # container, or anywhere the work tree is owned by another user, git rejects it
 # for dubious ownership and `config --local` exits 128. Linking your dotfiles
 # must not fail because a hook could not be registered.
-if [[ -d "$DOTFILES_DIR/.git" ]] && command -v git >/dev/null 2>&1; then
-  current="$(git -C "$DOTFILES_DIR" config --local --get core.hooksPath 2>/dev/null || true)"
+#
+# Only where the repo HAS a .githooks directory: a plugin may not, and pointing
+# hooksPath at a directory that does not exist silently disables its hooks.
+if [[ -d "$ROOT/.git" && -d "$ROOT/.githooks" ]] && command -v git >/dev/null 2>&1; then
+  current="$(git -C "$ROOT" config --local --get core.hooksPath 2>/dev/null || true)"
   if [[ "$current" != ".githooks" ]]; then
     echo ""
     echo "[git hooks]"
-    if git -C "$DOTFILES_DIR" config --local core.hooksPath .githooks 2>/dev/null; then
+    if git -C "$ROOT" config --local core.hooksPath .githooks 2>/dev/null; then
       echo "  set core.hooksPath -> .githooks"
     else
       echo "  skipped — git declined this work tree (ownership?)"

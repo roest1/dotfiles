@@ -44,7 +44,7 @@ jobs:
   #
   # shellcheck always runs because it holds tools/check-content.sh, the
   # credential and home-path scan, and Markdown is where that scan matters
-  # most: claude/user-memory.md is rewritten by Claude Code unprompted. Two
+  # most: a Markdown file is where a pasted secret is most likely to land. Two
   # Markdown paths still count as code, because a heavy job reads them:
   #   claude/*        linked into ~/.claude; link-only checks name and content
   #   nvim/README.md  manifest checks its <leader> keys against nvim/lua
@@ -192,11 +192,9 @@ jobs:
 
       # The content half of the guard above. That one asks whether a FILE
       # should be here; this asks whether a LINE should be, which became a
-      # separate question when claude/user-memory.md arrived: it is linked to
-      # ~/.claude/CLAUDE.md, so Claude Code writes to it unprompted whenever a
-      # memory is added with `#`, from any repo, in any session. It is the only
-      # tracked file here that changes without someone opening an editor, and
-      # this repo is public.
+      # separate question when a file Claude Code writes unprompted was tracked
+      # here (the global CLAUDE.md, now in a private plugin; claude/settings.json
+      # still is one), and this repo is public.
       #
       # Sweeps every tracked file rather than only the diff: a credential
       # introduced on a branch that CI never ran is still published the moment
@@ -919,6 +917,38 @@ jobs:
           grep -q 'shared.lua' wezterm/wezterm.lua || { echo "wezterm.lua does not load shared.lua"; exit 1; }
           echo "ok: shared.lua linked and loaded"
 
+      # lib/plugins.sh runs this engine over another repo's deps.conf. What
+      # must hold: a plugin's links land from ITS clone; this machine's
+      # sections file (which names core sections) does not filter a plugin;
+      # a plugin nobody can clone is skipped, not fatal; naming a section
+      # leaves plugins alone; and no plugins file means no plugins.
+      - name: Plugins run through the same engine, and the core needs none
+        run: |
+          set -euo pipefail
+          t=$(mktemp -d); export HOME="$t/home"; mkdir -p "$HOME/.config/dotfiles"
+          git config --global user.name ci; git config --global user.email ci@example.invalid
+          p="$t/plug"; mkdir -p "$p/cfg"; git -C "$p" init -q
+          printf 'hello\n' > "$p/cfg/demo.conf"
+          printf '[demo]\nlink  cfg/demo.conf  ~/.config/demo/demo.conf\npost  touch "$HOME/post-ran"\n' > "$p/deps.conf"
+          git -C "$p" add -A; git -C "$p" commit -qm init
+          printf 'demo  %s  ~/demo-plugin\nghost  https://invalid.example/none.git\n' "$p" > "$HOME/.config/dotfiles/plugins"
+          printf 'bash\n' > "$HOME/.config/dotfiles/sections"
+          source lib/plugins.sh
+          plugins_fetch
+          [ -d "$HOME/demo-plugin/.git" ] || { echo "demo plugin was not cloned"; exit 1; }
+          [ ! -e "$HOME/.local/share/dotfiles/plugins/ghost" ] || { echo "a failed clone left a directory"; exit 1; }
+          plugins_run install
+          [ "$(readlink "$HOME/.config/demo/demo.conf")" = "$HOME/demo-plugin/cfg/demo.conf" ] \
+            || { echo "plugin link does not point into the plugin clone"; exit 1; }
+          [ -e "$HOME/post-ran" ] || { echo "plugin post step did not run"; exit 1; }
+          plugins_run status >/dev/null || { echo "status reports drift on a correct plugin"; exit 1; }
+          rm "$HOME/.config/demo/demo.conf"
+          if plugins_run status >/dev/null; then echo "status missed a plugin link that is gone"; exit 1; fi
+          out=$(make link bash); if grep -q 'plugin:' <<<"$out"; then echo "a named section ran plugins"; exit 1; fi
+          rm "$HOME/.config/dotfiles/plugins"
+          [ -z "$(plugins_list)" ] || { echo "no plugins file still listed plugins"; exit 1; }
+          echo "ok: plugins link from their clone, skip what cannot be cloned, and stay out of named sections"
+
       # Nothing is suppressed on a normal box. If tool_applies_here wrongly
       # said "not here", a tool would silently stop installing and `make check`
       # would report n/a for one that genuinely is missing.
@@ -1369,6 +1399,9 @@ jobs:
             container: fedora:45
           - name: rhel 9
             container: almalinux:9
+          # The home server's release. The work box stays on 9, so both rows.
+          - name: rhel 10
+            container: almalinux:10
     steps:
       # git before checkout, so actions/checkout makes a real clone (install.sh
       # sets core.hooksPath on it). jq and diffutils (cmp) are what the claude
@@ -1385,7 +1418,6 @@ jobs:
           test -L "$HOME/.config/nvim"
           test -L "$HOME/.config/wezterm/wezterm.lua"
           test -L "$HOME/.claude/settings.json"
-          test -L "$HOME/.claude/CLAUDE.md"
 
       # The [claude] hooks and wezterm's format-tab-title are two halves of one
       # feature — the hooks publish claude_state as an OSC user var, the tab bar
@@ -1422,27 +1454,22 @@ jobs:
             exit 1
           fi
 
-      # Same hazard, one scope over. The user memory file is linked to
-      # ~/.claude/CLAUDE.md, and Claude Code also reads a CLAUDE.md found in a
-      # SUBDIRECTORY as context for files in that subtree -- which this repo
-      # relies on for nvim/CLAUDE.md and tui/CLAUDE.md. So naming the repo copy
-      # claude/CLAUDE.md would load the user prompt a second time, as directory
-      # memory, whenever anyone edited claude/settings.json.
-      #
-      # Checked case-insensitively: on a case-insensitive filesystem
-      # `claude/claude.md` IS `claude/CLAUDE.md` to the lookup, and a
-      # case-sensitive test here would pass and let the collision ship there.
-      - name: The user memory file is not also directory memory
+      # The global prompt is personal and lives in a private plugin. Two
+      # regressions to stop: it coming back into this public repo, and any
+      # CLAUDE.md under claude/, which Claude Code would load as directory
+      # memory whenever claude/settings.json is edited. Case-insensitive,
+      # because on such a filesystem `claude.md` IS `CLAUDE.md` to the lookup.
+      - name: No personal prompt in the public repo
         run: |
-          if find claude -maxdepth 1 -iname 'claude.md' | grep -q .; then
-            echo "FAIL: a CLAUDE.md under claude/ double-loads as directory memory"
-            echo "      keep it at claude/user-memory.md (see [claude] in deps.conf)"
-            exit 1
+          fail=0
+          if find claude -maxdepth 1 \( -iname 'claude.md' -o -iname 'user-memory.md' \) | grep -q .; then
+            echo "FAIL: a global prompt is back under claude/ — it belongs in a private plugin"; fail=1
           fi
-          test -f claude/user-memory.md \
-            || { echo "FAIL: claude/user-memory.md is missing"; exit 1; }
-          cmp -s claude/user-memory.md "$HOME/.claude/CLAUDE.md" \
-            || { echo "FAIL: ~/.claude/CLAUDE.md is not this repo's file"; exit 1; }
+          if source lib/manifest.sh && manifest_lines link | awk -F'\t' '{print $3}' | grep -qx "$HOME/.claude/CLAUDE.md"; then
+            echo "FAIL: deps.conf links ~/.claude/CLAUDE.md"; fail=1
+          fi
+          [ $fail -eq 0 ] && echo "ok: no personal prompt here"
+          exit $fail
 
       - name: Idempotent — second run changes nothing
         run: |
@@ -1500,6 +1527,12 @@ jobs:
           - name: rhel 9 / dnf4
             runs-on: ubuntu-latest
             container: almalinux:9
+          # RHEL 10 is the home server's release, and still dnf4 -- Red Hat does
+          # not build dnf5 for 10 -- so it is its own row rather than a repeat
+          # of Fedora's.
+          - name: rhel 10 / dnf4
+            runs-on: ubuntu-latest
+            container: almalinux:10
     steps:
       - name: Enable EPEL (as on the RHEL box)
         if: startsWith(matrix.container, 'almalinux')

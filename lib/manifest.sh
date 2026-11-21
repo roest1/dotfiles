@@ -22,6 +22,13 @@
 
 MANIFEST_FILE="${MANIFEST_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deps.conf}"
 
+# The repo a manifest's paths are relative to: link sources, <section>/deps.sh
+# hooks, and the cwd of `post` commands. It is the manifest's own directory,
+# which for this repo is the repo root -- and for a plugin (lib/plugins.sh) is
+# the plugin's clone, which is what lets one engine run both.
+# shellcheck disable=SC2034  # read by install.sh, run.sh and status.sh
+MANIFEST_ROOT="$(cd "$(dirname "$MANIFEST_FILE")" && pwd)"
+
 # List section names in the order they appear.
 manifest_sections() {
   local raw line
@@ -61,7 +68,12 @@ manifest_sections() {
 #   mkdir -p ~/.config/dotfiles && make sections > ~/.config/dotfiles/sections
 # then comment out what this machine does not want. Commenting, the same idiom
 # as deps.conf, because there is no second one worth learning.
-DOTFILES_SECTIONS_FILE="${DOTFILES_SECTIONS_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/sections}"
+#
+# `-` rather than `:-`: set to the EMPTY string, there is no file, so every
+# section runs. lib/plugins.sh relies on that -- this machine's sections file
+# names core sections, and read against a plugin's manifest it would skip all
+# of the plugin's.
+DOTFILES_SECTIONS_FILE="${DOTFILES_SECTIONS_FILE-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/sections}"
 
 manifest_enabled() {
   local raw line

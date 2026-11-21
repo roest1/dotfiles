@@ -18,8 +18,8 @@
 //! obvious design — parse `~/github/<org>/<repo>` — is wrong here in four
 //! separate ways:
 //!
-//!   ~/github/orgs/codegig/...          the GitHub org is `codegig-br`
-//!   ~/github/orgs/codegig/clients/shell/atlas   depth is not fixed
+//!   ~/github/orgs/acme/...          the GitHub org is `acme-co`
+//!   ~/github/orgs/acme/clients/initech/portal   depth is not fixed
 //!   ~/github/private/repos/jarvis-project/gods-eye-view   owner `bilawalsidhu`
 //!   ~/github/private/repos/roest-immich          no remote at all
 //!
@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 
 /// How deep to look for a clone below `~/github`.
 ///
-/// Five is the deepest real one measured (`orgs/codegig/clients/shell/atlas`);
+/// Five is the deepest real one measured (`orgs/acme/clients/initech/portal`);
 /// six leaves a level of headroom. A limit at all is what stops one
 /// `node_modules` with a vendored `.git` from turning a startup read into a
 /// filesystem crawl -- descent also stops at every repo found, so the cost is
@@ -65,7 +65,7 @@ pub struct Repo {
     /// Directory name -- what you would `cd` to.
     pub dir: String,
     /// The lane it is filed under, relative to the index root: `public`,
-    /// `private`, `orgs/codegig`. The grouping key.
+    /// `private`, `orgs/acme`. The grouping key.
     pub lane: String,
     /// Everything between the lane and the repo, `repos/jarvis-project` for
     /// `private/repos/jarvis-project/J.A.R.V.I.S.`. Empty for a repo sitting
@@ -324,10 +324,10 @@ mod tests {
     #[test]
     fn it_reads_both_url_shapes_this_machine_actually_uses() {
         assert_eq!(
-            parse_remote("git@github.com:codegig-br/codegig-platform.git"),
+            parse_remote("git@github.com:acme-co/acme-platform.git"),
             Remote::GitHub {
-                owner: "codegig-br".into(),
-                name: "codegig-platform".into()
+                owner: "acme-co".into(),
+                name: "acme-platform".into()
             }
         );
         assert_eq!(
@@ -390,8 +390,8 @@ mod tests {
             &[
                 ("public/mdgest", Some("git@github.com:roest1/mdgest.git")),
                 (
-                    "orgs/codegig/clients/shell/atlas",
-                    Some("git@github.com:codegig-br/atlas.git"),
+                    "orgs/acme/clients/initech/portal",
+                    Some("git@github.com:acme-co/portal.git"),
                 ),
                 (
                     "private/repos/jarvis-project/gods-eye-view",
@@ -405,11 +405,11 @@ mod tests {
 
         let by = |d: &str| repos.iter().find(|r| r.dir == d).expect(d).clone();
 
-        // Directory name is `codegig`; the org is `codegig-br`. Both survive.
-        let atlas = by("atlas");
-        assert_eq!(atlas.lane, "orgs/codegig");
-        assert_eq!(atlas.within, "clients/shell");
-        assert_eq!(atlas.slug(), "codegig-br/atlas");
+        // Directory name is `acme`; the org is `acme-co`. Both survive.
+        let portal = by("portal");
+        assert_eq!(portal.lane, "orgs/acme");
+        assert_eq!(portal.within, "clients/initech");
+        assert_eq!(portal.slug(), "acme-co/portal");
 
         // Someone else's clone stays where it was filed rather than becoming
         // its own owner heading.

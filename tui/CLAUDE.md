@@ -747,8 +747,8 @@ pins that.
 
 - **`index` groups by PATH and identifies by REMOTE, because on the real tree
   neither can do both.** Measured before the reader was written:
-  `~/github/orgs/codegig` holds the org `codegig-br`; depth is not fixed
-  (`orgs/codegig/clients/shell/atlas`); `private/repos/jarvis-project` holds
+  `~/github/orgs/acme` holds the org `acme-co`; depth is not fixed
+  (`orgs/acme/clients/initech/portal`); `private/repos/jarvis-project` holds
   other people's clones; one repo has no remote. Grouping by owner would file
   someone else's clone under its own heading and have nowhere to put the
   remoteless one. So the lane comes from where you filed it and the slug comes
