@@ -14,31 +14,28 @@ curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh |
 
 Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
 
-## Just want the prompt?
+## What you get
 
-The bash prompt is its own repo, [roest1/PS1](https://github.com/roest1/PS1): one file,
-with before and after pictures and a two-line install. Here it is a git submodule at
-`ps1/`, pinned to a commit and bumped by Dependabot, so a change there reaches your
-machines only through a PR in this repo. Its colors and icons are `PS1_COLOR_*` and
-`PS1_ICON_*` variables ([list](https://github.com/roest1/PS1#colors-and-icons)); here they
-go in `~/.bash_local`, which bashrc loads before the prompt.
+Each section of `deps.conf` is one pillar. Install them all, or name the ones you want
+(`make install bash nvim`).
 
-## Plugins
+| Pillar | What it gives you |
+| ------ | ----------------- |
+| `[bash]` | `~/.bashrc`, colors, the prompt, everyday commands (`h` lists them), git and `gh` helpers, `~/.gitconfig` |
+| `[uv]` | Astral's uv, kept self-updating, for Python tools |
+| `[nvim]` | Neovim config with language servers and formatters ([nvim/README.md](nvim/README.md)) |
+| `[wezterm]` | The terminal config and the Science Gothic Mono font |
+| `[tui]` | Terminal apps built from this repo: `github` (the current repo on GitHub, live), `dots` (this repo's console), `font` (pick fonts per lane) |
+| `[claude]` | Claude Code settings: deny rules for secrets, terminal status hooks |
 
-Other repos can ride the same engine: a repo with its own `deps.conf` is a plugin. List the
-ones a machine wants in `~/.config/dotfiles/plugins` (machine-local, never in this repo):
+### Just want the prompt?
 
-```conf
-# name   git-url                            [clone dir]
-roest    git@github.com:roest1/roest.git    ~/roest
-```
-
-`make install` clones what is missing and installs it; `make link`, `check` and `status`
-include plugins; naming a section (`make install bash`) leaves them alone. No file means no
-plugins, and one you cannot clone is skipped — the core never needs any.
-
-A plugin adds shell code by linking a `*.bash` file into `~/.config/dotfiles/bashrc.d/`,
-which `~/.bashrc` sources last.
+The bash prompt is its own repo, [roest1/PS1](https://github.com/roest1/PS1): one file
+with a two-line install. Here it is a git submodule at `ps1/`, pinned to a commit and
+bumped by Dependabot, so a change there reaches your machines only through a PR in this
+repo. Its colors and icons are `PS1_COLOR_*` and `PS1_ICON_*` variables
+([list](https://github.com/roest1/PS1#colors-and-icons)); here they go in
+`~/.bash_local`, which bashrc loads before the prompt.
 
 ## Everything lives in `deps.conf`
 
@@ -55,180 +52,112 @@ tool  uv||pkg      ruff
 post  bun install --cwd nvim/lsp-servers --frozen-lockfile
 ```
 
-Three line types, and that's the whole vocabulary:
-
 | Line | What |
 | ---- | ---- |
 | `link <repo-path> <dest>` | a symlink; `~` expands to your home |
 | `tool <provider> <command> [package]` | a dependency; package defaults to the command name |
 | `post <shell command>` | runs after that section's tools |
 
-There is no `platform` line type: every target is Fedora or RHEL, and CI
-rejects `platform` as an unknown line type.
-
 | Command | What |
 | ------- | ---- |
 | `make install` | everything enabled in `deps.conf` |
 | `make install nvim` | one section (repeatable: `make install bash nvim`) |
 | `make link` | symlinks only — no sudo, no network, nothing downloaded |
-| `make check` | verify what's enabled is actually present |
-| `make status` | **sync status** — is the machine what `deps.conf` says? |
-| `make test` | Lua unit tests (no plugins, no network) |
+| `make check` | is each enabled tool present? |
+| `make status` | is this machine what `deps.conf` says — links, and which provider installed each tool? |
 | `make sections` | list sections |
+| `make help` | everything else |
 
-Sections are named after the program, so there's nothing to name: `[bash]`,
-`[nvim]`, `[wezterm]`. The `Makefile` reads them from the manifest —
-**adding a program is a new section plus its config file, and no other edits.**
+**Adding a program is a new section plus its config file**, and no other edits: the
+`Makefile` reads sections from the manifest.
 
-### Installing a subset
-
-The real constraint at work usually isn't "no neovim," it's "not *that*
-dependency." So granularity goes down to the individual tool:
-
-- **Skip one tool** — comment its line.
-- **Skip a whole program** — `make install bash` instead of `make install`.
-- **Install nothing at all** — `make link` gives you every config with no sudo
-  and no network.
-
-Scope the one-liner the same way: `DOTFILES_TARGET=bash curl ... | bash`.
-
-**No node, npm or pip anywhere.** The toolchain is bun and uv. The six
-JavaScript language servers are declared in `nvim/lsp-servers/package.json`,
-installed by `bun install`, and run as `bun <path>` — with no `node` shim, since
-aliasing node to bun would make any incompatibility surface as an error blaming
-the wrong tool. Mason was dropped because it installs npm packages by shelling
-out to the `npm` binary, which only exists if node does. CI asserts on every
-push that node, npm and pip stay out of the manifest, and that all six servers
-complete a real LSP handshake with node absent from `$PATH`.
+To skip a section on one machine without editing the tracked file, list the sections you
+want in `~/.config/dotfiles/sections` (`make sections > ~/.config/dotfiles/sections`, then
+comment out lines). The one-liner takes a subset too: `DOTFILES_TARGET=bash curl ... | bash`.
 
 ### Providers
 
-Each `tool` line names how to install it. `||` declares a fallback chain:
+Each `tool` line names how to install it; `||` is a fallback chain, tried left to right.
 
 | Provider | Use |
 | -------- | --- |
 | `pkg`    | the system package manager, dnf |
-| `mise`   | tools distros don't reliably carry — pinned versions, binary downloads |
-| `uv`     | Python tools (replaces pip; same vendor as ruff) |
+| `mise`   | tools distros don't reliably carry — pinned versions, checksummed downloads |
+| `uv`     | Python tools (replaces pip) |
 | `cargo`  | compiles from source — slow, prefer `mise` |
-| `manual` | not installable from here — declares that an official installer or extracted build is an acceptable source; the real install lives in the section's `deps.sh` |
+| `manual` | an official installer or extracted build is the source; the install lives in the section's `deps.sh` |
 
-`manual` is usually a concession — `pkg` couldn't serve this one. `[uv]` is the
-exception, and it is worth knowing about because it reads like drift otherwise:
-there `manual` is a *preference*. The distro's uv has `uv self update` compiled
-out, so it can only ever be as current as the next package bump, and uv ships
-weekly. `ensure_uv` in `lib/pkg.sh` curls Astral's installer first and falls back
-to `pkg` only when the network is unreachable.
+**No node, npm or pip anywhere.** The toolchain is bun and uv; the JavaScript language
+servers run as `bun <path>`, and CI proves each one completes a real LSP handshake with
+node absent. `[bash]` is near-pure `pkg`, so a locked-down machine can install the whole
+shell without a curl-piped installer.
 
-There is no `npm` provider, and adding one is a CI failure. See the node
-paragraph above.
+`./tools/adopt.sh <command>` prints a correct `tool` line for something already installed
+(provider and package name). It never edits `deps.conf`.
+
+## Plugins
+
+Other repos can ride the same engine: a repo with its own `deps.conf` is a plugin. List the
+ones a machine wants in `~/.config/dotfiles/plugins` (machine-local, never in this repo):
 
 ```conf
-tool  pkg||cargo  eza     # distro package if it exists, else compile
+# name   git-url                            [clone dir]
+roest    git@github.com:roest1/roest.git    ~/roest
 ```
 
-`[bash]` is near-pure `pkg`, so a locked-down machine can install the whole shell
-without mise, node, or a curl-piped installer. That invariant is why `uv` has a
-section of its own rather than a line in `[bash]`: the moment it stopped being a
-`pkg` line it stopped being something the shell section may depend on.
+`make install` clones what is missing and installs it; `make link`, `check` and `status`
+include plugins; naming a section (`make install bash`) leaves them alone. No file means no
+plugins, and one you cannot clone is skipped — the core never needs any. A plugin adds shell
+code by linking a `*.bash` file into `~/.config/dotfiles/bashrc.d/`, which `~/.bashrc`
+sources last.
 
-### Drift
+## Machine-local config
 
-`make check` only asks "does this command exist," which turns out to be a weak
-question — it happily reports ok for a tool installed by a completely different
-provider than the manifest declares. `make status` asks the stronger one, in the
-shape ArgoCD uses: **declared state vs. live machine.**
+Two files hold host-specific setup, sourced by `bashrc` when they exist:
 
-```
-[nvim] tools
-  ✓ tree-sitter    pkg
-  ✗ stylua         declared mise   actual cargo   ~/.cargo/bin/stylua
+```sh
+touch ~/.bash_local && chmod 600 ~/.bash_local                          # paths, exports, PS1 colors
+touch ~/.bash_password_commands && chmod 600 ~/.bash_password_commands  # anything sensitive
 ```
 
-It checks two things:
+**They live in `$HOME`, not in this repo, and that is the security design:** git cannot
+commit a file outside its work tree. A gitignored file inside the repo would be protected
+only by a rule that `git add -f` overrides. Two layers catch a secret file created inside
+the repo anyway:
 
-- **links** — is `~/.bashrc` a symlink into *this* repo, or a stale backup or a
-  hand-edited file?
-- **tools** — was this installed by the provider the manifest declares?
-  Provenance comes from asking `rpm`/`mise`/`uv` directly, not from guessing at
-  the path — `~/.local/bin` is genuinely ambiguous between a uv shim and a
-  hand-dropped binary.
+| Layer | Catches |
+| ----- | ------- |
+| `.githooks/pre-commit` | a staged secret, before the commit exists |
+| CI: *No secret or machine-local files are tracked* | anything that got past the hook, before it reaches `main` |
 
-It deliberately does **not** report "installed but not declared." Nothing here
-can tell a dotfiles dependency from a project-scoped tool, so that list is mostly
-noise — and silencing the noise meant naming unrelated projects inside the file
-that defines every machine you own. This repo describes itself, nothing else.
-
-Drift matters because a manifest that describes a machine you don't have
-produces a *different* machine when you clone it somewhere fresh — which is the
-one thing this repo exists to get right.
-
-### Renaming a config file
-
-Rename it in the repo, update its `link` line, re-run. That's the whole
-procedure — and the reason it's that short is that `install.sh` prunes orphans.
-
-A rename leaves the old symlink in `$HOME` pointing at a repo path that no
-longer exists. Nothing else would ever notice: it isn't in the manifest any
-more, so the link loop doesn't walk it, and it sits there looking exactly like a
-working dotfile. You'd end up with both names side by side, which is precisely
-what renaming was supposed to prevent.
-
-So `install.sh` removes any symlink that **points into this repo and whose
-target is gone.** Not a list of retired names — a structural test, which stays
-correct for the next rename with nobody remembering to maintain it. It can't
-touch a link that still resolves, or one pointing anywhere outside the repo, and
-it only scans directories the manifest actually links into.
-
-```
-[orphaned links]
-  pruned /home/roest/.bash_roest_theme (target gone: .../bash/bash_roest_theme)
-```
-
-### Writing a manifest line
-
-`./tools/adopt.sh <command>` figures out the parts that are easy to get wrong —
-which provider owns it, and the package name when it differs from the command:
-
-```
-$ ./tools/adopt.sh rg fd clangd stylua wezterm
-tool  pkg          rg           ripgrep
-tool  pkg          fd           fd-find
-tool  pkg          clangd       clang-tools-extra
-tool  cargo        stylua
-tool  pkg||manual  wezterm      # installed outside any manager (~/.local/bin/wezterm)
-```
-
-You name the commands. There's **no bulk mode on purpose**: nothing can tell a
-dotfiles dependency from a project-scoped tool — a `uv` tool belonging to one
-project looks identical to one you want on every machine. It prints; it never
-edits `deps.conf`.
-
-It's a script rather than a make target on purpose too: every `make` target is
-about *operating* this repo, and this is about *editing* it.
+Both read [`.githooks/secret-patterns`](.githooks/secret-patterns), and `install.sh` turns
+the hook on with `core.hooksPath`. GitHub's push protection is on for this repo as a third.
 
 ## Layout
 
-| Path | What |
-| ---- | ---- |
-| `deps.conf` | **the manifest** — links and dependencies, one file |
-| `bootstrap.sh` | Curl-able entry point for a fresh machine |
-| `install.sh`   | Symlinks only; walks the manifest's `link` lines |
-| `lib/manifest.sh` | Parses `deps.conf` |
-| `lib/providers.sh` | Maps a provider name to an installer; handles `\|\|` chains |
-| `lib/pkg.sh`   | The single implementation of "install a tool" |
-| `lib/run.sh`   | Installs a section's tools, runs `post` steps and platform fixups |
-| `bash/`, `nvim/`, `wezterm/` | Config, plus an optional `deps.sh` for platform-conditional fixups |
-
-`nvim/` is self-contained — its own Makefile and README — so it still stands
-alone despite living here.
+```
+deps.conf        THE MANIFEST — links + dependencies
+Makefile         reads sections from deps.conf
+bootstrap.sh     curl-able fresh-machine entry point
+install.sh       symlinks (backs up what it replaces, prunes orphaned links)
+lib/             the engine: parser, providers, installers, status, plugins
+tools/           adopt.sh, usage.sh, mise and lint helpers
+bash/            [bash] — bashrc and the files it sources
+ps1/             submodule: roest1/PS1, linked as ~/.bash_prompt
+git/             gitconfig, plus GitHub setup notes
+uv/              [uv]
+nvim/            [nvim] — its own Makefile and README
+wezterm/         [wezterm] — config and the generated fonts
+tui/             [tui] — Rust workspace
+claude/          [claude]
+docs/decisions/  why things are the way they are
+```
 
 ## Portability is tested, not claimed
 
-`.github/workflows/ci.yml` runs on every push: `make link` and full installs in
-Fedora 45 and RHEL 9 (AlmaLinux) containers, shellcheck, manifest validation,
-and a job that comments out the node block and asserts nvim still starts clean.
-A support claim nothing runs is not a support claim.
+`.github/workflows/ci.yml` runs `make link` and full installs in Fedora 45 and RHEL 9
+(AlmaLinux) containers, plus shellcheck, manifest validation and supply-chain checks, on
+every push.
 
 ## Contributing
 
@@ -236,144 +165,6 @@ Portability fixes and machinery bugs are welcome; personal-preference changes
 aren't (fork instead — the layout is built for it). See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## GitHub Terminal Tools
-
-**`h github`** has the current command's keys and shape; `github` is a Rust TUI (`tui/github`) as of 2026-10-24. **[git/GITHUB_TOOLS.md](git/GITHUB_TOOLS.md)** is the walkthrough of the fzf implementation it replaced, kept as a record.
-
-`github` is the way in. `ctrl-/` in any list, `?` in any menu, for that
-screen's help.
-
-| Command | What |
-| ------- | ---- |
-| `github`   | The current repo on GitHub, live: Actions, Pull Requests, Branches, Secrets, Environments |
-| `gha`      | Workflow status for HEAD as a table, names linked to their jobs — the one-shot |
-
-Every screen is a list with a live preview. Hover a workflow run and its jobs
-appear with only the failed steps expanded, log tail inline; a running one
-refreshes under the cursor by itself.
-
-## Layout
-
-<details>
-<summary>Directory tree</summary>
-
-```
-~/dotfiles/
-├── deps.conf                             THE MANIFEST — links + dependencies
-├── Makefile                              Reads sections from deps.conf
-├── bootstrap.sh                          Curl-able fresh-machine entry point
-├── install.sh                            Symlink engine (backs up existing files)
-├── CONTRIBUTING.md                       How to add a tool without breaking the manifest
-├── .githooks/
-│   ├── pre-commit                        Blocks committing secrets (core.hooksPath)
-│   └── secret-patterns                   Shared by the hook and the CI check
-├── .github/
-│   ├── workflows/ci.yml                  Portability + supply-chain checks
-│   ├── dependabot.yml                    bun + github-actions ecosystems
-│   └── CODEOWNERS                        Required for code-owner review
-├── lib/
-│   ├── manifest.sh                       deps.conf parser
-│   ├── providers.sh                      provider dispatch + || chains
-│   ├── pkg.sh                            the installers
-│   ├── run.sh                            section runner
-│   └── status.sh                         declared-vs-actual drift detection
-├── tools/
-│   └── adopt.sh                          Generates a deps.conf line for a command
-├── nvim/                                 Neovim config (own Makefile + README)
-│   └── lsp-servers/                      JS language servers + prettier, run by bun
-├── wezterm/
-│   ├── wezterm.lua                     → ~/.config/wezterm/wezterm.lua
-│   └── shared.lua                      → ~/.config/wezterm/shared.lua
-├── bash/
-│   ├── bashrc                          → ~/.bashrc
-│   ├── bash_theme                → ~/.bash_theme
-├── ps1/                                  submodule: roest1/PS1
-│   └── ps1.bash                        → ~/.bash_prompt
-│   ├── bash_productivity         → ~/.bash_productivity
-│   ├── bash_git                  → ~/.bash_git
-│   ├── bash_github               → ~/.bash_github
-│   ├── bash_local                → ~/.bash_local               (untracked)
-│   └── bash_password_commands    → ~/.bash_password_commands   (untracked)
-├── uv/
-│   ├── uv.toml                         → ~/.config/uv/uv.toml
-│   └── deps.sh                           Astral's installer; flags a distro uv
-├── git/
-│   ├── gitconfig                       → ~/.gitconfig
-│   ├── README.md                         GitHub tips and tricks
-│   ├── GITHUB_TOOLS.md                   The fzf github, as a record
-│   └── GITHUB_SETUP.md                   New-repo settings + ruleset reference
-└── docs/
-    ├── decisions/                        Why things are the way they are
-    └── ops-notes.md                      podman / systemd cheat sheets, parked (TODO: move out)
-```
-</details>
-
-Neovim config lives in `nvim/` — merged in from the former `roest1/nvim` repo with
-its full history. It keeps its own `Makefile` and `README.md` so the directory
-still stands alone.
-
-## What goes where
-
-| File                                | Controls                                                             |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| `bash/bashrc`                 | Shell options, PATH, package managers, sources theme + productivity   |
-| `bash/bash_theme`             | Colors: LS_COLORS, eza, grep, man pages, git pager, gcc              |
-| `ps1/ps1.bash`                | The prompt (submodule, roest1/PS1)                                    |
-| `bash/bash_productivity`      | Custom commands, aliases, `h` help system                             |
-| `bash/bash_git`               | Git aliases and `gprune`                                             |
-| `bash/bash_github`            | Plain `gh` (`gha`, `stars`) + the helpers shared with the TUI         |
-| `bash/bash_local`             | Machine-specific config — CUDA, nvim path, etc. (untracked)           |
-| `bash/bash_password_commands` | Sensitive commands (untracked)                                        |
-| `wezterm/wezterm.lua`         | Terminal — declares the `mux` domain                                  |
-
-## Machine-local config
-
-Two files hold host-specific setup, sourced by `bashrc` when they exist:
-
-```sh
-touch ~/.bash_local && chmod 600 ~/.bash_local
-touch ~/.bash_password_commands && chmod 600 ~/.bash_password_commands
-```
-
-`~/.bash_local` is for per-machine paths and exports — CUDA, a distro-specific
-nvim location. It's sourced immediately after `EDITOR` is set unconditionally,
-which makes it the right place for a per-machine `EDITOR` override.
-`~/.bash_password_commands` is for anything sensitive.
-
-**They live in `$HOME`, not in this repo, and that is the entire security
-design.** Git cannot commit a file outside its work tree — it can't see one. No
-`.gitignore` entry to maintain, no rule to remember, nothing to review when
-someone edits a config.
-
-This is worth being deliberate about, because the obvious alternative is worse.
-Keeping them in `bash/` and gitignoring them makes protection a *rule* rather
-than a *property*: `git add -f` overrides it, rewriting `.gitignore` silently
-removes it, and you're left auditing a file forever to be sure your passwords
-aren't one careless commit from being public.
-
-Two more layers sit behind that, for the secret file someone creates *inside*
-the repo later:
-
-| Layer | Catches |
-| ----- | ------- |
-| `$HOME`, outside the work tree | everything — git cannot see the file |
-| `.githooks/pre-commit` | a staged secret, before the commit exists |
-| CI: *No secret or machine-local files are tracked* | anything that got past the hook, before it reaches `main` |
-
-The hook and the CI step read the same list, [`.githooks/secret-patterns`](.githooks/secret-patterns),
-so they can't drift apart — add a pattern once and both are armed. `install.sh`
-points git at the hooks with `core.hooksPath`, so they arrive with a clone
-instead of being per-machine setup you have to remember.
-
-Order matters here: the hook is bypassable with `--no-verify` and doesn't exist
-until `install.sh` has run once, and CI can only tell you a secret **has already
-been pushed**. Neither is a substitute for the file simply not being there.
-
-If you want defence in depth beyond the repo, turn on GitHub's
-[push protection](https://docs.github.com/code-security/secret-scanning/push-protection-for-repositories-and-organizations)
-— free on public repos. It blocks pushes containing recognised credential
-formats, though not arbitrary passwords in a shell script.
-
 ## License
 
-MIT
+MIT, except the fonts in `wezterm/fonts/`, which are OFL ([LICENSE](LICENSE)).

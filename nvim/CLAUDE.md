@@ -12,6 +12,16 @@ The editor toolchain is declared in the parent repo's `../deps.conf` under `[nvi
 
 Run `:checkhealth external` to verify tool availability — logic in `lua/external/health.lua`.
 
+**JavaScript tools run under bun, with no node.** The six JS language servers and `prettier`
+live in `lsp-servers/package.json`, installed by `bun` and run as `bun <path>`: servers via
+explicit `cmd` overrides in `lua/external/lsp_servers.lua`, prettier via the `formatters`
+block in `plugins/formatter.lua`. Mason was removed because it installs npm packages by
+shelling out to `npm`, which only exists if node does. Prettier's `--stdin-filepath` exits
+0 and writes *nothing* under bun while working under node, which is why `formatter.lua` uses
+`--write` on a temp file. Don't "tidy" it back to stdin. The server args are not uniform
+(`bash-language-server` wants `start`, not `--stdio`); `lsp-servers/verify.ts` proves each
+with a real LSP handshake.
+
 ## Architecture
 
 **Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `reset`, `altfont`, `usage`). `oilgit` is the exception: oil's own `config` loads it, because it has nothing to do until oil does.
