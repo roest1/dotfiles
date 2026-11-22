@@ -1050,7 +1050,9 @@ jobs:
       # model and effortLevel, while /effort writes modelSettings — which went
       # straight through, and two machines committed conflicting tables. So:
       # whatever a machine set, git sees the defaults; the legacy top-level
-      # effortLevel is gone; every other key survives untouched.
+      # effortLevel is gone; personal keys (auto mode, the skip* prompt
+      # records, theme) never reach this public repo; every other key
+      # survives untouched.
       #
       # And the committed settings.json must already BE that output, or the
       # defaults file and the file it describes have drifted apart — which is
@@ -1059,14 +1061,16 @@ jobs:
         run: |
           set -euo pipefail
           want=$(jq -S '{model, modelSettings}' claude/model-defaults.json)
-          out=$(printf '%s' '{"model":"sonnet","effortLevel":"low","modelSettings":{"claude-opus-5-5":{"effortLevel":"low"},"x":{}},"theme":"dark","permissions":{"deny":["Read(~/.ssh/**)"]}}' \
+          out=$(printf '%s' '{"model":"sonnet","effortLevel":"low","modelSettings":{"claude-opus-5-5":{"effortLevel":"low"},"x":{}},"theme":"dark","skipAutoPermissionPrompt":true,"attribution":{"commit":""},"permissions":{"defaultMode":"auto","deny":["Read(~/.ssh/**)"]}}' \
                 | tools/clean-claude-settings.sh)
           echo "$out"
           [ "$(jq -S '{model, modelSettings}' <<<"$out")" = "$want" ] \
             || { echo "filter let this machine's model/effort through"; exit 1; }
           jq -e 'has("effortLevel") | not' <<<"$out" >/dev/null \
             || { echo "filter kept the legacy top-level effortLevel"; exit 1; }
-          jq -e '.theme == "dark" and .permissions.deny == ["Read(~/.ssh/**)"]' <<<"$out" >/dev/null \
+          jq -e '(has("theme") or has("skipAutoPermissionPrompt") or (.permissions | has("defaultMode"))) | not' <<<"$out" >/dev/null \
+            || { echo "filter let a personal key into the public repo"; exit 1; }
+          jq -e '.attribution == {"commit":""} and .permissions == {"deny":["Read(~/.ssh/**)"]}' <<<"$out" >/dev/null \
             || { echo "filter changed configuration it should keep"; exit 1; }
 
           committed=$(git show HEAD:claude/settings.json)
@@ -1122,8 +1126,9 @@ jobs:
           [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
             || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
 
-          # 2. A theme change is real. It must survive.
-          jq '.theme = "light"' claude/settings.json > t && mv t claude/settings.json
+          # 2. A deny-rule change is real (theme is not: it is a personal key
+          #    the filter deletes). It must survive.
+          jq '.permissions.deny += ["Read(~/x)"]' claude/settings.json > t && mv t claude/settings.json
           tools/refresh-claude-settings.sh
           [ -n "$(git status --porcelain claude/settings.json)" ] \
             || { echo "FAIL: refresh hid a real settings change"; exit 1; }

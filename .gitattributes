@@ -19,7 +19,9 @@
 # declared in deps.conf's [claude] section. model and modelSettings (/model and
 # /effort) are per-machine and per-conversation preferences, so the clean filter
 # in tools/clean-claude-settings.sh swaps them for claude/model-defaults.json on
-# the way into git. Edit that file to change the committed defaults.
+# the way into git. Edit that file to change the committed defaults. Personal
+# keys Claude Code writes back (auto mode, the skip* prompt records, theme) are
+# deleted on the way in; the list is in the filter.
 #
 # The filter itself is registered by claude/deps.sh: filter.* config lives in
 # .git/config and cannot be committed, so this line alone does nothing until
