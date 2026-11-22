@@ -19,7 +19,9 @@ Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
 The bash prompt is its own repo, [roest1/PS1](https://github.com/roest1/PS1): one file,
 with before and after pictures and a two-line install. Here it is a git submodule at
 `ps1/`, pinned to a commit and bumped by Dependabot, so a change there reaches your
-machines only through a PR in this repo.
+machines only through a PR in this repo. Its colors and icons are `PS1_COLOR_*` and
+`PS1_ICON_*` variables ([list](https://github.com/roest1/PS1#colors-and-icons)); here they
+go in `~/.bash_local`, which bashrc loads before the prompt.
 
 ## Plugins
 
