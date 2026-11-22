@@ -1126,8 +1126,9 @@ jobs:
           [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
             || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
 
-          # 2. A theme change is real. It must survive.
-          jq '.theme = "light"' claude/settings.json > t && mv t claude/settings.json
+          # 2. A deny-rule change is real (theme is not: it is a personal key
+          #    the filter deletes). It must survive.
+          jq '.permissions.deny += ["Read(~/x)"]' claude/settings.json > t && mv t claude/settings.json
           tools/refresh-claude-settings.sh
           [ -n "$(git status --porcelain claude/settings.json)" ] \
             || { echo "FAIL: refresh hid a real settings change"; exit 1; }
