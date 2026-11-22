@@ -1,12 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "agentPushNotifEnabled": true,
   "attribution": {
     "commit": ""
-  },
-  "enabledPlugins": {
-    "clangd-lsp@claude-plugins-official": true,
-    "lua-lsp@claude-plugins-official": true
   },
   "hooks": {
     "Notification": [
@@ -73,7 +68,6 @@
     }
   },
   "permissions": {
-    "defaultMode": "auto",
     "deny": [
       "Read(~/.bash_local)",
       "Read(~/.bash_password_commands)",
@@ -82,10 +76,5 @@
       "Read(**/.env*)",
       "Read(**/*password*)"
     ]
-  },
-  "skipAutoPermissionPrompt": true,
-  "skipDangerousModePermissionPrompt": true,
-  "skipWorkflowUsageWarning": true,
-  "theme": "dark",
-  "tui": "fullscreen"
+  }
 }

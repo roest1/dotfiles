@@ -51,6 +51,24 @@
 # and cannot be committed, which is why it is part of the install rather than
 # something .gitattributes can do alone.
 
+# ── personal keys: never committed ──────────────────────────────────────────
+#
+# Beyond model and effort, these are one person's choices, and Claude Code
+# writes most of them back into this file itself: accepting the auto-mode or
+# bypass-mode prompt records a skip*, /theme and /config record taste. This
+# repo is public and installable by someone else, so none of them may ship as
+# a default -- a friend must not inherit auto mode with its prompts skipped.
+# They are deleted on the way into git and stay on disk, per machine.
+#
+# Your own values go in a private plugin's --settings file (roest1/roest:
+# agents/settings.json), which outranks this file -- except the skip* keys,
+# which Claude Code reads only from user or managed settings: accept the
+# prompt once per machine and the answer is kept here, invisible to git.
+LOCAL='[["permissions","defaultMode"],["theme"],["tui"],["enabledPlugins"],
+        ["agentPushNotifEnabled"],["skipAutoPermissionPrompt"],
+        ["skipDangerousModePermissionPrompt"],["skipWorkflowUsageWarning"],
+        ["voice"],["voiceEnabled"]]'
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULTS="$HERE/../claude/model-defaults.json"
 
@@ -60,8 +78,8 @@ input="$(cat)"
 # pass-through below, the same as a missing jq.
 if command -v jq >/dev/null 2>&1 && [ -r "$DEFAULTS" ]; then
   if out="$(printf '%s' "$input" \
-              | jq -S --slurpfile d "$DEFAULTS" \
-                  'del(.model, .effortLevel, .modelSettings)
+              | jq -S --slurpfile d "$DEFAULTS" --argjson local "$LOCAL" \
+                  'del(.model, .effortLevel, .modelSettings) | delpaths($local)
                    + ($d[0] | with_entries(select(.key == "model" or .key == "modelSettings")))' \
               2>/dev/null)"; then
     printf '%s\n' "$out"
