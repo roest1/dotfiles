@@ -1,55 +1,26 @@
 name: portability
 
-# The point of this workflow is to make "clone and get running" provable rather
-# than claimed. A support claim nothing runs is not a support claim: an earlier
-# README promised WSL support while `make deps` hard-exited on apt, and nothing
-# ran it.
-#
-# The targets are Fedora and RHEL, so every job that makes a PLATFORM claim
-# (link-only, install, nvim-floor) runs in a fedora:45 or almalinux:9
-# container. The rest -- lint, manifest unit checks, the Rust build, audits --
-# test repo logic, not a distro, and use GitHub's default runner as a neutral
-# host. Every job is a fresh machine, which is the only honest test of a
-# bootstrap.
+# Proves "clone and get running" on fresh machines. Jobs that make a platform
+# claim run in fedora/almalinux containers; the rest test repo logic.
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
-  # For the `audit` job below: an advisory published on a Tuesday is not
-  # discovered by a workflow that only runs when someone pushes. A dotfiles repo
-  # can sit untouched for a month, which is exactly how long the gap would be.
-  # GitHub only runs schedules on the default branch, so this starts working
-  # once this lands on main.
+  # So the audit job sees advisories published while nobody pushes.
   schedule:
     - cron: '0 6 * * 1'
 
-# mise resolves releases through the GitHub API, and an unauthenticated runner
-# shares 60 requests an hour with every other job on its IP. The neovim floor
-# job is a REQUIRED check that installs neovim exactly that way, so a busy
-# runner IP failed it with a 429 that lib/pkg.sh then hid (issue #12). The
-# workflow's own token is good for 1000 an hour, scoped to this repo, and
-# costs nothing to hand over; workflow-level so the install matrix, which also
-# reaches mise for whatever dnf cannot provide, gets the same limit.
+# mise resolves releases through the GitHub API; the token lifts the shared
+# 60/hour anonymous limit that once failed the nvim floor job (issue #12).
 env:
   MISE_GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   # ── Docs-only PRs skip the heavy jobs ──────────────────────────────────────
-  # A PR that touches only Markdown runs this job, shellcheck and ci ok, and
-  # skips the rest. The skip is decided HERE, not with `paths-ignore` on the
-  # trigger: a workflow that never starts never reports `ci ok`, and the
-  # main-ci ruleset would leave a docs-only PR waiting on it forever.
-  #
-  # shellcheck always runs because it holds tools/check-content.sh, the
-  # credential and home-path scan, and Markdown is where that scan matters
-  # most: a Markdown file is where a pasted secret is most likely to land. Two
-  # Markdown paths still count as code, because a heavy job reads them:
-  #   claude/*        linked into ~/.claude; link-only checks name and content
-  #   nvim/README.md  manifest checks its <leader> keys against nvim/lua
-  # Pushes to main, schedules and manual runs always run everything, so main
-  # itself is fully tested after every merge, docs-only or not.
+  # Decided here, not by paths-ignore: a workflow that never starts never
+  # reports `ci ok`. claude/* and nvim/README.md count as code: heavy jobs read them.
   changes:
     name: changes
     runs-on: ubuntu-latest
@@ -69,8 +40,7 @@ jobs:
             echo "$EVENT: full run"
             exit 0
           fi
-          # previous_filename too: renaming foo.sh to foo.md deletes a script,
-          # and the new name alone would call that a docs change.
+          # previous_filename too: renaming foo.sh to foo.md deletes a script.
           files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate \
                     --jq '.[] | .filename, (.previous_filename // empty)')
           full=false
@@ -94,50 +64,27 @@ jobs:
         with:
           submodules: true
 
-      # A Makefile target that shares a name with a real path is not an error --
-      # make decides the target is already up to date and runs NOTHING. `make
-      # windows` once did exactly that against a windows/ directory: no output, no
-      # failure, no install. .PHONY is the fix, and the reason this is a CI
-      # check rather than a code review note is that the bug is invisible until
-      # a path happens to collide, which can be years later and in a commit that
-      # touched neither the target nor the Makefile.
-      # The version floor is RETIRED, and this is what keeps it retired.
-      #
-      # wezterm/MIN_VERSION inferred whether a binary applies font_rules on the
-      # blink attribute from its build stamp. That is not inferable, and the
-      # check could not fail safe: every build at or above the floor passed
-      # untested, so the silent failure it existed to catch survived inside its
-      # own green tick. It is easy to miss that and "restore" it.
-      #
-      # What replaced it splits the question at the line of what is provable:
-      # status_fonts answers files/link/ls-fonts resolution, and `font` shows a
-      # carrier line for the half only an eye can read.
+      # wezterm/MIN_VERSION stays retired: a version floor cannot fail safe.
       - name: The font lane check asks what it can prove
         run: |
           set -uo pipefail
           bad=0
           [ -e wezterm/MIN_VERSION ] \
             && { echo "wezterm/MIN_VERSION is back -- a build stamp cannot answer this; see status_fonts"; bad=1; }
-          # Comment lines are stripped first, deliberately: the file EXPLAINS
-          # at length why the floor is gone, and naming the thing you removed is
-          # how the next person finds out not to re-add it. Only a real read of
-          # it is the regression.
+          # Comments stripped first: the file explains why the floor is gone.
           grep -v '^[[:space:]]*#' wezterm/deps.sh | grep -q 'MIN_VERSION' \
             && { echo "wezterm/deps.sh reads MIN_VERSION again"; bad=1; }
           grep -q '^status_fonts()' lib/status.sh \
             || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
-          # The scope is the sections-file-narrowed list since status honors
-          # ~/.config/dotfiles/sections, not the raw arguments.
           grep -q 'status_fonts "\${scope\[@\]}"' lib/status.sh \
             || { echo "status_all no longer calls status_fonts with its scope"; bad=1; }
-          # The carrier is informational: it is unreadable over ssh, in a pipe,
-          # and on any non-wezterm terminal, so counting it would report drift
-          # on machines that are fine. Only the provable half may call _drift_.
+          # Only the provable half may count as drift; the carrier is unreadable off a wezterm tty.
           grep -q '_drift_font' lib/status.sh \
             || { echo "status_fonts records no drift at all -- the provable half should"; bad=1; }
           [ $bad -eq 0 ] && echo "ok: no floor, and status_fonts asks only answerable questions"
           exit $bad
 
+      # A target that shares a name with a path silently runs nothing.
       - name: Every Makefile target is .PHONY
         run: |
           set -uo pipefail
@@ -158,28 +105,12 @@ jobs:
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-      # No file list here. tools/lint.sh holds the one definition of what this
-      # repo lints and how strictly, and .githooks/pre-commit calls that same
-      # script with the staged files. A list in both places is a list that
-      # drifts — the same reason .githooks/secret-patterns is a shared file
-      # rather than a pattern copied into the step below.
-      #
-      # With no arguments it sweeps the whole tree, which is the half a hook
-      # cannot do: hooks are skippable with --no-verify, absent until
-      # install.sh has run once, and never run for a commit made through the
-      # web UI. A whole-tree sweep also catches a file nobody touched failing
-      # because shellcheck itself gained a rule.
+      # tools/lint.sh is the one definition of what is linted. The pre-commit hook
+      # runs it on staged files; this sweeps the tree, which a hook cannot.
       - name: Lint shell sources
         run: ./tools/lint.sh
 
-      # The remote half of the secret guard. .githooks/pre-commit is the local
-      # half and shares this pattern file, but a hook is bypassable with
-      # --no-verify and absent entirely until install.sh has run once. This
-      # catches what got through, before it reaches main.
-      #
-      # It cannot un-publish a secret that is already pushed — that is why the
-      # real defence is keeping those files outside the work tree, where git
-      # cannot see them at all.
+      # The remote half of .githooks/pre-commit, which --no-verify skips.
       - name: No secret or machine-local files are tracked
         run: |
           patterns=$(grep -vE '^\s*(#|$)' .githooks/secret-patterns | paste -sd '|' -)
@@ -192,26 +123,12 @@ jobs:
           fi
           echo "ok: nothing matching is tracked"
 
-      # The content half of the guard above. That one asks whether a FILE
-      # should be here; this asks whether a LINE should be, which became a
-      # separate question when a file Claude Code writes unprompted was tracked
-      # here (the global CLAUDE.md, now in a private plugin; claude/settings.json
-      # still is one), and this repo is public.
-      #
-      # Sweeps every tracked file rather than only the diff: a credential
-      # introduced on a branch that CI never ran is still published the moment
-      # it lands on main. The same script backs .githooks/pre-commit, which
-      # feeds it just the staged paths.
+      # Whether a LINE may be here (credentials, home paths), across every tracked file.
       - name: No credential-shaped content, no home paths in linked files
         run: tools/check-content.sh
 
-      # ~/.gitconfig is a symlink to git/gitconfig, so `gh auth setup-git`
-      # (the "Authenticate Git?" prompt in `gh auth login` / `refresh`) and any
-      # `git config --global` write land in the repo. `helper = store` sat
-      # here until 2026-11-10 and left a plaintext token on every machine that
-      # linked it. A bare https://github.com/ insteadOf is the other half: it
-      # sends every public clone (lazy.nvim's plugins) over SSH, which fails on
-      # a machine with no key.
+      # ~/.gitconfig links here, so `gh auth setup-git` would write a credential
+      # into the repo, and a bare github.com insteadOf breaks clones on keyless machines.
       - name: gitconfig stores no credentials and rewrites only owned repos
         run: |
           git config -f git/gitconfig --get-regexp '^credential' && {
@@ -226,29 +143,22 @@ jobs:
           echo "ok: no credential helper, insteadOf scoped to owners"
 
   # ── Manifest sanity ────────────────────────────────────────────────────────
-  # Cheap guard against a typo in deps.conf taking down every other job.
   manifest:
     name: manifest parses
     needs: changes
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
-      # Full history: the alias-to-function check below compares against the
-      # merge base, which a shallow clone doesn't have.
+      # Full history: the alias check compares against the merge base.
       - uses: actions/checkout@v7
         with:
           submodules: true
           fetch-depth: 0
-      # Regression guard: ARGS was once a blocklist, so any goal not in it got a
-      # stub rule that silently overrode the real target — `make help` printed
-      # "overriding recipe for target 'help'" and ran the wrong recipe.
+      # ARGS was once a blocklist whose stub rules silently overrode real targets.
       - name: No target overrides its own recipe
         run: |
           fail=0
-          # A throwaway HOME because the list includes `link`, and this step is
-          # only reading make's warnings — it has no business installing
-          # symlinks into the runner's home where a later step can trip on
-          # them. Which is exactly what it used to do.
+          # Throwaway HOME: the target list includes `link`.
           tmphome=$(mktemp -d); export HOME="$tmphome"
           for t in help sections status check test sync link lint; do
             if make $t 2>&1 | grep -qE "warning: (overriding|ignoring old) recipe"; then
@@ -261,14 +171,8 @@ jobs:
           fi
           exit $fail
 
-      # lib/sgr.sh emits SGR 6 to move `make` output into Science Gothic Mono.
-      # On any terminal without wezterm's font_rules, SGR 6 means what it
-      # actually says: RAPID BLINK. In a pipe it is plain corruption, and CI
-      # itself does `make check bash | tee /tmp/check.txt` and greps it.
-      #
-      # Every direction is asserted because a regression in any of them is
-      # invisible to the author, who is always in wezterm, always on a tty and
-      # always linked.
+      # lib/sgr.sh's carriers (SGR 6, SGR 5) blink anywhere but a linked wezterm,
+      # and are garbage in a pipe. Every direction, since the author never sees one.
       - name: make output carries escapes only on a wezterm tty
         run: |
           fail=0
@@ -283,49 +187,22 @@ jobs:
             echo "no script(1) here; the tty cases below were skipped"; exit $fail
           fi
 
-          # What follows is a truth table over the guard's three inputs, so
-          # every row states its own preconditions in its own fixture home.
-          # Reading $HOME would make the answer depend on whether some earlier
-          # step in this job had run `make link` — and the result would be a
-          # test that passes or fails on step ORDER, which is not a property
-          # anyone editing lib/sgr.sh is thinking about.
-          #
-          # The linked home is built by the real installer rather than a
-          # hand-written `ln -s`, so changing deps.conf's destination cannot
-          # leave this asserting against a path nothing installs any more.
+          # Each row gets its own fixture home, built by the real installer, so no
+          # row depends on step order or on a hand-written link path.
           unlinked=$(mktemp -d)
           linked=$(mktemp -d)
           HOME="$linked" make link wezterm >/dev/null
 
-          # $1 home, $2 TERM_PROGRAM, $3 pattern — true when $3 reaches the tty
-          #
-          # The pty is sized explicitly. tty_banner prints the whole menu and
-          # then walks the cursor back UP to the banner, which it will only do
-          # when the output fits the screen and no line wraps -- and a runner's
-          # default pty is 80x24, one row short of this menu. Without the stty
-          # the animation would correctly decline, and the row below asserting
-          # it happens would fail for a reason that has nothing to do with the
-          # guard it is testing.
-          #
-          # TERM is set for the same reason, and it is not optional: script(1)
-          # sets TERM=dumb ITSELF when its parent has none, which a runner never
-          # does. lib/tty.sh refuses to animate a dumb terminal -- correctly,
-          # since CSI lands there as literal text -- so without this every row
-          # below would be testing a terminal that has declared it cannot draw.
+          # $1 home, $2 TERM_PROGRAM, $3 pattern: true when $3 reaches the tty.
+          # Sized pty and a real TERM: script(1) defaults to 80x24 and TERM=dumb,
+          # and either one makes the banner decline for an unrelated reason.
           TERMED=TERM=xterm-256color
           on_tty() {
             env $TERMED HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
               script -qec "stty rows 50 cols 200; make help" /dev/null | grep -qF "$3"
           }
 
-          # These two rows used to assert NO ESCAPE AT ALL, which was stronger and
-          # is no longer true: lib/tty.sh emits color and a carriage return for
-          # the decrypt banner and the status marks, guarded on `-t 1` alone.
-          # That guard is weaker ON PURPOSE -- green means green and \r means \r
-          # on every terminal, where SGR 6 means RAPID BLINK off this setup. So
-          # what these rows protect is the carrier specifically, not the escape
-          # byte. Both carriers: SGR 5 is the nvim editor lane and would strobe
-          # just as badly.
+          # Off wezterm neither carrier may appear; lib/tty.sh's color is fine.
           slow=$'\033[5m'
           no_carrier() {   # $1 home, $2 TERM_PROGRAM, $3 what to say if it leaks
             if on_tty "$1" "$2" "$carrier"; then echo "SGR 6 $3"; fail=1; fi
@@ -334,15 +211,8 @@ jobs:
           no_carrier "$unlinked" WezTerm "on a wezterm tty before the config was linked"
           no_carrier "$linked"   xterm   "on a non-wezterm tty"
 
-          # ...and the other direction, or the weaker guard could quietly acquire
-          # the stronger one and nothing would notice. A non-wezterm tty must
-          # STILL get the banner animation, because a carriage return means the
-          # same thing on every terminal.
-          #
-          # Probed by the cursor-hide escape rather than by \r, which would have
-          # passed vacuously: script(1) writes CRLF line endings, so a carriage
-          # return is in this output whether anything animated or not. \033[?25l
-          # is emitted by tty_banner and by nothing else here.
+          # ...but the banner must still animate there. Probed by cursor-hide,
+          # because script(1) writes CRLF and \r would pass vacuously.
           hide=$'\033[?25l'
           if ! on_tty "$linked" xterm "$hide"; then
             echo "the banner stopped animating on a non-wezterm tty -- lib/tty.sh"
@@ -350,17 +220,8 @@ jobs:
             fail=1
           fi
 
-          # THE ANIMATION MAY HIDE CHARACTERS THAT ARE ABOUT TO ARRIVE. It may
-          # never drop one.
-          #
-          # This replaced a byte-order row asserting the menu was printed before
-          # the cursor moved, which was the right check for the previous shape
-          # (banner-only, menu instant) and is meaningless now that the rows type
-          # in too. What matters instead is that the animation is a pure
-          # presentation of the same text: a bug in the escape-aware prefix walk
-          # would silently truncate a row, and the FINAL frame would still look
-          # entirely plausible. Only comparing it against the plain render
-          # catches that.
+          # The animation may hide characters but never drop one: its final
+          # frame must equal the plain render.
           render=$(env $TERMED HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
                      script -qec "stty rows 50 cols 200; make help" /dev/null | tr -d '\r')
           upline=$(printf '%s\n' "$render" | grep -n $'^\033\[[0-9]*A' | tail -1 | cut -d: -f1)
@@ -378,22 +239,9 @@ jobs:
             fi
           fi
 
-          # NO_COLOR and TERM=dumb, both directions.
-          #
-          # https://no-color.org — set to ANYTHING, including EMPTY, means do
-          # not add color. The empty case is the one implementations get wrong,
-          # because the obvious `[ -n "$NO_COLOR" ]` passes it straight through,
-          # so it is asserted explicitly rather than assumed from the set case.
-          #
-          # TERM=dumb is the value defined as having no capabilities: CSI lands
-          # in it as literal text, so an animation there is not a degraded
-          # effect, it is garbage in the output.
-          #
-          # $TERMED FIRST, then the case under test -- env takes the last
-          # assignment, so the TERM=dumb row overrides it and the NO_COLOR rows
-          # keep a real terminal. Without that the NO_COLOR rows pass VACUOUSLY:
-          # script's TERM=dumb would have disabled the escapes on its own and
-          # the assertion would hold whether NO_COLOR were honored or not.
+          # NO_COLOR (set, even empty) and TERM=dumb both mean plain. $TERMED goes
+          # first so env's last assignment wins and the NO_COLOR rows keep a real
+          # terminal; otherwise they pass vacuously.
           quiet() {   # $1 env assignment, $2 what to say if escapes survive
             if env $TERMED "$1" TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
                  script -qec "stty rows 50 cols 200; make help" /dev/null \
@@ -401,8 +249,7 @@ jobs:
               echo "escapes survived $2"; fail=1
             fi
           }
-          # ...and the positive control, so the three rows below cannot all be
-          # passing because nothing ever emits escapes in this fixture.
+          # ...and a positive control, so the rows below cannot pass because nothing emits.
           if ! env $TERMED TERM_PROGRAM=xterm HOME="$linked" XDG_CONFIG_HOME= \
                  script -qec "stty rows 50 cols 200; make help" /dev/null \
                | grep -qF "$esc"; then
@@ -422,24 +269,19 @@ jobs:
             [ "$got" = "$want" ] || { echo "$e changed the OUTPUT, not just the styling"; fail=1; }
           done
 
-          # All three hold, so the carrier itself must appear — grepping for
-          # any escape would keep passing if SGR 6 were swapped for something
-          # else, such as the italic that rose-pine already spends on nvim's
-          # comments.
+          # All three hold: the carrier itself must appear, not just any escape.
           if ! on_tty "$linked" WezTerm "$carrier"; then
             echo "carrier missing on a linked wezterm tty"; fail=1
           fi
-          # The rows above go through the $HOME/.config fallback; this one
-          # proves the XDG_CONFIG_HOME half of the guard is live too.
+          # This row covers the XDG_CONFIG_HOME half of the guard.
           if ! env $TERMED HOME="$unlinked" XDG_CONFIG_HOME="$linked/.config" TERM_PROGRAM=WezTerm \
                script -qec "make help" /dev/null | grep -qF "$carrier"; then
             echo "carrier missing when XDG_CONFIG_HOME names the config"; fail=1
           fi
           exit $fail
 
-      # The .ttf files are generated by wezterm/mkmono.py and committed, so the
-      # thing that breaks is them going missing while the config still names
-      # them — which degrades silently to 0xProto rather than erroring.
+      # The committed .ttf files must exist while the config names them; a
+      # missing one silently falls back to another font.
       - name: Science Gothic Mono ships with the config that names it
         run: |
           fail=0
@@ -447,16 +289,10 @@ jobs:
             [ -s "$f" ] || { echo "missing or empty: $f"; fail=1; }
           done
           grep -q 'wezterm/fonts' deps.conf || { echo "deps.conf does not link wezterm/fonts"; fail=1; }
-          # OFL 1.1 section 2 requires the notice and licence to travel with the
-          # font, and section 5 forbids relicensing it -- so the standalone copy
-          # and the carve-out in LICENSE are both compliance, not tidiness.
+          # OFL 1.1 sections 2 and 5: the licence travels with the font, unrelicensed.
           [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
           grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
-          # Both carriers live in wezterm/shared.lua, which wezterm.lua
-          # dofile()s. An entry point that stopped loading it would have no
-          # carrier and no font rules at all; a missing rate would let it
-          # flash, because wezterm only skips the blink animation when the rate
-          # is exactly 0 (screen_line.rs: `if blink_rate != 0`).
+          # Both carriers live in shared.lua; any blink rate but exactly 0 animates.
           grep -q 'shared.lua' wezterm/wezterm.lua \
             || { echo "wezterm.lua does not load shared.lua, so it has no lanes at all"; fail=1; }
           grep -q 'text_blink_rate_rapid = 0' wezterm/shared.lua \
@@ -466,27 +302,14 @@ jobs:
           grep -q 'Science Gothic Mono' wezterm/shared.lua \
             || { echo "shared.lua: no font_rule for the SGR 6 carrier"; fail=1; }
 
-          # Four, not "at least one": a font_rule REPLACES the face for a
-          # matching cell, so the lane needs {bold, regular} x {italic, upright}
-          # or the missing combination is silently flattened. The one that bites
-          # is italic -- rose-pine italicizes comments, so dropping it takes the
-          # slant off every comment in every file, which is exactly the kind of
-          # thing nobody notices for a month.
-          #
-          # Comment lines stripped first: shared.lua quotes `{ blink = "Slow" }`
-          # while explaining why the four exist, and counting that would make
-          # the check pass with one rule missing.
+          # Four rules, {bold, regular} x {italic, upright}: a missing one flattens
+          # that style. Comments stripped first, since shared.lua quotes the pattern.
           n=$(grep -vE '^[[:space:]]*--' wezterm/shared.lua | grep -cE "blink = ['\"]Slow['\"]")
           [ "$n" -eq 4 ] \
             || { echo "shared.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
 
-          # Every font family shared.lua NAMES has to be installed by
-          # wezterm/deps.sh, and the failure is nearly silent: wezterm falls
-          # through the fallback chain to something plausible -- a fallback
-          # that RESOLVES is not an error, it is just wrong.
-          #
-          # Scans DEFAULT_FONTS *and* window_frame. Scanning only the first is
-          # exactly how the tab bar font was missed.
+          # Every family shared.lua names (DEFAULT_FONTS and window_frame) must be
+          # installed by deps.sh: a fallback that resolves is silent.
           {
             sed -n '/^local DEFAULT_FONTS = {/,/^}/p' wezterm/shared.lua
             sed -n '/config.window_frame = {/,/^\t}/p' wezterm/shared.lua
@@ -497,10 +320,7 @@ jobs:
                 'JetBrains Mono'|'Noto Color Emoji'|'Symbols Nerd Font Mono'|Roboto) continue ;;
                 # weight/style values caught by the same quote scrape.
                 Bold|Regular|Medium|Italic|Normal|Light|Thin) continue ;;
-                # Lane KEYS, not families: DEFAULT_FONTS spells the dotted ones
-                # as ["nvim.ui"], so they arrive quoted like a value would. No
-                # font family contains a period, which makes this exact rather
-                # than a list of lane names to keep updated.
+                # Lane keys like ["nvim.ui"], not families; no family has a period.
                 *.*) continue ;;
                 '') continue ;;
               esac
@@ -511,14 +331,12 @@ jobs:
               echo "  ok wezterm/deps.sh installs $fam"
             done || fail=1
 
-          # The writer half. Without this the lane is configured and nothing
-          # ever emits into it.
+          # The writer half: without it nothing emits into the lane.
           grep -q "require('external.altfont')" nvim/init.lua \
             || { echo "nvim/init.lua does not load external.altfont"; fail=1; }
           exit $fail
 
-      # ~/.config/dotfiles/sections narrows what a bare `make install` sweeps.
-      # Every row here is a way it could go wrong quietly rather than loudly.
+      # Each row is a way ~/.config/dotfiles/sections could go wrong quietly.
       - name: A machine's section file narrows, and never widens
         run: |
           source lib/manifest.sh
@@ -540,47 +358,33 @@ jobs:
 
           # A typo that installs nothing is the failure this file prevents.
           printf 'bash\nnvimm\n' > "$tmp/typo"
-          # Captured, not piped into `grep -q`. grep -q exits at first match and
-          # SIGPIPEs manifest_scope mid-write -- three "printf: write error:
-          # Broken pipe" lines in the log, and under pipefail it would be a
-          # false failure. Same trap manifest_has_section documents.
+          # Captured, not piped to grep -q, which SIGPIPEs the writer under pipefail.
           warn=$(DOTFILES_SECTIONS_FILE=$tmp/typo manifest_scope 2>&1 >/dev/null)
           case "$warn" in
             *nvimm*) ;;
             *) echo "a name that is not a section must warn, got: '$warn'"; fail=1 ;;
           esac
 
-          # THE trap: manifest_lines with no arguments means EVERY section, so a
-          # fully commented file must refuse rather than expand to nothing and
-          # sweep the lot.
+          # A fully commented file must refuse, not fall through to "every section".
           printf '# bash\n# nvim\n' > "$tmp/empty"
           if DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
                'source lib/manifest.sh; manifest_scope_into' 2>/dev/null; then
             echo "an all-commented file must refuse, not fall through to all"; fail=1
           fi
 
-          # ...and it must leave the scope EMPTY, not merely return non-zero.
-          # A caller that checked the array instead of the return would still be
-          # wrong, but this asserts the array agrees with the status.
+          # ...and leave the scope empty, not merely return non-zero.
           n=$(DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
                 'source lib/manifest.sh; manifest_scope_into >/dev/null 2>&1; echo ${#MANIFEST_SCOPE[@]}')
           [ "$n" = "0" ] || { echo "refused but left $n section(s) in MANIFEST_SCOPE"; fail=1; }
 
-          # The array takes a section name, NOT an array name. The nameref
-          # signature was retired for bash 3.2, and passing a variable name
-          # would now be read as a section -- silently non-empty, which is the
-          # exact failure this whole step exists to prevent.
+          # Takes a section name, not an array name; a variable name would read as a section.
           got=$(DOTFILES_SECTIONS_FILE=$tmp/empty bash -c \
                   'source lib/manifest.sh; manifest_scope_into bash >/dev/null 2>&1; echo "${MANIFEST_SCOPE[*]}"')
           [ "$got" = "bash" ] || { echo "expected scope 'bash', got '$got'"; fail=1; }
 
           exit $fail
 
-      # The file was wired into install and check but not status, so a headless
-      # box that opted out of [wezterm] reported it as drift indefinitely — the
-      # one command meant to answer "is this machine what it should be" said no
-      # to a machine that was exactly what it chose to be. Same four rows as
-      # above, asked of status: narrowed, named, explicit wins, absent is all.
+      # Opting out is not drift: status reads the sections file too.
       - name: make status leaves an opted-out section alone
         run: |
           set -euo pipefail
@@ -632,17 +436,8 @@ jobs:
           done < <(manifest_lines link)
           exit $bad
 
-      # The reverse of the check above, and the direction that breaks new
-      # machines rather than CI. "Every declared link exists" catches a deleted
-      # file; it cannot catch a file that exists, is sourced by bashrc, and was
-      # never declared — that install links bashrc, bashrc sources a path that
-      # was never created, and every interactive shell reports it.
-      #
-      # Only UNGUARDED sources are required to be declared. `~/.bash_local` and
-      # `~/.bash_password_commands` are deliberately absent from the manifest
-      # (they are machine-local and live outside the work tree), and they are
-      # sourced behind a `[[ -f ... ]]` guard, which is exactly what makes them
-      # distinguishable here.
+      # The reverse of the check above: a path bashrc sources unguarded must be
+      # declared, or every shell on a new machine errors. Guarded ones are machine-local.
       - name: Every unguarded source in bashrc is declared
         run: |
           source lib/manifest.sh
@@ -655,40 +450,20 @@ jobs:
           done < <(grep -oE '^source[[:space:]]+~/\.[A-Za-z0-9_.-]+' bash/bashrc | awk '{print $2}')
           exit $bad
 
-      # A stray line that lost its leading `#` parses fine and only shows up as
-      # noise at runtime — the since-deleted bash_github_tui once ran `-` and
-      # `q` as commands from inside a comment block, printing three "command not
-      # found" errors on every interactive shell. `bash -n` cannot see this;
-      # only running it can, which is why the check outlived the file.
+      # A line that lost its `#` parses fine and only shows up at runtime.
       - name: Bash configs source without emitting output
         run: |
           bad=0
           for f in bash/bash_theme ps1/ps1.bash bash/bash_productivity bash/bash_git \
                    bash/bash_github; do
-            # expand_aliases because that is how these files are really read.
-            # Without it bash skips alias expansion entirely, which is a
-            # different parser and hides a whole class of failure — see the
-            # alias-to-function check below.
+            # expand_aliases: that is how an interactive shell parses these files.
             out=$(bash -c "shopt -s expand_aliases; source $f" 2>&1)
             [ -z "$out" ] || { echo "$f is noisy when sourced:"; echo "$out"; bad=1; }
           done
           exit $bad
 
-      # `reload` re-sources these files into a LIVE shell, so a name that used
-      # to be an alias and is now a function breaks on upgrade: bash expands the
-      # stale alias while parsing and `f() {` becomes a syntax error, reported
-      # against a line with nothing wrong on it.
-      #
-      # This actually happened. `gb` was `alias gb='git branch --sort=...'`; it
-      # became a function, and the first `reload` after pulling failed with
-      # "syntax error near unexpected token `('" at `gb() {`. Nothing caught it:
-      # `bash -n` and a non-interactive `source` do not expand aliases, so the
-      # parse that fails is one CI never ran.
-      #
-      # The fix is an `unalias` before the definition — the same guard `bashrc`
-      # already uses for `alert`, where the stale alias comes from a distro's
-      # default bashrc instead of from our own history. This asserts the guard
-      # exists for every name that made that transition.
+      # `reload` re-sources into a live shell, where a stale alias turns `f() {`
+      # into a syntax error. An alias that became a function needs `unalias` first.
       - name: Aliases turned into functions are unaliased first
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null) || base=""
@@ -708,27 +483,7 @@ jobs:
           done
           exit $bad
 
-      # github is the single public entry to the interactive layer. The five
-      # screens behind it (gpr, gha-ui, ghsecrets, ghbranch, ghenv) used to sit
-      # next to it as top-level commands, which left six names competing for
-      # one job and meant the hub had to be discovered rather than being the
-      # obvious door.
-      # The [bash] file split was a rule, not a preference: bash_github held
-      # plain gh commands and shared helpers, bash_github_tui held everything
-      # interactive, and keeping fzf on one side of that line is what let the
-      # TUI be deleted as a unit. It has now been — `github` is tui/github —
-      # and this row is what made that a deletion rather than a rewrite, so it
-      # stays: bash_github is still the plain-gh file, and a screen growing
-      # back into it is the drift to catch.
-      #
-      # It holds trivially today, which is the point rather than a reason to
-      # drop it: there is no fzf in bash_github at all now that __gh_check is
-      # gone. The row costs nothing and catches the one way this file goes
-      # wrong.
-      #
-      # `command -v fzf` is a probe, not an invocation, so it does not count.
-      # Comment lines are skipped: this file's own header documents the rule and
-      # would otherwise match the pattern that enforces it.
+      # bash_github stays plain gh; an interactive screen belongs in tui/github.
       - name: bash_github invokes no fzf
         run: |
           awk '
@@ -740,31 +495,10 @@ jobs:
             exit 1
           }
 
-      # The `fzf menus go through __fzf_menu` row lived here. The contract it
-      # policed -- q and - go back, --disabled so plain keys are commands --
-      # was defined once in bash_productivity because it had been spelled out
-      # at 18 call sites as identical strings kept identical by hand.
-      #
-      # All 18 were in bash_github_tui, so when `github` became tui/github the
-      # wrapper lost every caller, and the row's last act was `grep -q
-      # '^__fzf_menu()'` -- which pinned dead code in place. Both are gone. If
-      # an fzf screen is wanted again, the argument for centralising the binds
-      # still holds and this row should come back WITH it, not before it.
 
-      # `h` is hand-maintained — the comment above it used to claim it read from
-      # the file's own comments and was "always in sync", which was never true.
-      # This is the check that makes the honest version safe: every public
-      # command must be named somewhere in h's body, and h must not name a
-      # command that no longer exists.
-      #
-      # Both directions had already failed in practice. h advertised `gh-tui`
-      # while the function was called `gh-ui`, so the documented command did not
-      # exist and the real one was undocumented; and h kept a full help page for
-      # `lines` after the function was deleted.
+      # `h` is hand-maintained: it names every public command and nothing that is gone.
       - name: Every command is documented in h, and h documents nothing missing
         run: |
-          # Each `run:` is a fresh shell, so the parser has to be sourced here
-          # even though earlier steps in this job already did it.
           source lib/manifest.sh
 
           defined=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
@@ -779,23 +513,9 @@ jobs:
             echo "$hbody" | grep -qw -- "$c" || { echo "undocumented in h: $c"; bad=1; }
           done
 
-          # ...and the reverse: h must not document something that no longer
-          # exists anywhere.
-          #
-          # This is a STATIC check against the sources, not a runtime one.
-          # Sourcing the configs and asking `type -t` looks more direct and is
-          # wrong: half these commands are defined behind `command -v` guards
-          # so the shell degrades gracefully on a machine without eza or bat,
-          # which means a runner with neither legitimately has no `lt` and no
-          # `catn`. Testing runtime presence would make this check assert that
-          # the runner has every optional tool installed — a different, false
-          # claim. What we actually want to know is whether the definition is
-          # still in the repo.
-          #
-          # A documented command is legitimate if the configs define it (as a
-          # function or an alias, at any indentation — the tool-dependent
-          # aliases are nested inside their guards) or if deps.conf declares it
-          # as a tool, which covers the external commands h explains, like fzf.
+          # ...and the reverse. Static against the sources: many commands sit behind
+          # `command -v` guards, so a runner may lack them. A command counts if the
+          # configs define it or deps.conf declares it.
           defines=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
                          bash/bash_productivity bash/bash_git bash/bash_github \
                          | tr -d '()'
@@ -805,11 +525,7 @@ jobs:
                        manifest_lines tool | cut -f3
                      } | sort -u )
 
-          # Scoped to the QUICK REFERENCE (the no-args heredoc), not the whole
-          # function: the detailed pages are prose, and an indented sentence
-          # starting with a lowercase word is indistinguishable from a command
-          # column entry. Two spaces after the name separates the command
-          # column from a sentence.
+          # Quick reference only (the no-args heredoc); two spaces end a command name.
           quickref=$(sed -n '/^h() {/,/^    return$/p' bash/bash_productivity)
           listed=$(echo "$quickref" | sed -n 's/^    \([a-z][a-z0-9-]*\)  \+.*/\1/p' | sort -u)
           for c in $listed; do
@@ -818,33 +534,18 @@ jobs:
           done
           exit $bad
 
-      # The editor's equivalent of the `h` check above, and it exists because
-      # the editor did not have one. Commit 37fa6ce (2026-06-17) deleted ~40
-      # nvim mappings; nvim/doc kept describing every one of them until
-      # 2026-10, with `<leader>e`, a Trouble family, a gitsigns family and a
-      # :Glow command that had no plugin file behind it. Nothing could notice,
-      # because the help files are hand-written and the rule that keeps `h`
-      # honest stopped at bash/.
-      #
-      # Static, like the `h` check: it reads the lua sources, not a running
-      # nvim. Scope is <leader> keys and user commands -- the mappings that are
-      # this config's to document. Plugin-internal keys (oil's `g?`, telescope's
-      # <C-v>) are the plugin's, and gr* / ]c are checked by eye.
+      # The editor's `h` check: <leader> keys and user commands, read from lua/.
       - name: nvim help names only mappings that exist, and every mapping and command is documented
         run: |
           set -uo pipefail
           bad=0
           docs="nvim/doc/*.txt nvim/README.md"
 
-          # A <leader> key the config defines is any quoted literal under lua/
-          # that starts with <leader>. Comments do not count: they are not
-          # quoted, which is what let `<space>sh` survive in init.lua's header.
+          # Quoted <leader> literals under lua/; comments are unquoted and do not count.
           defined=$(grep -rhoE "['\"]<leader>[^'\"]+['\"]" nvim/lua nvim/init.lua \
                     | tr -d "'\"" | sort -u)
 
-          # A key the docs name. A token ends at whitespace, a backtick, a pipe,
-          # or sentence punctuation -- `<leader>sf` in markdown, `<leader>sf ` in
-          # a help column.
+          # A token ends at whitespace, a backtick, a pipe, or punctuation.
           token='<leader>[^[:space:]`|),.*]+'
           # shellcheck disable=SC2086
           named=$(grep -hoE "$token" $docs | sort -u)
@@ -860,8 +561,7 @@ jobs:
               || { echo "$k is defined but missing from nvim/doc/dotfiles-keymaps.txt"; bad=1; }
           done
 
-          # Every custom command has a line in the help. `:Glow` had a whole
-          # page and no plugin; this is the direction that catches the opposite.
+          # Every user command has a help page.
           cmds=$(grep -rhoE "nvim_create_user_command\(\s*'[A-Za-z]+'" nvim/lua nvim/init.lua \
                  | sed -E "s/.*'([A-Za-z]+)'/\1/" | sort -u)
           for c in $cmds; do
@@ -872,20 +572,11 @@ jobs:
           [ $bad -eq 0 ] && echo "ok: $(echo "$defined" | wc -l) leader keys and $(echo "$cmds" | wc -l) commands, all documented, nothing stale"
           exit $bad
 
-      # mise.toml is generated from deps.conf and mise.lock is generated from
-      # mise.toml, so all three can disagree. Before this existed, lib/pkg.sh
-      # installed `@latest` and the resolved versions lived only in
-      # ~/.config/mise/config.toml — untracked, machine-local, and different on
-      # every box provisioned on a different day.
-      #
-      # Registry-free on purpose: this runner has no mise, and the question is
-      # whether the two files describe the same tool set, not what the current
-      # upstream version is.
+      # deps.conf, mise.toml and mise.lock must agree. Registry-free: no mise here.
       - name: mise.toml and mise.lock match deps.conf
         run: ./tools/gen-mise.sh --check
 
-      # A generator whose output the parser rejects is worse than no generator,
-      # so assert the round trip rather than just that it runs.
+      # Assert the round trip: output the parser rejects is worse than none.
       - name: "tools/adopt.sh emits lines the parser accepts"
         run: |
           ./tools/adopt.sh git make tar > /tmp/adopt.txt
@@ -908,9 +599,7 @@ jobs:
             echo "links drifted immediately after make link"; exit 1
           fi
 
-      # shared.lua only works if it is linked next to wezterm.lua. The pcall
-      # there degrades to an unstyled terminal rather than erroring, so a
-      # missing link is silent.
+      # wezterm.lua's pcall makes a missing shared.lua silent.
       - name: shared.lua is linked and loaded
         run: |
           set -euo pipefail
@@ -920,16 +609,12 @@ jobs:
           grep -q 'shared.lua' wezterm/wezterm.lua || { echo "wezterm.lua does not load shared.lua"; exit 1; }
           echo "ok: shared.lua linked and loaded"
 
-      # lib/plugins.sh runs this engine over another repo's deps.conf. What
-      # must hold: a plugin's links land from ITS clone; this machine's
-      # sections file (which names core sections) does not filter a plugin;
-      # a plugin nobody can clone is skipped, not fatal; naming a section
-      # leaves plugins alone; and no plugins file means no plugins.
+      # A plugin links from its own clone, ignores the core's sections file, is
+      # skipped if it cannot be cloned, and is left alone when a section is named.
       - name: Plugins run through the same engine, and the core needs none
         run: |
           set -euo pipefail
-          # The runner sets XDG_CONFIG_HOME, which the plugins and sections
-          # files are read under; a throwaway HOME alone would miss them.
+          # The runner sets XDG_CONFIG_HOME, so a throwaway HOME alone would miss these files.
           unset XDG_CONFIG_HOME XDG_DATA_HOME
           t=$(mktemp -d); export HOME="$t/home"; mkdir -p "$HOME/.config/dotfiles"
           git config --global user.name ci; git config --global user.email ci@example.invalid
@@ -955,10 +640,8 @@ jobs:
           [ -z "$(plugins_list)" ] || { echo "no plugins file still listed plugins"; exit 1; }
           echo "ok: plugins link from their clone, skip what cannot be cloned, and stay out of named sections"
 
-      # A link whose source is missing -- an unchecked-out submodule, a file
-      # not copied in yet -- must leave the destination alone. Without the
-      # guard, install.sh backed the real file up, linked nothing, and
-      # prune_orphans deleted the dangling link: the file was simply gone.
+      # Without the guard, install.sh backed up the real file, linked nothing,
+      # and pruning then deleted it.
       - name: A missing link source leaves the destination alone
         run: |
           set -euo pipefail
@@ -973,9 +656,7 @@ jobs:
           grep -q 'does not exist' <<<"$out" || { echo "no warning printed"; echo "$out"; exit 1; }
           echo "ok: destination untouched"
 
-      # Nothing is suppressed on a normal box. If tool_applies_here wrongly
-      # said "not here", a tool would silently stop installing and `make check`
-      # would report n/a for one that genuinely is missing.
+      # A wrong "not here" silently stops a tool installing.
       - name: tool_applies_here suppresses nothing but a dotnet-less roslyn
         run: |
           set -euo pipefail
@@ -985,11 +666,7 @@ jobs:
           done
           echo "ok: every ordinary tool applies"
 
-      # `uv tool list` was matched with `^${cmd}\b`, and \b matches before a
-      # hyphen — so git-filter-repo, installed as a uv tool, made /usr/bin/git
-      # report as uv. Wrong provenance reads as drift, and the remedy it
-      # suggests (uninstall, reinstall) is wrong too. Both directions: a prefix
-      # must not claim, and a real uv tool must still be found.
+      # \b matches before a hyphen, so git-filter-repo once claimed /usr/bin/git.
       - name: A uv tool claims only its own name
         run: |
           set -euo pipefail
@@ -1004,10 +681,7 @@ jobs:
           [ "$got" = uv ] || { echo "ruff is a uv tool but reported as '$got'"; exit 1; }
           echo "ok: git is $(provider_of git), ruff is uv"
 
-      # A Cellar path answered `pkg` unconditionally -- a macOS leftover -- so on
-      # a box with linuxbrew, five [bash] tools that existed ONLY as Homebrew
-      # copies read `✓ pkg`. brew is never `pkg`, and the `manual` wildcard
-      # must not absorb it either (zoxide is `pkg||manual`).
+      # A Cellar path is brew, never pkg, and `manual` must not absorb it.
       - name: linuxbrew is never pkg
         run: |
           set -euo pipefail
@@ -1024,9 +698,7 @@ jobs:
           provider_satisfies 'pkg||manual' cargo  || { echo "manual wildcard no longer accepts other sources"; exit 1; }
           echo "ok: brew is its own provider, never pkg"
 
-      # The reporting half of docs/decisions/tool-duplication.md. Two distinct
-      # copies must be reported; a symlink to the active copy (usrmerge's /bin)
-      # is the SAME copy and must not be.
+      # Two distinct copies are reported; a symlink to the active one is the same copy.
       - name: make status names shadowed copies, and only real ones
         run: |
           set -euo pipefail
@@ -1045,18 +717,9 @@ jobs:
           [ -z "$got" ] || { echo "an absent tool reported copies: '$got'"; exit 1; }
           echo "ok: one real duplicate reported, a symlinked alias and an absent tool are not"
 
-      # The clean filter keeps per-machine model and effort choices out of git
-      # by swapping them for claude/model-defaults.json. It once stripped only
-      # model and effortLevel, while /effort writes modelSettings — which went
-      # straight through, and two machines committed conflicting tables. So:
-      # whatever a machine set, git sees the defaults; the legacy top-level
-      # effortLevel is gone; personal keys (auto mode, the skip* prompt
-      # records, theme) never reach this public repo; every other key
-      # survives untouched.
-      #
-      # And the committed settings.json must already BE that output, or the
-      # defaults file and the file it describes have drifted apart — which is
-      # also what an edit to the defaults looks like before it is staged.
+      # Git sees the defaults whatever a machine set, personal keys never reach
+      # this public repo, other keys survive, and the committed file is already
+      # the filter's output.
       - name: The claude settings filter swaps preferences for the defaults
         run: |
           set -euo pipefail
@@ -1079,32 +742,18 @@ jobs:
             echo "re-stage it: git add --renormalize claude/settings.json"; exit 1; }
           echo "ok: defaults committed, local preferences never reach git"
 
-      # The filter makes the worktree file and its blob different SIZES, and
-      # git's ie_modified() short-circuits on a size mismatch: it answers
-      # "modified" without re-reading the file, so the filter never runs and
-      # `git status` reports a change `git diff` then shows as empty. No git
-      # config reaches that -- core.checkStat=minimal keeps size, and
-      # --assume-unchanged would hide real edits to the same file.
-      #
-      # tools/refresh-claude-settings.sh re-records the stat with `git add`,
-      # but only after proving the filtered worktree equals the index blob.
-      # BOTH directions are asserted, because the dangerous failure is the
-      # second one: a script that cleared the flag unconditionally would hide
-      # a genuine settings change behind a cosmetic fix, and look identical
-      # from the outside while doing it.
+      # A filtered file differs in size from its blob, so git calls it modified
+      # without running the filter. The refresh clears that only when the filtered
+      # file equals the index; the dangerous direction is hiding a real change.
       - name: The settings refresh clears only the FALSE modified flag
         run: |
           set -euo pipefail
-          # Hooks fire on ~/.claude/settings.json being a symlink into a clone,
-          # which is what `make link` would do; this job never ran it.
+          # Link ~/.claude/settings.json into the clone, as `make link` would.
           mkdir -p "$HOME/.claude"
           ln -sfn "$PWD/claude/settings.json" "$HOME/.claude/settings.json"
           git add claude/settings.json          # baseline: stat recorded
 
-          # 0. No filter registered -- a clone that was only linked, never
-          #    `make install claude`ed. The script's proof runs the filter by
-          #    hand, but `git add` would not, so it would stage this machine's
-          #    model. It must do nothing at all.
+          # 0. No filter registered: do nothing, or `git add` stages this machine's model.
           jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
           tools/refresh-claude-settings.sh
           [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
@@ -1115,8 +764,7 @@ jobs:
           git config filter.claude-settings.clean "$PWD/tools/clean-claude-settings.sh"
           git add claude/settings.json
 
-          # 1. A model change is volatile: different size, identical after
-          #    filtering. The flag must clear, and nothing may be staged.
+          # 1. A model change is volatile: the flag clears and nothing is staged.
           jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
           [ -n "$(git status --porcelain claude/settings.json)" ] \
             || { echo "FAIL: a size change did not go stat-dirty — premise gone"; exit 1; }
@@ -1126,8 +774,7 @@ jobs:
           [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
             || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
 
-          # 2. A deny-rule change is real (theme is not: it is a personal key
-          #    the filter deletes). It must survive.
+          # 2. A deny-rule change is real and must survive (theme is filtered out).
           jq '.permissions.deny += ["Read(~/x)"]' claude/settings.json > t && mv t claude/settings.json
           tools/refresh-claude-settings.sh
           [ -n "$(git status --porcelain claude/settings.json)" ] \
@@ -1135,12 +782,7 @@ jobs:
           git checkout -- claude/settings.json
           echo "ok: false flag cleared, real change left visible"
 
-      # The hooks that call it. Named rather than counted, for the reason the
-      # wezterm link check gives: a count tells you the number is wrong and
-      # nothing else. SessionEnd does the work, right after the only writer
-      # stops. SessionStart is the backstop for a session that was killed, so
-      # dropping it would leave the flag set until the next clean exit --
-      # which is silent, and looks exactly like the bug being fixed here.
+      # Named, not counted. SessionEnd does the work; SessionStart catches killed sessions.
       - name: Both refresh hooks are declared
         run: |
           set -euo pipefail
@@ -1152,51 +794,34 @@ jobs:
           done
           echo "ok: SessionStart and SessionEnd both refresh the stat"
 
-      # Named rather than counted. A bare count told you the number was wrong
-      # and nothing else -- it fired when shared.lua was added, which was a
-      # correct change, while a swap that kept the count would have passed
-      # silently. Each of these three has a different failure if it goes
-      # missing, so each is asserted by name.
+      # Named, not counted: a count misses a swap.
       - name: '[wezterm] still declares its links'
         run: |
           set -euo pipefail
           source lib/manifest.sh
           links=$(manifest_lines link wezterm | awk -F'\t' '{print $2}')
           bad=0
-          # the config itself: without it there is no wezterm.lua at all
+          # the config itself
           grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
             echo "[wezterm] no longer links wezterm.lua"; bad=1; }
-          # the shared body: wezterm.lua dofile()s it, and its absence
-          # degrades silently through the pcall rather than erroring
+          # the shared body, which wezterm.lua dofile()s
           grep -qx 'wezterm/shared.lua' <<<"$links" || {
             echo "[wezterm] no longer links shared.lua — the config would load unstyled"; bad=1; }
-          # the fonts: font_dirs reads them out of the linked config dir, and
-          # lib/sgr.sh uses this very link as its proxy for "config is live"
+          # the fonts: font_dirs reads them, and lib/sgr.sh treats this link as "config is live"
           grep -qx 'wezterm/fonts' <<<"$links" || {
             echo "[wezterm] no longer links the fonts directory"; bad=1; }
           [ $bad -eq 0 ] && echo "ok: [wezterm] links config, shared body and fonts"
           exit $bad
 
-      # [uv] is the one section that prefers an official installer to the
-      # distro package, and the preference is fragile in a specific way: it is
-      # not expressible in the manifest. `manual` installs nothing and `||`
-      # chains are tried before any deps.sh runs, so the obvious "fix" —
-      # putting pkg back in the chain, in either position — silently installs
-      # the distro's uv and never reaches ensure_uv. That build has
-      # `uv self update` compiled out, so the regression is invisible until
-      # someone tries to update uv months later and is told they cannot.
-      #
-      # Asserted here rather than in the install jobs because it is a claim
-      # about the declaration, and reading deps.conf costs nothing.
+      # The installer preference cannot live in a || chain (pkg would win, and
+      # the distro's uv cannot self-update), so the declaration is asserted here.
       - name: '[uv] is installed by its own installer, never the distro''s'
         run: |
           set -euo pipefail
           source lib/manifest.sh
           bad=0
 
-          # The config half. Both settings in uv.toml came from /etc/uv/uv.toml,
-          # which the RPM owns — so the link is what stops `dnf remove uv` from
-          # silently reverting python-downloads and python-preference.
+          # uv.toml carries the two settings from /etc/uv/uv.toml, which the RPM owns.
           manifest_lines link uv | awk -F'\t' '{print $2}' | grep -qx 'uv/uv.toml' || {
             echo "[uv] no longer links uv/uv.toml — removing the distro package"
             echo "     would revert python-downloads and python-preference"; bad=1; }
@@ -1214,9 +839,7 @@ jobs:
             done
           done < <(manifest_lines tool)
 
-          # And the helper must still ask the installer FIRST. A revert to
-          # `pkg_install uv || curl` reads as a harmless simplification and
-          # undoes the whole thing.
+          # ensure_uv must still try the installer first.
           grep -q '^ensure_uv()' lib/pkg.sh || {
             echo "lib/pkg.sh no longer defines ensure_uv"; bad=1; }
           grep -q 'ensure_uv ||' lib/pkg.sh || {
@@ -1232,13 +855,8 @@ jobs:
           [ $bad -eq 0 ] && echo "ok: uv comes from Astral's installer, with pkg as the fallback"
           exit $bad
 
-  # ── Links only: the locked-down-machine path ───────────────────────────────
-  # No sudo, no network, nothing installed. Must work everywhere.
-  # ── the Rust TUIs ─────────────────────────────────────────────────────────
-  # tui/ is the repo's first compiled tree, so it is also the first thing here
-  # that can be broken by a dependency rather than by an edit. fmt and clippy
-  # are gates rather than suggestions for the same reason tools/lint.sh runs at
-  # --severity=warning: a warning nobody fails on is a warning nobody reads.
+  # ── the Rust TUIs ──────────────────────────────────────────────────────────
+  # fmt and clippy are gates: a warning nobody fails on is a warning nobody reads.
   tui:
     name: tui (rust)
     needs: changes
@@ -1263,18 +881,8 @@ jobs:
         working-directory: tui
         run: cargo build --release --locked
 
-      # `font` is a name someone else owns on crates.io. The cargo provider
-      # installs BY NAME, so declaring `tool cargo font` would fetch a
-      # stranger's crate and report success — the manifest has to say `manual`
-      # and let tui/deps.sh install from the local path.
-      # The carrier is the whole point of `font show`, and it is guarded by the
-      # same three conditions as lib/sgr.sh -- for the same three DIFFERENT
-      # reasons. Asserted here because none of them is visible to whoever edits
-      # show.rs: they are always in WezTerm, always on a tty, always linked.
-      #
-      # Outside those conditions SGR 6 and SGR 5 mean what they actually say --
-      # rapid and slow blink -- so the failure is a strobing terminal over ssh,
-      # or escapes in a pipe that `make status | tee` then greps.
+      # The same three-condition guard as lib/sgr.sh: off a linked wezterm tty,
+      # SGR 6 and SGR 5 blink, and in a pipe they are garbage.
       - name: font show carries escapes only on a linked wezterm tty
         run: |
           fail=0
@@ -1292,9 +900,7 @@ jobs:
             echo "no script(1) here; the tty rows were skipped"; exit $fail
           fi
 
-          # Same fixture-home approach as the `make help` truth table above:
-          # each row states its own preconditions, so none of this depends on
-          # whether an earlier step in this job happened to run `make link`.
+          # Fixture homes, as in the make help truth table.
           unlinked=$(mktemp -d)
           linked=$(mktemp -d)
           HOME="$linked" make link wezterm >/dev/null
@@ -1310,8 +916,7 @@ jobs:
           if on_tty "$linked" xterm "$esc"; then
             echo "escapes on a non-wezterm tty -- SGR 6 there is rapid blink"; fail=1
           fi
-          # Both lanes, by their specific attribute. Grepping for any escape
-          # would keep passing if the carrier were swapped for a colour.
+          # Both lanes, by their exact attribute.
           if ! on_tty "$linked" WezTerm "$carrier"; then
             echo "SGR 6 missing on a linked wezterm tty"; fail=1
           fi
@@ -1320,6 +925,7 @@ jobs:
           fi
           exit $fail
 
+      # `font` on crates.io is someone else's crate, and cargo installs by name.
       - name: The tui section installs from a path, not from crates.io
         run: |
           source lib/manifest.sh
@@ -1331,9 +937,7 @@ jobs:
             || { echo "tui/deps.sh does not install from a local path"; fail=1; }
           exit $fail
 
-      # lib/pkg.sh holds the only implementation of "install a tool", and the
-      # rustup bootstrap is one of those. A copy in tui/deps.sh would be a
-      # second place deciding what a missing cargo means.
+      # lib/pkg.sh is the only place that installs a tool, rustup included.
       - name: The tui section bootstraps cargo through lib/pkg.sh
         run: |
           fail=0
@@ -1350,35 +954,8 @@ jobs:
             || { echo "[tui] does not declare cargo"; fail=1; }
           exit $fail
 
-      # The binary shadows nothing and nothing shadows it. A bash function named
-      # `font` would win over the binary on PATH, silently reinstating the fzf
-      # picker this replaced.
-      # DERIVED from the workspace, not a hand-kept list, and that matters right
-      # now: `gh-tui` was renamed to `github` ahead of the rewrite, and the day
-      # tui/github/ was added to members this check started covering it and
-      # failed until the bash function was gone -- which is exactly the
-      # handover it was written to force. It did, on 2026-10-24. A hardcoded
-      # list would simply have stayed quiet and let both exist, with PATH order
-      # deciding which one ran.
-      #
-      # reticle is excluded because it is the framework and ships no binary.
-      # The parity table that gated this is now a RECORD, not a check, and the
-      # step that enforced it is gone with the file it read. It derived the
-      # verb list from `_ghw_main` in bash/bash_github_tui, so once that file
-      # was deleted the derivation was impossible rather than merely moot --
-      # there is nothing left to compare the table against.
-      #
-      # docs/decisions/github-parity.md stays, because what it still answers is
-      # "what did the port decide not to carry, and why": four dropped rows,
-      # each with its argument. The gate did its job -- 45 of 49 verbs ported,
-      # and the four that were not are argued rather than forgotten.
-      #
-      # One thing it could not see, worth knowing before trusting the next
-      # table of this shape: the table was derived from the DISPATCHER, and
-      # `_gh_tab_var` -- the OSC 1337 user var wezterm reads to mark the tab --
-      # was not a dispatcher verb. It was found by grepping for every mention
-      # of the file about to be deleted, not by the gate. A derivation covers
-      # exactly what it derives from.
+      # A bash function named after a tui binary would win over PATH. Derived
+      # from the workspace members, not a list; reticle ships no binary.
 
       - name: No bash function shadows a tui binary
         run: |
@@ -1394,10 +971,10 @@ jobs:
           done
           exit $fail
 
+  # ── Links only: the locked-down-machine path ───────────────────────────────
+  # No sudo, no network, nothing installed. Must work everywhere.
   link-only:
-    # A stable literal name rather than the image tag. Only `ci ok` is a
-    # required check today, but a name that embeds an image tag changes under
-    # anyone who later requires it.
+    # A literal name: an image tag in it would change under a required check.
     name: link only (${{ matrix.name }})
     needs: changes
     if: needs.changes.outputs.full == 'true'
@@ -1415,9 +992,7 @@ jobs:
           - name: rhel 10
             container: almalinux:10
     steps:
-      # git before checkout, so actions/checkout makes a real clone (install.sh
-      # sets core.hooksPath on it). jq and diffutils (cmp) are what the claude
-      # assertions below read with; minimal images ship neither.
+      # git before checkout, so it makes a real clone; jq and diffutils for the claude checks.
       - name: Container prerequisites
         run: dnf install -y git make findutils jq diffutils
 
@@ -1429,16 +1004,13 @@ jobs:
       - name: Config is symlinked into the repo
         run: |
           test -L "$HOME/.bashrc"
-          # The prompt is a submodule: linked AND resolving, or the checkout
-          # above lost `submodules: true` and bashrc's guard hid it.
+          # The prompt is a submodule: linked and resolving, or `submodules: true` was lost.
           test -f "$HOME/.bash_prompt" && test -L "$HOME/.bash_prompt"
           test -L "$HOME/.config/nvim"
           test -L "$HOME/.config/wezterm/wezterm.lua"
           test -L "$HOME/.claude/settings.json"
 
-      # The hook plugins add shell code through (roest wraps `claude` this
-      # way). A drop-in must load, and load LAST: it sees functions the core
-      # defined, and the core cannot redefine what it set.
+      # Plugins add shell code here; a drop-in loads last, after the core.
       - name: bashrc sources plugin drop-ins last
         run: |
           d="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bashrc.d"; mkdir -p "$d"
@@ -1448,16 +1020,8 @@ jobs:
           [ "$out" = "saw=1 h=dropin" ] || { echo "FAIL: drop-in not sourced last: '$out'"; exit 1; }
           echo "ok: drop-ins load after the core"
 
-      # The [claude] hooks and wezterm's format-tab-title are two halves of one
-      # feature — the hooks publish claude_state as an OSC user var, the tab bar
-      # reads it to pick a per-tab glyph — so this checks the payload, not just
-      # that a link exists.
-      #
-      # Worth asserting rather than assuming, because BOTH failure modes here
-      # are silent. A malformed settings.json disables every setting in the file
-      # instead of erroring, and a hook that stops publishing just degrades the
-      # tab bar to "stopped" forever, which looks like a working config until
-      # you notice no tab ever says otherwise.
+      # A malformed settings.json silently disables every setting, and a hook that
+      # stops publishing claude_state leaves wezterm's tab glyph stuck.
       - name: Claude user settings parse and carry the wezterm hooks
         run: |
           jq -e . "$HOME/.claude/settings.json" >/dev/null \
@@ -1469,12 +1033,7 @@ jobs:
               || { echo "FAIL: $ev hook missing or no longer publishes claude_state"; exit 1; }
           done
 
-      # `claude/`, not `.claude/`, is load-bearing: Claude Code reads a
-      # `.claude/settings.json` in the working repo as PROJECT settings on top
-      # of the user settings this section links. Storing it under the dotted
-      # name would feed one file to both scopes inside this repo, and hook
-      # arrays MERGE across scopes rather than override — so every hook would
-      # register twice and fire twice, here and nowhere else.
+      # Under .claude/ this repo would also load it as project settings, and every hook would fire twice.
       - name: Claude settings are not also project-scoped
         run: |
           if [ -e .claude/settings.json ]; then
@@ -1483,11 +1042,8 @@ jobs:
             exit 1
           fi
 
-      # The global prompt is personal and lives in a private plugin. Two
-      # regressions to stop: it coming back into this public repo, and any
-      # CLAUDE.md under claude/, which Claude Code would load as directory
-      # memory whenever claude/settings.json is edited. Case-insensitive,
-      # because on such a filesystem `claude.md` IS `CLAUDE.md` to the lookup.
+      # The global prompt lives in a private plugin; no CLAUDE.md under claude/
+      # either (case-insensitive).
       - name: No personal prompt in the public repo
         run: |
           fail=0
@@ -1507,9 +1063,7 @@ jobs:
             echo "second run was not idempotent"; exit 1
           fi
 
-      # prune_orphans deletes files, so its blast radius is tested rather than
-      # reasoned about. The two negative cases are the ones that matter: a dead
-      # link this repo did not create, and a live one.
+      # prune_orphans deletes files: a foreign dead link and a live link must survive.
       - name: Orphan pruning removes only this repo's dead links
         run: |
           ln -s "$PWD/bash/retired_name" "$HOME/.bash_orphan"       # dead, ours
@@ -1543,22 +1097,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Pinned to the release the fleet runs, not `latest`: a new Fedora
-          # landing mid-week would otherwise change what this row proves
-          # without a commit. Bump it with the workstations.
+          # The fleet's release, not `latest`; bump with the workstations.
           - name: fedora 45 / dnf5
             runs-on: ubuntu-latest
             container: fedora:45
-          # The work PowerEdge is RHEL 9.8. AlmaLinux is binary-compatible and
-          # tracks the same point release (rockylinux:9 on Docker Hub is stuck at
-          # 9.3). EPEL on and CRB off, because that is how the real box is set:
-          # a package that needs CRB should fail here before it fails there.
+          # AlmaLinux tracks RHEL's point release. EPEL on, CRB off, as on the real box.
           - name: rhel 9 / dnf4
             runs-on: ubuntu-latest
             container: almalinux:9
-          # RHEL 10 is the home server's release, and still dnf4 -- Red Hat does
-          # not build dnf5 for 10 -- so it is its own row rather than a repeat
-          # of Fedora's.
+          # RHEL 10 is still dnf4, so it is its own row.
           - name: rhel 10 / dnf4
             runs-on: ubuntu-latest
             container: almalinux:10
@@ -1568,17 +1115,14 @@ jobs:
         run: dnf install -y epel-release
 
       - name: Bootstrap container prerequisites
-        # curl is here for [uv]: ensure_uv fetches Astral's installer, and both
-        # images ship curl-minimal, which is not guaranteed to stay. Swapping it
-        # for curl needs --allowerasing on the EL image.
+        # curl for ensure_uv; the images ship curl-minimal, swapped with --allowerasing.
         run: dnf install -y --allowerasing git make sudo findutils curl
 
       - uses: actions/checkout@v7
         with:
           submodules: true
 
-      # Before [bash] runs, because [bash] is what sets dnf's one key -- the
-      # assertion after it compares every OTHER line against this.
+      # Before [bash], which sets dnf's one key.
       - name: Snapshot dnf.conf
         run: grep -v '^max_parallel_downloads' /etc/dnf/dnf.conf > /tmp/dnf.rest.before
 
@@ -1587,20 +1131,13 @@ jobs:
 
       - name: Verify the bash section
         run: |
-          # `make check` exits 0 even when tools are missing, so the summary
-          # always prints for a human. Assert on the output instead.
+          # `make check` exits 0 with tools missing; assert on its output.
           make check bash | tee /tmp/check.txt
           if grep -q MISSING /tmp/check.txt; then
             echo "bash section incomplete"; exit 1
           fi
 
-      # [uv] is installed on every platform in this matrix, and Fedora is the
-      # one that makes it worth doing: dnf HAS a uv package, so if the
-      # preference ever regresses to `pkg` this job gets /usr/bin/uv and fails.
-      #
-      # The assertion is provenance, not presence. `make check uv` would go
-      # green for the distro build — the tool exists, it just cannot update
-      # itself, which is the entire reason the section exists.
+      # dnf has a uv package, so a regression to pkg shows here. Provenance, not presence.
       - name: Install the uv section
         run: make install uv
 
@@ -1615,26 +1152,21 @@ jobs:
           if command -v rpm >/dev/null 2>&1 && rpm -qf "$resolved" >/dev/null 2>&1; then
             echo "uv came from rpm — ensure_uv preferred the distro package"; exit 1
           fi
-          # Not a distro build is necessary, not sufficient: pip --user also
-          # installs into ~/.local/bin, and that copy cannot self-update
-          # either. uv decides from the receipt Astral's installer writes, so
-          # assert the receipt exists and names the directory that runs.
+          # uv self-updates only with the receipt Astral's installer writes; it
+          # must name the directory of the uv that runs.
           receipt="${XDG_CONFIG_HOME:-$HOME/.config}/uv/uv-receipt.json"
           test -r "$receipt" || { echo "no $receipt — 'uv self update' will refuse"; exit 1; }
           prefix=$(sed -n 's/.*"install_prefix": *"\([^"]*\)".*/\1/p' "$receipt")
           [ "$prefix" = "$(dirname "$(command -v uv)")" ] \
             || { echo "receipt is for '$prefix', but uv runs from $(command -v uv)"; exit 1; }
 
-          # The config has to be readable where uv looks for it, or the two
-          # settings this section exists to carry are not in effect.
+          # uv.toml must be linked where uv reads it.
           test -L "$HOME/.config/uv/uv.toml" || { echo "uv.toml not linked"; exit 1; }
           grep -q 'python-preference' "$HOME/.config/uv/uv.toml"
           echo "ok: self-updatable uv, config linked"
 
-      # bash/deps.sh owns ONE key of dnf.conf, through dnf's own setter, on both
-      # dnfs in the fleet. Three claims: the value lands as dnf itself resolves
-      # it; every other line of dnf.conf survives; and a re-run on a machine
-      # already at the value never reaches sudo.
+      # bash/deps.sh owns one dnf.conf key: it lands, every other line survives,
+      # and a re-run at the value never reaches sudo.
       - name: "[bash] sets one dnf key and nothing else"
         run: |
           set -euo pipefail
@@ -1642,31 +1174,21 @@ jobs:
           got=$(dnf_max_parallel_downloads)
           [ "$got" = "$DNF_MAX_PARALLEL_DOWNLOADS" ] || { echo "dnf resolves $got, want $DNF_MAX_PARALLEL_DOWNLOADS"; exit 1; }
           grep -v '^max_parallel_downloads' /etc/dnf/dnf.conf > /tmp/dnf.rest.after
-          # Compared in bash, not with cmp: cmp is diffutils, which neither image
-          # ships, and "command not found" reads exactly like "files differ".
+          # In bash, not cmp: neither image ships diffutils.
           [ "$(cat /tmp/dnf.rest.before)" = "$(cat /tmp/dnf.rest.after)" ] \
             || { echo "dnf.conf changed beyond the one key:"; cat /etc/dnf/dnf.conf; exit 1; }
           shim=$(mktemp -d); printf '#!/bin/sh\necho "$@" >> /tmp/sudo.log\n' > "$shim/sudo"; chmod +x "$shim/sudo"
           PATH="$shim:$PATH" ensure_dnf_parallel
           [ ! -s /tmp/sudo.log ] || { echo "a re-run reached sudo:"; cat /tmp/sudo.log; exit 1; }
-          # Captured first: `make status | grep -q` under pipefail fails whenever
-          # grep exits on the match before make finishes writing (SIGPIPE).
+          # Captured first: grep -q under pipefail SIGPIPEs make.
           st=$(make status bash || true)
           grep -q "✓ max_parallel_downloads=$DNF_MAX_PARALLEL_DOWNLOADS" <<<"$st" \
             || { echo "make status does not report the value"; echo "$st"; exit 1; }
           echo "ok: one key, effective value $got, idempotent without sudo"
 
-  # ── the neovim floor holds on the platform that can't meet it ──────────────
-  # RHEL 9 + EPEL (0.8.0) cannot satisfy the 0.12 floor from the distro, so it
-  # is the platform where the mise route is the whole answer -- and until this
-  # job existed, nothing exercised it. The other
-  # install jobs run `make install bash`, which never touches neovim.
-  #
-  # This drives the real lib/ code rather than re-implementing the decision, but
-  # stops short of `make install nvim` on purpose: that would clone 26 plugins
-  # and compile tree-sitter parsers, minutes of work that proves nothing about
-  # provider selection. What's asserted is exactly the claim — one nvim, and it
-  # meets the floor.
+  # ── the neovim floor, on the platform that can't meet it ───────────────────
+  # RHEL 9's EPEL neovim is too old, so mise is the whole answer. Drives the
+  # real provider code; stops short of `make install nvim`, which proves nothing more.
   nvim-floor:
     name: neovim floor (${{ matrix.name }}, mise fallback)
     needs: changes
@@ -1677,14 +1199,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # RHEL 9's EPEL ships neovim 0.8.0, and it is the fleet's oldest
-          # glibc (2.34): this proves the prebuilt binary mise fetches actually
-          # RUNS there.
+          # EPEL's neovim is 0.8, and this is the fleet's oldest glibc.
           - name: rhel 9
             container: almalinux:9
     steps:
-      # util-linux for script(1), which the carrier step drives nvim's TUI
-      # through.
+      # util-linux for script(1).
       - name: Container prerequisites (EPEL on, as on the RHEL box)
         run: |
           dnf install -y epel-release
@@ -1694,11 +1213,7 @@ jobs:
         with:
           submodules: true
 
-      # Reports what the distro offers; deliberately does NOT fail when that
-      # improves. EPEL shipping a newer neovim is good news — blocking every
-      # PR on it would mean an upstream improvement stops
-      # unrelated work until someone edits CI. The assertion that matters is the
-      # one below: one nvim, at or above the floor. That holds either way.
+      # Never fails: EPEL shipping a newer neovim is good news.
       - name: What the distro offers (informational)
         run: |
           set -euo pipefail
@@ -1718,9 +1233,7 @@ jobs:
           source lib/manifest.sh
           source lib/providers.sh
           pkg_detect
-          # Read the provider spec from the manifest rather than hardcoding it,
-          # so flipping deps.conf back to pkg||mise fails this job instead of
-          # silently passing against a stale copy of the intent.
+          # Spec read from the manifest, so flipping deps.conf fails here.
           spec=$(manifest_lines tool nvim | awk -F'\t' '$3=="nvim" {print $2}')
           echo "declared provider chain: $spec"
           [ "$spec" = "mise||pkg" ] || { echo "expected mise||pkg"; exit 1; }
@@ -1736,9 +1249,7 @@ jobs:
           v=$(nvim --version | awk 'NR==1 { sub(/^v/,"",$2); print $2 }')
           maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
           [ "$maj" -gt 0 ] || [ "$min" -ge 12 ] || { echo "nvim $v is below the 0.12 floor"; exit 1; }
-          # The point of mise-first: the distro's too-old neovim was never
-          # installed, so there is nothing to be second. `type -ap`, not
-          # `which -a`: the EL image has no `which`.
+          # `type -ap`: the EL image has no `which`.
           n=$(type -ap nvim | sort -u | wc -l)
           echo "nvim binaries on PATH: $n"
           type -ap nvim
@@ -1748,12 +1259,7 @@ jobs:
           fi
           echo "one nvim, $v, no distro package — mise-first held"
 
-      # "Pull, make install, and the machine runs what the repo says" depends on
-      # this. mise_install used to stop at `command -v`, so a machine that
-      # already had nvim kept whatever its global mise config named -- on the
-      # Alienware that was "latest", under a backend that records no checksum
-      # -- and a bumped pin never arrived. Rewinding the entry to that state is
-      # the cheapest faithful stand-in for "this machine predates the pin".
+      # A machine whose global mise config predates the pin must move onto it.
       - name: make install moves an existing mise tool onto the pin
         run: |
           set -euo pipefail
@@ -1774,19 +1280,8 @@ jobs:
           if make status nvim | grep 'repo pins'; then echo "make status still reports pin drift"; exit 1; fi
           echo "ok: converged to $spec, idempotent, and make status agrees"
 
-      # The nvim half of the alternate-font carrier, and the mirror image of
-      # "make output carries escapes only on a wezterm tty" in the manifest job.
-      #
-      # nvim/lua/external/altfont.lua emits SGR 5 over the text of a file buffer
-      # so wezterm's font_rules can draw it in another font. Everywhere else SGR
-      # 5 means what it says -- BLINK -- so getting the guard wrong sets an
-      # entire source file flashing over ssh, in GNOME Terminal, in a console. The
-      # author never sees it: they are always in wezterm and always linked.
-      #
-      # Runtime rather than a grep, because what is being asserted is what
-      # reaches the terminal, and the path from a `blink = true` highlight to an
-      # SGR 5 byte runs through nvim's TUI and its terminfo. A grep would keep
-      # passing if that path changed.
+      # Runtime, not a grep: a blink highlight reaches the terminal through nvim's
+      # TUI and terminfo. Off wezterm, SGR 5 blinks a whole file.
       - name: nvim emits the alternate-font carrier only under wezterm
         # Once is enough: it tests altfont.lua's guard, not the platform.
         if: matrix.name == 'rhel 9'
@@ -1795,43 +1290,26 @@ jobs:
           fail=0
           command -v script >/dev/null 2>&1 || { echo "no script(1) here"; exit 0; }
 
-          # Matches SGR 5 exactly: ESC[5m or ESC[<params>;5m. Deliberately not
-          # ESC\[[0-9;]*5m, which also matches ESC[25m -- blink OFF -- and would
-          # make the negative rows below pass for the wrong reason.
+          # SGR 5 exactly; a looser pattern also matches ESC[25m (blink off).
           carrier=$'\033\\[([0-9;]*;)?5m'
 
-          # Same fixture strategy as the sgr.sh truth table: a home built by the
-          # real installer, so a change to deps.conf's destination cannot leave
-          # this asserting against a path nothing installs.
+          # Fixture homes built by the real installer, as in the sgr.sh table.
           linked=$(mktemp -d)
           unlinked=$(mktemp -d)
           HOME="$linked" make link wezterm >/dev/null
 
-          # The real binary, resolved once under the REAL home. On PATH, nvim is
-          # mise's shim, and a shim run under a fixture HOME finds no installs
-          # and no global config there, so mise guesses a version and downloads
-          # it into each fixture home -- neovim@latest, not the pin. That made
-          # this step's result depend on what mise guessed (it broke when the
-          # pin moved to an aqua: backend). The guard under test is
-          # altfont.lua's, not mise's.
+          # The real binary: mise's shim under a fixture HOME would download neovim@latest.
           nvim_bin=$(mise which nvim 2>/dev/null || command -v nvim)
           echo "nvim under test: $nvim_bin"
 
           work=$(mktemp -d)
           printf 'local x = 1\n' > "$work/probe.lua"
-          # Only altfont, on the repo's real runtimepath -- loading the full
-          # config here would clone 26 plugins to test one module. printf rather
-          # than a heredoc: a heredoc terminator has to sit at column 0, which
-          # is not a thing a YAML block scalar can contain.
+          # Only altfont, on the repo's runtimepath: the full config clones every plugin.
           printf "vim.opt.runtimepath:prepend('%s/nvim')\nrequire('external.altfont').setup()\n" \
             "$PWD" > "$work/init.lua"
 
-          # $1 home, $2 TERM_PROGRAM -- true when the carrier reaches the tty
-          #
-          # Captured, then grepped. `script ... | grep -aq` under pipefail is
-          # false whenever grep exits on the match before script finishes
-          # writing: script dies of SIGPIPE and the pipeline takes its 141. So
-          # the positive row failed at random, more often the more nvim wrote.
+          # $1 home, $2 TERM_PROGRAM: true when the carrier reaches the tty.
+          # Captured, then grepped: grep -q under pipefail SIGPIPEs script.
           emits() {
             local out
             out=$(HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
@@ -1850,10 +1328,7 @@ jobs:
             echo "carrier missing on a linked wezterm tty"; fail=1
           fi
 
-          # oil is the whole point of doing this per-cell rather than per-window,
-          # so assert the exclusion rather than trusting the buftype list. oil
-          # sets buftype=acwrite (oil.nvim view.lua); this stands in for it
-          # without pulling the plugin in.
+          # oil is buftype=acwrite; assert it is excluded.
           {
             printf "vim.opt.runtimepath:prepend('%s/nvim')\n" "$PWD"
             printf "require('external.altfont').setup()\n"
@@ -1871,28 +1346,9 @@ jobs:
           fi
           exit $fail
 
-  # ── transitive advisories: the coverage Dependabot cannot give us ──────────
-  # This job is not redundant with Dependabot, and deleting it would silently
-  # remove the only transitive coverage in the repo. The full reasoning is in
-  # .github/dependabot.yml; the short version is that the dependency graph has
-  # 2parquet/2feather/2pickle are the only commands in this repo that shell out
-  # to a second language runtime, and nothing else here would notice them
-  # breaking: the install jobs prove the tools exist, never that a conversion is
-  # correct. The failure this guards against is silent — a frame that converts
-  # without error but comes back subtly wrong.
-  #
-  # The id column is the specific regression. Excel stores every number as a
-  # double, and a naive reader turns ids into 1.0, 2.0; the same class of bug is
-  # why 2csv routes through qsv rather than duckdb. Asserting the dtype survives
-  # is cheaper than discovering it in a dataset a year from now.
-  #
-  # uv is installed the way bash/deps.sh installs it. Whether that installer
-  # runs correctly is the install job's question, not this one — this job needs
-  # uv present so it can test what runs on top.
-  #
-  # Excel input is deliberately not covered: it needs qsv, and the qsv half of
-  # that path is exercised by 2csv already. What is new here is the python
-  # engine.
+  # ── 2* conversions ─────────────────────────────────────────────────────────
+  # The only commands that call a second runtime. A conversion can succeed
+  # and come back wrong; the integer id column is the regression to catch.
   conversions:
     name: 2* conversions
     needs: changes
@@ -1903,9 +1359,7 @@ jobs:
         with:
           submodules: true
 
-      # _dotfiles_dir finds tabular.py by resolving ~/.bashrc's symlink, so the
-      # config has to be linked before any of these commands can work. That the
-      # resolution happens at all is part of what this job checks.
+      # _dotfiles_dir resolves ~/.bashrc's link to find tabular.py.
       - name: Link config
         run: make link bash
 
@@ -1914,27 +1368,15 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # qsv only, not a bare `mise install`, which would pull neovim, bun and
-      # the rest of mise.toml for a job that needs one binary. The version still
-      # comes from the repo's pin, so this exercises the lockfile too.
-      #
-      # PATH gets the resolved bin directory, NOT the shim directory. The steps
-      # below run in a temp dir, where this repo's mise.toml is not active, and
-      # a shim outside its config errors with "No version is set for shim: qsv"
-      # — the same mise-shim-without-an-active-version failure `make status`
-      # reports as a stale pin. Resolving the real path here, while still in the
-      # repo, sidesteps cwd entirely.
+      # qsv only, at the repo's pin. PATH gets the real bin dir: outside this
+      # repo's mise.toml a shim has no version.
       - name: Install qsv
         run: |
           curl -fsSL https://mise.run | sh
           "$HOME/.local/bin/mise" install qsv
           dirname "$("$HOME/.local/bin/mise" which qsv)" >> "$GITHUB_PATH"
 
-      # 2csv and 2txt had no coverage either — this job was originally only
-      # about the python engine, and the older half of the family turned out to
-      # be just as untested. The xlsx fixture is built here rather than
-      # committed: a binary blob in the tree is a thing nobody can review, and
-      # generating it costs one uv call.
+      # The xlsx fixture is generated, not committed: a binary blob can't be reviewed.
       - name: 2csv / 2txt round-trip, including a real workbook
         run: |
           set -euo pipefail
@@ -1981,8 +1423,7 @@ jobs:
               print("FAIL: xlsx -> csv != source"); bad = 1
           if not txt.equals(src):
               print("FAIL: csv -> txt != source"); bad = 1
-          # Excel stores every number as a double. If the workbook path ever
-          # stops going through calamine, ids come back as 1.0 and this fires.
+          # If the workbook stops going through calamine, ids come back as 1.0.
           if not str(book["id"].dtype).lower().startswith("int"):
               print(f"FAIL: xlsx id dtype is {book['id'].dtype}, expected int"); bad = 1
           print("ALL PASS" if not bad else "FAILURES")
@@ -1990,9 +1431,7 @@ jobs:
           PY
           uv run --quiet check.py
 
-          # The exact re-quoting bash_productivity claims for `qsv fmt`, which is
-          # the reason csv->txt is not `tr ',' '\t'`: a comma needs no quoting
-          # once the delimiter is a tab, but an embedded quote still does.
+          # qsv fmt re-quotes embedded quotes, which `tr , \t` would not.
           grep -q $'\talpha, inc\t' src.txt || {
             echo "FAIL: quoted comma should lose its quotes in tab output"; cat src.txt; exit 1; }
           grep -q 'quote""d' src.txt || {
@@ -2004,9 +1443,7 @@ jobs:
           set -euo pipefail
           cd "$(mktemp -d)"
 
-          # Quoted comma, an embedded quote, unicode, a float and an integer id.
-          # The quoted comma is the case a naive `tr , \t` would corrupt, and the
-          # id is the case a naive reader turns into 1.0.
+          # A quoted comma, an embedded quote, unicode, a float and an integer id.
           cat > t.csv <<'CSV'
           id,name,note,score
           1,"alpha, inc",plain,1.5
@@ -2084,9 +1521,7 @@ jobs:
           fi
           echo "ALL PASS"
 
-      # The one path with two engines in it: qsv flattens the workbook to a
-      # temp CSV, python reads that. Worth its own step because a leaked or
-      # mis-cleaned temp file would not show up anywhere else.
+      # Two engines: qsv flattens to a temp CSV, python reads it.
       - name: Excel -> parquet, the two-engine path
         run: |
           set -euo pipefail
@@ -2128,28 +1563,16 @@ jobs:
           PY
           uv run --quiet check.py
 
-          # _sheet_convert makes the temp CSV with mktemp; it must clean up
-          # after itself whether the conversion succeeded or failed.
+          # The temp CSV is removed whether or not the conversion succeeded.
           leaked=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -name '2col.*' 2>/dev/null | wc -l)
           [ "$leaked" -eq 0 ] || { echo "FAIL: $leaked temp file(s) leaked"; exit 1; }
           echo "ALL PASS"
 
-  # no bun.lock parser, so it reads package.json, sees the 5 declared servers,
-  # and is blind to the ~70 packages underneath — which is where advisories
-  # actually land. `bun audit` resolves the installed tree instead, and it found
-  # three high-severity minimatch ReDoS advisories (GHSA-3ppc-4f35-3m26,
-  # -7r86-cg39-jmmj, -23c5-xmqv-rm74) reached via
-  # bash-language-server › editorconfig › minimatch, none of which GitHub
-  # reported. That is what the `overrides` block in package.json pins past.
-  #
-  # The same chain broke again with GHSA-g3hv-75wg-m249 (globparts
-  # amplification, >=7.0.0 <11.0.1), which has no 10.x backport. So the
-  # override now forces minimatch 11 OVER editorconfig 3.0.2's own `~10.2.4`
-  # pin. Both editorconfig and bash-language-server were at their latest, so
-  # there was nothing upstream to bump. The two APIs editorconfig calls,
-  # `Minimatch` and `escape`, are unchanged in 11, and verify.ts still
-  # completes the bash-language-server handshake. Drop the upper bound, or
-  # the override itself, once editorconfig declares ^11.
+  # ── transitive advisories: what Dependabot cannot see ──────────────────────
+  # GitHub's dependency graph cannot parse bun.lock, so it misses the packages
+  # under the declared servers; `bun audit` resolves the installed tree.
+  # package.json's override forces minimatch 11 over editorconfig's ~10.2.4
+  # (GHSA-g3hv-75wg-m249); drop it once editorconfig declares ^11.
   audit:
     name: bun audit (transitive advisories)
     needs: changes
@@ -2160,34 +1583,12 @@ jobs:
         with:
           submodules: true
 
-      # setup-bun rather than `curl https://bun.com/install | bash`. This job's
-      # whole purpose is objecting to unreviewed code entering the build, so
-      # piping an unpinned remote script into bash to bootstrap it was the one
-      # inconsistency worth removing. The action itself is pinned and watched by
-      # the github-actions ecosystem in dependabot.yml; the curl script is
-      # neither.
-      #
-      # bun's VERSION comes from mise.toml, which tools/gen-mise.sh generates
-      # from deps.conf — so CI runs the bun this repo declares, not whatever is
-      # current today. `bun-version: latest` is not a neutral default here: the
-      # `bun ./bun.lockb --hash:` header that `bun install --yarn` writes into
-      # yarn.lock is written differently by different bun versions (1.3.14
-      # zeroes it, 1.4.4 fills it in), so a runner ahead of the pin failed the
-      # "yarn.lock matches bun.lock" step below over a header, with the package
-      # entries identical. Hardcoding a number here instead would be a third
-      # copy of a version deps.conf owns.
-      #
-      # Dependabot cannot do this job in either direction: the github-actions
-      # ecosystem bumps action REFS, never `with:` inputs, and mise is not an
-      # ecosystem it parses. Upgrading bun is a manifest edit — bump mise.toml,
-      # `make mise-lock`, `make servers` to regenerate both lockfiles.
+      # setup-bun (pinned, Dependabot-watched), not a curl-piped installer. Its
+      # version comes from mise.toml: another bun rewrites yarn.lock's header.
       - id: bun
         run: |
           set -euo pipefail
-          # Fail rather than default. An empty `bun-version` is not an error to
-          # setup-bun — it installs latest — so a bun that stopped being a mise
-          # tool in deps.conf would put this job back on an undeclared runtime
-          # without a single red tick.
+          # Fail rather than default: an empty bun-version means latest.
           v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
           if [ -z "$v" ]; then
             echo "mise.toml declares no bun version; deps.conf must keep bun" \
@@ -2200,36 +1601,17 @@ jobs:
         with:
           bun-version: ${{ steps.bun.outputs.version }}
 
-      # --frozen-lockfile so the audit describes the committed tree rather than
-      # whatever resolves today. An audit of a lockfile CI just rewrote is an
-      # audit of something that was never reviewed.
+      # --frozen-lockfile: audit the committed tree, not today's resolution.
       - name: Install the language servers
         run: bun install --cwd nvim/lsp-servers --frozen-lockfile
 
-      # Fails the build on any advisory. When one turns out to be unfixable —
-      # a transitive exact-pin with no upstream release, which is precisely the
-      # minimatch situation — the escape hatch is `--ignore=<GHSA-id>` with a
-      # comment saying why, not deleting this step. An accepted risk should be
-      # written down in the same place the repo writes down its other accepted
-      # costs.
-      #
-      # GHSA-vfj7-8cjw-p6xm (braces <=3.0.3) is the first one. There is no
-      # fixed braces to override to — 3.0.3 is the latest release — and the
-      # chain above it is pinned at its own latest: bash-language-server 5.8.1 >
-      # fast-glob 3.3.3 > micromatch 4.0.8 > braces ^3.0.3. The bug is stack
-      # exhaustion on a deeply nested glob PATTERN, and the patterns
-      # bash-language-server expands are its own globPattern setting, written
-      # by whoever configures the editor. Drop the ignore once braces ships a
-      # fix; `bun audit` without it will say so.
+      # Fails on any advisory; an unfixable one gets --ignore=<id> with its reason.
+      # GHSA-vfj7-8cjw-p6xm (braces <=3.0.3) has no fixed release and needs a
+      # hostile glob in the editor's own config. Drop it once braces ships a fix.
       - name: No known advisories in the language server tree
         run: bun audit --cwd nvim/lsp-servers --ignore=GHSA-vfj7-8cjw-p6xm
 
-      # yarn.lock is a GENERATED artifact whose only job is to be readable by
-      # GitHub's dependency graph, which has no bun.lock parser. bun.lock stays
-      # the source of truth; this proves the two agree. `bun install --yarn` is
-      # deterministic, so a diff here means someone changed deps without
-      # regenerating, and the dependency graph would be describing a tree that
-      # no longer exists — which is worse than not having the file at all.
+      # yarn.lock exists only for GitHub's dependency graph; it must match bun.lock.
       - name: yarn.lock matches bun.lock
         run: |
           set -euo pipefail
@@ -2241,21 +1623,8 @@ jobs:
             exit 1
           fi
 
-      # Socket's scanner runs DURING install and can abort it on a malicious or
-      # typosquatted package — prevention, where bun audit and Dependabot are
-      # both detection-after-disclosure. It is the only layer here that can act
-      # on a package no advisory database has heard of yet.
-      #
-      # bunfig.toml is written here rather than committed, and that is the whole
-      # design. The scanner fails CLOSED: with Socket's API unreachable,
-      # `bun install` exits 1 even with a frozen lockfile and a warm cache
-      # (verified). Committing bunfig.toml would put Socket's availability on the
-      # critical path of `make install`, and this repo's entire premise is
-      # bootstrapping locked-down and offline machines — `make link` exists
-      # precisely for machines with no network. So the scan lives where a new
-      # dependency actually enters the repo: CI. A fresh machine installing an
-      # already-pinned lockfile with integrity hashes is fetching bytes that were
-      # scanned when they were introduced.
+      # Socket blocks malicious packages during install. CI only: it fails closed
+      # without network, and `make install` must work offline.
       - name: Scan for malicious packages (Socket, CI only)
         run: |
           set -euo pipefail
@@ -2268,11 +1637,8 @@ jobs:
           bun install --cwd nvim/lsp-servers --frozen-lockfile
           rm -f nvim/lsp-servers/bunfig.toml
 
-  # ── the toolchain is bun and uv, and stays that way ────────────────────────
-  # Not "nvim without node" any more — nvim never wants node now, so there is no
-  # special mode to exercise. What needs guarding is the invariant: that nothing
-  # quietly reintroduces node, npm, pip or a shim, and that the servers really do
-  # run under bun.
+  # ── the toolchain is bun and uv ────────────────────────────────────────────
+  # Nothing may bring back node, npm, pip or a node shim; the servers run under bun.
   toolchain:
     name: bun-only toolchain
     needs: changes
@@ -2283,32 +1649,11 @@ jobs:
         with:
           submodules: true
 
-      # The ACTION is pinned and Dependabot-watched, rather than piping an
-      # unpinned installer script into bash. Note this puts bun somewhere other
-      # than ~/.bun/bin, so the handshake step below resolves it with
-      # `command -v` rather than assuming a path.
-      #
-      # bun's VERSION comes from mise.toml, which tools/gen-mise.sh generates
-      # from deps.conf — so CI runs the bun this repo declares, not whatever is
-      # current today. `bun-version: latest` is not a neutral default here: the
-      # `bun ./bun.lockb --hash:` header that `bun install --yarn` writes into
-      # yarn.lock is written differently by different bun versions (1.3.14
-      # zeroes it, 1.4.4 fills it in), so a runner ahead of the pin failed the
-      # "yarn.lock matches bun.lock" step below over a header, with the package
-      # entries identical. Hardcoding a number here instead would be a third
-      # copy of a version deps.conf owns.
-      #
-      # Dependabot cannot do this job in either direction: the github-actions
-      # ecosystem bumps action REFS, never `with:` inputs, and mise is not an
-      # ecosystem it parses. Upgrading bun is a manifest edit — bump mise.toml,
-      # `make mise-lock`, `make servers` to regenerate both lockfiles.
+      # Same setup-bun as the audit job. bun lands outside ~/.bun/bin, so later steps use command -v.
       - id: bun
         run: |
           set -euo pipefail
-          # Fail rather than default. An empty `bun-version` is not an error to
-          # setup-bun — it installs latest — so a bun that stopped being a mise
-          # tool in deps.conf would put this job back on an undeclared runtime
-          # without a single red tick.
+          # Fail rather than default: an empty bun-version means latest.
           v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
           if [ -z "$v" ]; then
             echo "mise.toml declares no bun version; deps.conf must keep bun" \
@@ -2340,8 +1685,7 @@ jobs:
 
       - name: No node shim anywhere in the repo
         run: |
-          # Aliasing node to bun would make incompatibilities surface as errors
-          # blaming the wrong tool. If someone adds one, this should fail.
+          # A node->bun alias would blame the wrong tool for every incompatibility.
           if grep -rnE '(ln -s.*\bbun\b.*/node|exec bun "\$@")' \
                --include='*.sh' --include='*.lua' --include='*.conf' . ; then
             echo "a node->bun shim was introduced — see lsp_servers.lua for why not"
@@ -2349,18 +1693,8 @@ jobs:
           fi
           echo "clean: no node shim"
 
-      # Server definitions live in lua/external/lsp_servers.lua rather than inline
-      # in the plugin spec precisely so they can be tested like this: `--clean`
-      # loads no plugins, so there's no 26-repo clone and no treesitter compile
-      # standing between the assertion and the cmd lines it's about.
-      # NOT the runner's distro neovim. Ubuntu 24.04 ships 0.9.5, and this
-      # config needs 0.12 — the distro version failed every run with "attempt
-      # to call field 'joinpath' (a nil value)", which read as a broken config
-      # rather than as CI testing a version the config never claimed to support.
-      #
-      # Pinned and sha256-verified, the same treatment lemminx gets in
-      # nvim/deps.sh. Bump both the version and the hash together; a mismatch
-      # should stop the job, not be worked around.
+      # Not Ubuntu's 0.9.5: this config needs 0.12. Pinned and sha256-verified;
+      # bump the version and hash together.
       - name: Install neovim (pinned)
         env:
           NVIM_VERSION: v0.12.4
@@ -2378,10 +1712,7 @@ jobs:
           nvim --version | head -1
           make test
 
-      # The language servers must work with no node and no npm anywhere — that
-      # is the entire point of moving them out of Mason. Asserted with a real
-      # LSP initialize handshake, because weaker checks (--version, exit codes)
-      # give false readings on several of these servers.
+      # A real LSP initialize handshake; --version and exit codes mislead for several servers.
       - name: LSP servers handshake under bun, with node/npm absent
         run: |
           bun install --cwd nvim/lsp-servers --frozen-lockfile
@@ -2392,13 +1723,7 @@ jobs:
           PATH=$MIN bun nvim/lsp-servers/verify.ts | tee /tmp/lsp.txt
           grep -q "ALL PASS" /tmp/lsp.txt
 
-      # Integration signal, deliberately advisory: this boots the real plugin
-      # stack, so a failure is as likely to be a flaky clone or an upstream
-      # plugin change as a bug here. The steps above are what gate the build.
-      #
-      # No PATH stripping — that made sense when node-absent was a special case.
-      # It is now the only case, so this just checks the editor boots and every
-      # server is registered.
+      # Advisory: it boots the real plugin stack, so a failure may be upstream.
       - name: nvim boots and registers its servers (advisory)
         continue-on-error: true
         run: |
@@ -2415,18 +1740,8 @@ jobs:
           done
 
   # ── The one required check ─────────────────────────────────────────────────
-  # The main-ci ruleset requires this job and nothing else. Required checks
-  # are a list of job NAMES typed into the ruleset, and GitHub never updates
-  # it: by 2026-11-10 it required "install (fedora / dnf)", a name #96
-  # renamed away, and four jobs added since were never in it. One stable name
-  # means adding or renaming a job above cannot desync the ruleset again.
-  #
-  # main-ci has no bypass actors, unlike main-branch-rules (whose admin bypass
-  # exists only because GitHub forbids approving your own PR). Bypass is per
-  # ruleset, so merging past the review rule no longer skips this one.
-  #
-  # `if: always()` is load-bearing. Without it a failed job above SKIPS this
-  # one, and a skipped required check counts as passing.
+  # main-ci requires only this job, so adding or renaming a job cannot desync
+  # the ruleset. `if: always()`: a skipped required check counts as passing.
   ci-ok:
     name: ci ok
     if: always()
@@ -2435,8 +1750,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The drift this job exists to stop would come back as a job added
-      # above but not to `needs`: it would run, could fail, and gate nothing.
+      # A job missing from needs would run and gate nothing.
       - name: Every job is in needs
         env:
           NEEDS: ${{ toJSON(needs) }}
@@ -2452,9 +1766,7 @@ jobs:
           fi
           echo "ok: needs lists all $(wc -l <<<"$declared") jobs"
 
-      # A skip passes only when `changes` itself succeeded and said this is a
-      # docs-only PR, and never for `changes` or shellcheck, which always run.
-      # If `changes` fails, FULL is empty and every skip fails here.
+      # A skip passes only when `changes` succeeded and said docs-only.
       - name: Every job succeeded, or was skipped for a docs-only PR
         env:
           NEEDS: ${{ toJSON(needs) }}
