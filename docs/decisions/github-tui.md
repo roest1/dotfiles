@@ -18,8 +18,8 @@ for a name nobody types. The writer moved from bash's `_gh_tab_var` to Rust's `T
 and the bytes did not.
 
 **Code:** `tui/github/` · **Parity record:** `docs/decisions/github-parity.md`
-· **Walkthrough:** `git/GITHUB_TOOLS.md` (describes the fzf version, and is
-now history)
+· **Walkthrough of the fzf version:** deleted 2026-11-22; read it with
+`git show 25924b3:git/GITHUB_TOOLS.md`
 
 ## What it is
 
