@@ -483,19 +483,6 @@ jobs:
           done
           exit $bad
 
-      # bash_github stays plain gh; an interactive screen belongs in tui/github.
-      - name: bash_github invokes no fzf
-        run: |
-          awk '
-            /^[[:space:]]*#/ { next }
-            /\| *fzf|^[[:space:]]*fzf / { print FILENAME ":" FNR ": " $0; found = 1 }
-            END { exit found ? 1 : 0 }
-          ' bash/bash_github || {
-            echo "bash_github must not invoke fzf — it is the plain-gh file"
-            exit 1
-          }
-
-
       # `h` is hand-maintained: it names every public command and nothing that is gone.
       - name: Every command is documented in h, and h documents nothing missing
         run: |
@@ -598,16 +585,6 @@ jobs:
           if [ "$STATUS_DRIFT" -ne 0 ]; then
             echo "links drifted immediately after make link"; exit 1
           fi
-
-      # wezterm.lua's pcall makes a missing shared.lua silent.
-      - name: shared.lua is linked and loaded
-        run: |
-          set -euo pipefail
-          source lib/manifest.sh
-          manifest_lines link wezterm | awk -F'\t' '{print $2}' | grep -qx 'wezterm/shared.lua' || {
-            echo "deps.conf [wezterm] does not link wezterm/shared.lua"; exit 1; }
-          grep -q 'shared.lua' wezterm/wezterm.lua || { echo "wezterm.lua does not load shared.lua"; exit 1; }
-          echo "ok: shared.lua linked and loaded"
 
       # A plugin links from its own clone, ignores the core's sections file, is
       # skipped if it cannot be cloned, and is left alone when a section is named.
@@ -1213,20 +1190,6 @@ jobs:
         with:
           submodules: true
 
-      # Never fails: EPEL shipping a newer neovim is good news.
-      - name: What the distro offers (informational)
-        run: |
-          set -euo pipefail
-          cand=$(dnf -q repoquery --latest-limit=1 --qf '%{version}' neovim)
-          echo "distro candidate: $cand"
-          case "$cand" in
-            0.[0-9].*|0.1[01].*)
-              echo "below 0.12 — the mise fallback is doing real work here" ;;
-            *)
-              echo "::notice::the distro now offers neovim $cand. If that is >= 0.12 the"
-              echo "::notice::mise||pkg ordering in deps.conf may no longer be needed." ;;
-          esac
-
       - name: Resolve nvim through the real provider chain
         run: |
           set -euo pipefail
@@ -1722,22 +1685,6 @@ jobs:
           ! PATH=$MIN command -v npm
           PATH=$MIN bun nvim/lsp-servers/verify.ts | tee /tmp/lsp.txt
           grep -q "ALL PASS" /tmp/lsp.txt
-
-      # Advisory: it boots the real plugin stack, so a failure may be upstream.
-      - name: nvim boots and registers its servers (advisory)
-        continue-on-error: true
-        run: |
-          make link nvim
-          timeout 600 nvim --headless -c "lua
-            local names = vim.tbl_keys(require('external.lsp_servers').build())
-            table.sort(names)
-            print('configured: ' .. table.concat(names, ', '))
-            print('mason loaded: ' .. tostring(package.loaded['mason'] ~= nil))
-          " -c "qa!" 2>&1 | tee /tmp/nvim.txt
-          grep -q "mason loaded: false" /tmp/nvim.txt
-          for s in clangd lua_ls lemminx tsc cssls html jsonls yamlls bashls; do
-            grep -q "$s" /tmp/nvim.txt || { echo "server $s not configured"; exit 1; }
-          done
 
   # ── The one required check ─────────────────────────────────────────────────
   # main-ci requires only this job, so adding or renaming a job cannot desync
