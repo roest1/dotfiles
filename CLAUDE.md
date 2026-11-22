@@ -88,7 +88,9 @@ reaches machines only through a bump PR here (Dependabot's `gitsubmodule` entry)
 against it; a plugin is never pinned. `make install` checks out any submodule that is not
 checked out, and never touches one that is; `install.sh` sets `submodule.recurse` so `git
 pull` moves the checkout to the new pin. A link whose source is missing is skipped, never
-backed up. To change the prompt, change roest1/PS1, then bump the pointer here.
+backed up. To change the prompt, change roest1/PS1, then bump the pointer here. Its colors
+and icons are PS1's public `PS1_COLOR_*`/`PS1_ICON_*` variables, set per machine in
+`~/.bash_local`; never reach into its `__` internals from this repo.
 
 `make check` asks "does this command exist." `make status` asks "is this machine
 what the manifest says" — link targets, per-tool provenance, and the font lanes.
