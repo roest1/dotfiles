@@ -1239,8 +1239,11 @@ jobs:
       - name: git-autofetch fetches and reports, never pulls
         run: |
           set -euo pipefail
-          t=$(mktemp -d); G=$PWD/git-autofetch/git-autofetch
+          t=$(mktemp -d)
           git config --global user.name ci; git config --global user.email ci@example.invalid
+          # Run from a local clone: the script always fetches its own repo, and
+          # this checkout's remote is not one the test should depend on.
+          git clone -q "$PWD" "$t/core" 2>/dev/null; G=$t/core/git-autofetch/git-autofetch
           git init -q --bare -b main "$t/o.git"
           git clone -q "$t/o.git" "$t/a" 2>/dev/null
           git -C "$t/a" commit -q --allow-empty -m one && git -C "$t/a" push -q origin main
@@ -1471,7 +1474,7 @@ jobs:
           d="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/bashrc.d"; mkdir -p "$d"
           printf '%s\n' 'declare -F h >/dev/null && dropin_saw_core=1' 'h() { echo dropin; }' > "$d/ci.bash"
           out=$(bash -ic 'echo "saw=${dropin_saw_core:-0} h=$(h)"' 2>/dev/null)
-          rm -r "$d"
+          rm "$d/ci.bash"  # only ours: [git-autofetch] links a drop-in here too
           [ "$out" = "saw=1 h=dropin" ] || { echo "FAIL: drop-in not sourced last: '$out'"; exit 1; }
           echo "ok: drop-ins load after the core"
 
