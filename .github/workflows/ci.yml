@@ -1232,6 +1232,33 @@ jobs:
           [ $bad -eq 0 ] && echo "ok: uv comes from Astral's installer, with pkg as the fallback"
           exit $bad
 
+      # git-autofetch may fetch, and may never change a branch or a working
+      # tree; --report reads local refs only and stays silent when nothing is
+      # behind. A plugin clone one commit behind must be named, a busy one
+      # must be skipped, and the fetch must leave its HEAD where it was.
+      - name: git-autofetch fetches and reports, never pulls
+        run: |
+          set -euo pipefail
+          t=$(mktemp -d); G=$PWD/git-autofetch/git-autofetch
+          git config --global user.name ci; git config --global user.email ci@example.invalid
+          git init -q --bare -b main "$t/o.git"
+          git clone -q "$t/o.git" "$t/a" 2>/dev/null
+          git -C "$t/a" commit -q --allow-empty -m one && git -C "$t/a" push -q origin main
+          git clone -q "$t/o.git" "$t/p"
+          git -C "$t/a" commit -q --allow-empty -m two && git -C "$t/a" push -q
+          printf 'p  file://%s/o.git  %s/p\n' "$t" "$t" > "$t/plugins"
+          export DOTFILES_PLUGINS_FILE=$t/plugins GIT_AUTOFETCH_ROOT=$t/none
+          before=$(git -C "$t/p" rev-parse HEAD)
+          [ -z "$($G --report)" ] || { echo "reported before anything was fetched"; exit 1; }
+          $G
+          [ "$(git -C "$t/p" rev-parse HEAD)" = "$before" ] || { echo "the fetch moved HEAD"; exit 1; }
+          $G --report | grep -q "$t/p is 1 commit(s) behind origin/main" \
+            || { echo "a plugin one commit behind was not reported"; $G --report; exit 1; }
+          touch "$t/p/.git/MERGE_HEAD"
+          $G --dry-run | grep -q "skip  $t/p (MERGE_HEAD in progress)" \
+            || { echo "a repo mid-merge was not skipped"; exit 1; }
+          echo "ok: fetched without moving HEAD, reported the plugin, skipped the busy repo"
+
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
   # ── the Rust TUIs ─────────────────────────────────────────────────────────

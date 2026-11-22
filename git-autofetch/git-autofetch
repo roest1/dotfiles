@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Fetch, never pull: keep remote-tracking refs current so a machine can SAY it is
+# behind, and leave the decision to update with you.
+#
+#   git-autofetch            fetch this dotfiles clone, its plugins, and every repo
+#                            under ~/github (GIT_AUTOFETCH_ROOT)
+#   git-autofetch --dry-run  list those repos and what would happen, no network
+#   git-autofetch --report   no network: one line per dotfiles/plugin clone that is
+#                            behind its upstream, nothing when none is
+#
+# Fetch only: never merges, rebases, or touches a branch or the working tree.
+set -uo pipefail
+
+# This file is linked into ~/.local/bin; the clone it lives in is the dotfiles repo.
+self=$(readlink -f "${BASH_SOURCE[0]}")
+DOTFILES_CORE=$(cd "${self%/*}/.." && pwd)
+
+root=${GIT_AUTOFETCH_ROOT:-$HOME/github}
+per_repo_timeout=${GIT_AUTOFETCH_TIMEOUT:-60}
+mode=fetch
+case ${1:-} in
+  --dry-run) mode=dry ;;
+  --report)  mode=report ;;
+  "") ;;
+  *) echo "usage: git-autofetch [--dry-run|--report]" >&2; exit 2 ;;
+esac
+
+# The repos whose updates reach this machine through `make install`: this clone
+# and each plugin clone. lib/plugins.sh owns the plugins file's format.
+managed_repos() {
+  echo "$DOTFILES_CORE"
+  # shellcheck source=../lib/plugins.sh
+  source "$DOTFILES_CORE/lib/plugins.sh"
+  local dir
+  while IFS=$'\t' read -r _ _ dir; do
+    [[ -d $dir/.git ]] && echo "$dir"
+  done < <(plugins_list 2>/dev/null)
+}
+
+if [[ $mode == report ]]; then
+  while IFS= read -r repo; do
+    git -C "$repo" symbolic-ref -q HEAD >/dev/null || continue   # detached: yours
+    up=$(git -C "$repo" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null) || continue
+    n=$(git -C "$repo" rev-list --count "HEAD..@{upstream}" 2>/dev/null) || continue
+    (( n > 0 )) || continue
+    printf '⬇  %s is %d commit(s) behind %s: git -C %s pull && make -C %s install\n' \
+      "${repo/#$HOME/\~}" "$n" "$up" "${repo/#$HOME/\~}" "${DOTFILES_CORE/#$HOME/\~}"
+  done < <(managed_repos)
+  exit 0
+fi
+
+# Never prompt: a background job has no terminal to answer a passphrase or password.
+export GIT_TERMINAL_PROMPT=0
+export GIT_SSH_COMMAND=${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=10}
+# Fedora/GNOME's SSH agent, in case the user manager didn't inherit SSH_AUTH_SOCK.
+if [[ -z ${SSH_AUTH_SOCK:-} && -S ${XDG_RUNTIME_DIR:-/run/user/$UID}/gcr/ssh ]]; then
+  export SSH_AUTH_SOCK=${XDG_RUNTIME_DIR:-/run/user/$UID}/gcr/ssh
+fi
+
+busy_reason() { # prints why a repo should be left alone, if anything
+  local repo=$1 f
+  for f in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG; do
+    [[ -e $(git -C "$repo" rev-parse --path-format=absolute --git-path "$f") ]] && { echo "$f in progress"; return; }
+  done
+}
+
+all_repos() {
+  managed_repos
+  [[ -d $root ]] && find "$root" -maxdepth 4 -name .git -prune -printf '%h\n'
+}
+
+fetched=0 skipped=0 failed=0
+while IFS= read -r repo; do
+  name=${repo/#$HOME/\~}
+  if [[ -z $(git -C "$repo" remote) ]]; then
+    echo "skip  $name (no remotes)"; ((skipped++)); continue
+  fi
+  reason=$(busy_reason "$repo")
+  if [[ -n $reason ]]; then
+    echo "skip  $name ($reason)"; ((skipped++)); continue
+  fi
+  if [[ $mode == dry ]]; then
+    echo "would fetch  $name ($(git -C "$repo" remote | paste -sd, -))"; continue
+  fi
+  # Submodules are not fetched: a new pin arrives with the parent repo's fetch.
+  if out=$(timeout "$per_repo_timeout" git -C "$repo" fetch --all --quiet --recurse-submodules=no 2>&1); then
+    ((fetched++))
+  else
+    echo "FAIL  $name: ${out//$'\n'/ | }"; ((failed++))
+  fi
+done < <(all_repos | awk '!seen[$0]++')
+
+[[ $mode == dry ]] && exit 0
+echo "fetched $fetched, skipped $skipped, failed $failed"
+((failed == 0))
