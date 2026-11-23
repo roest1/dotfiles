@@ -3,7 +3,8 @@
 `manifest.sh` parses `deps.conf`, `providers.sh` maps a provider to an installer and walks
 `||` chains, `pkg.sh` is the only implementation of "install a tool", `run.sh` runs a
 section, `status.sh` compares the machine with the manifest, `plugins.sh` runs other repos
-through the same engine. The rules for using them are in the root `CLAUDE.md`; what follows
+through the same engine, `submodules.sh` checks out submodules that are not checked out
+(for `install.sh` and the `post-merge` hook). The rules for using them are in the root `CLAUDE.md`; what follows
 is what you need before editing the two escape files and the status font block.
 
 ## `make status`'s font block

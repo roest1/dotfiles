@@ -51,6 +51,7 @@ PATTERNS=(
   git-autofetch/git-autofetch
   'git-autofetch/*.bash'
   .githooks/pre-commit
+  .githooks/post-merge
 )
 
 # Is this path one of ours? Used for the caller-supplied list, where the
