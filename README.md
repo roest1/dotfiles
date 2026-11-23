@@ -27,6 +27,7 @@ Each section of `deps.conf` is one pillar. Install them all, or name the ones yo
 | `[wezterm]` | The terminal config and the Science Gothic Mono font |
 | `[tui]` | Terminal apps built from this repo: `github` (the current repo on GitHub, live), `dots` (this repo's console), `font` (pick fonts per lane) |
 | `[claude]` | Claude Code settings: deny rules for secrets, terminal status hooks |
+| `[git-autofetch]` | Fetches this repo, its plugins and `~/github` every 20 minutes, never pulls, and tells each new shell when you are behind |
 
 ### Just want the prompt?
 
@@ -162,6 +163,7 @@ nvim/            [nvim] — its own Makefile and README
 wezterm/         [wezterm] — config and the generated fonts
 tui/             [tui] — Rust workspace
 claude/          [claude]
+git-autofetch/   [git-autofetch] — the script, its systemd units, the shell notice
 docs/decisions/  why things are the way they are
 ```
 

@@ -433,6 +433,23 @@ status_fonts_resolution() {
   fi
 }
 
+# Whether this clone or a plugin is behind what git-autofetch last fetched.
+# Advice, never drift: a machine on yesterday's commit is still the machine
+# its checkout describes. Only with [git-autofetch] in scope, because without
+# the timer the remote-tracking refs are as old as your last manual fetch.
+status_updates() {
+  case " $* " in *" git-autofetch "*) ;; *) return 0 ;; esac
+  local out
+  out=$("$MANIFEST_ROOT/git-autofetch/git-autofetch" --report 2>/dev/null) || return 0
+  echo ""
+  printf "%s[updates]%s\n" "$SG_B" "$SG_OFF"
+  if [[ -n "$out" ]]; then
+    printf '  %s\n' "$out"
+  else
+    echo "  $MARK_OK up to date with what was last fetched"
+  fi
+}
+
 status_all() {
   STATUS_DRIFT=0
   STATUS_DRIFT_LINKS=0
@@ -474,6 +491,7 @@ status_all() {
   status_tools "${scope[@]}"
   status_fonts "${scope[@]}"
   status_dnf "${scope[@]}"
+  status_updates "${scope[@]}"
   STATUS_DRIFT=$(( STATUS_DRIFT_LINKS + STATUS_DRIFT_TOOLS + STATUS_DRIFT_STALE \
                    + STATUS_DRIFT_FONTS + STATUS_DRIFT_DNF ))
 

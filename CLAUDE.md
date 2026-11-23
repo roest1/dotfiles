@@ -22,6 +22,7 @@ installs. Docs for a pillar live next to its code; this file holds only what cro
 | `[wezterm]` | the terminal, Science Gothic Mono, the `mux` domain | [`wezterm/CLAUDE.md`](wezterm/CLAUDE.md) |
 | `[tui]` | Rust TUIs built from the tree: `github`, `dots`, `font` | [`tui/CLAUDE.md`](tui/CLAUDE.md) |
 | `[claude]` | Claude Code settings and hooks | the `[claude]` comment block in `deps.conf` |
+| `[git-autofetch]` | a timer that fetches (never pulls) this clone, its plugins and `~/github`, and says when a machine is behind | the `[git-autofetch]` comment block in `deps.conf` |
 
 Under them all is the engine: `Makefile`, `install.sh`, `bootstrap.sh`, [`lib/`](lib/CLAUDE.md).
 

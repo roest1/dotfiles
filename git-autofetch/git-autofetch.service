@@ -1,0 +1,11 @@
+[Unit]
+Description=git fetch dotfiles, its plugins and ~/github repos (never pulls or merges)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/git-autofetch
+# Stay out of the way of interactive work.
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=15min

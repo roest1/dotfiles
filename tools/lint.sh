@@ -48,6 +48,8 @@ PATTERNS=(
   'lib/*.sh'
   '*/deps.sh'
   'tools/*.sh'
+  git-autofetch/git-autofetch
+  'git-autofetch/*.bash'
   .githooks/pre-commit
 )
 
