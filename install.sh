@@ -128,9 +128,9 @@ prune_orphans() {
 echo ""
 # --- Submodules ----------------------------------------------------
 #
-# Before linking, because link lines may point into a submodule (ps1/). Only
-# submodules that are NOT checked out are touched: `submodule update` on one
-# you are working in would move its HEAD back to the pinned commit.
+# Before linking, because link lines may point into a submodule (ps1/). The
+# rule (only submodules NOT checked out) is in lib/submodules.sh, which the
+# post-merge hook shares.
 #
 # Fetching needs the network, so only `make install` asks for it
 # (DOTFILES_FETCH_SUBMODULES=1); `make link` promises none and only says what
@@ -141,16 +141,15 @@ if [[ -f "$ROOT/.gitmodules" ]] && command -v git >/dev/null 2>&1; then
   if [[ "$(git -C "$ROOT" config --local --get submodule.recurse 2>/dev/null)" != true ]]; then
     git -C "$ROOT" config --local submodule.recurse true 2>/dev/null || true
   fi
-  while read -r sub; do
-    [[ -n "$sub" ]] || continue
-    if [[ "${DOTFILES_FETCH_SUBMODULES:-}" == 1 ]]; then
-      echo "  ➡️  checking out submodule $sub"
-      git -C "$ROOT" submodule update --init --quiet -- "$sub" \
-        || echo "  ⚠️  submodule $sub: could not check out (offline?) — links into it are skipped"
-    else
+  # shellcheck source=lib/submodules.sh
+  source "$DOTFILES_DIR/lib/submodules.sh"
+  if [[ "${DOTFILES_FETCH_SUBMODULES:-}" == 1 ]]; then
+    submodules_checkout_missing "$ROOT"
+  else
+    while IFS= read -r sub; do
       echo "  ⚠️  submodule $sub is not checked out — run \`make install\` (needs network)"
-    fi
-  done < <(git -C "$ROOT" submodule status 2>/dev/null | sed -n 's/^-[0-9a-f]* \([^ ]*\).*/\1/p')
+    done < <(submodules_missing "$ROOT")
+  fi
 fi
 
 echo "Linking from $ROOT"

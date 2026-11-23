@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Check out any submodule the new commit added. Runs as three hooks:
+# post-merge (a pull), post-rewrite (a pull --rebase) and post-checkout (a
+# branch switch); the last two are symlinks to this file. The rule, and why
+# git does not do this itself, is in lib/submodules.sh. A post-* hook cannot
+# undo what git already did, so this never fails; it only reports.
+case "$(basename "$0")" in
+  post-checkout) [[ "${3:-1}" == 1 ]] || exit 0 ;; # 0 = a file checkout, not a branch
+  post-rewrite) [[ "${1:-}" == rebase ]] || exit 0 ;;
+esac
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[[ -f "$root/.gitmodules" && -f "$root/lib/submodules.sh" ]] || exit 0
+# shellcheck source=lib/submodules.sh
+source "$root/lib/submodules.sh"
+submodules_checkout_missing "$root"
+exit 0

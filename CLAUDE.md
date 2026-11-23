@@ -59,7 +59,9 @@ enumerates them; the `Makefile` reads sections from the manifest and does not kn
   there reaches machines only through a bump PR here (Dependabot `gitsubmodule`), after CI;
   a plugin is never pinned. `make install` checks out a submodule that is not checked out
   and never touches one that is; `install.sh` sets `submodule.recurse` so `git pull` follows
-  the pin. A link whose source is missing is skipped, never backed up. To change the
+  the pin, and `.githooks/post-merge` checks out a submodule a pull or branch switch adds
+  (`lib/submodules.sh`). Keep one off a machine with `git config submodule.<name>.update none`.
+  A link whose source is missing is skipped, never backed up. To change the
   prompt, change roest1/PS1, then bump here. Its colors and icons are the public
   `PS1_COLOR_*`/`PS1_ICON_*` variables, set in `~/.bash_local`; never reach into its `__`
   internals.

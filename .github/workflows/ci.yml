@@ -507,6 +507,63 @@ jobs:
           [ -z "$got" ] || { echo "an absent tool reported copies: '$got'"; exit 1; }
           echo "ok: one real duplicate reported, a symlinked alias and an absent tool are not"
 
+      # submodule.recurse moves a checked-out submodule but leaves one a pull
+      # ADDS empty; .githooks/post-merge (also post-rewrite, post-checkout)
+      # checks it out. Fails all three cases without the hook.
+      - name: A pull, a rebase or a branch switch checks out a new submodule
+        run: |
+          set -euo pipefail
+          src=$PWD
+          t=$(mktemp -d)
+          export GIT_CONFIG_GLOBAL=$t/gitconfig GIT_CONFIG_NOSYSTEM=1 # never the machine's own config
+          git config --global user.name ci
+          git config --global user.email ci@example.invalid
+          git config --global init.defaultBranch main
+          git config --global protocol.file.allow always # local submodule URLs, this test only
+          git config --global pull.rebase false
+
+          for s in s1 s2 s3 s4; do
+            git init -q "$t/$s" && git -C "$t/$s" commit -q --allow-empty -m "$s"
+          done
+          git init -q "$t/up"
+          mkdir -p "$t/up/lib"
+          cp -P "$src"/.githooks/post-merge "$src"/.githooks/post-checkout "$src"/.githooks/post-rewrite "$t/up/"
+          mkdir "$t/up/.githooks" && mv "$t/up"/post-* "$t/up/.githooks/"
+          cp "$src/lib/submodules.sh" "$t/up/lib/"
+          git -C "$t/up" add -A && git -C "$t/up" commit -qm base
+          git clone -q "$t/up" "$t/down"
+          git -C "$t/down" config core.hooksPath .githooks
+          git -C "$t/down" config submodule.recurse true
+
+          add() { git -C "$t/up" submodule add -q "$t/$1" "$1" && git -C "$t/up" commit -qm "add $1"; }
+          out() { [[ -e "$t/down/$1/.git" ]]; }
+          check() { if out "$1"; then echo "ok   $2 checks out $1"; else echo "FAIL $2 left $1 empty"; fail=1; fi; }
+          fail=0
+
+          add s1
+          git -C "$t/down" pull -q 2>/dev/null
+          check s1 "pull (merge)"
+
+          add s2
+          git -C "$t/down" commit -q --allow-empty -m local # so the rebase rewrites something
+          git -C "$t/down" pull -q --rebase 2>/dev/null
+          check s2 "pull --rebase"
+
+          git -C "$t/up" switch -q -c topic && add s3 && git -C "$t/up" switch -q main
+          git -C "$t/down" fetch -q && git -C "$t/down" switch -q -c topic --track origin/topic 2>/dev/null
+          check s3 "a branch switch"
+          git -C "$t/down" switch -q main 2>/dev/null
+
+          git -C "$t/down" config submodule.s4.update none
+          add s4
+          msg=$(git -C "$t/down" pull -q 2>&1)
+          if out s4; then echo "FAIL s4 was opted out but got checked out"; fail=1
+          elif grep -q 's4' <<<"$msg"; then echo "FAIL the opt-out is noisy: $msg"; fail=1
+          else echo "ok   an opted-out submodule stays out, quietly"; fi
+
+          rm -rf "$t"
+          exit $fail
+
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
   link-only:
