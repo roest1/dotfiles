@@ -619,12 +619,32 @@ jobs:
         run: |
           jq -e . "$HOME/.claude/settings.json" >/dev/null \
             || { echo "FAIL: ~/.claude/settings.json is not valid JSON"; exit 1; }
-          for ev in Notification PreToolUse Stop; do
+          for ev in Notification PreToolUse UserPromptSubmit Stop; do
             jq -e --arg ev "$ev" \
-              '.hooks[$ev][0].hooks[0].command | test("SetUserVar=claude_state")' \
+              '[.hooks[$ev][].hooks[].command] | any(test("tab-state\\.sh"))' \
               "$HOME/.claude/settings.json" >/dev/null \
-              || { echo "FAIL: $ev hook missing or no longer publishes claude_state"; exit 1; }
+              || { echo "FAIL: $ev hook missing or no longer calls claude/tab-state.sh"; exit 1; }
           done
+
+      # Esc skips Stop, so a new prompt and Claude's idle notification are what
+      # retire a stale claim (#110). Each transition, on a fake tty.
+      - name: claude/tab-state.sh retires a stale claim
+        run: |
+          t=$(mktemp -d); export XDG_RUNTIME_DIR=$t CLAUDE_TAB_TTY=$t/tty
+          got() { : >"$t/tty"; echo "$2" | claude/tab-state.sh "$1"
+                  sed -n 's/.*claude_state=\(.*\)\x07.*/\1/p' "$t/tty" | base64 -d; }
+          j='{"session_id":"ci"}'; fail=0
+          want() { [ "$1" = "$2" ] || { echo "FAIL: $3: got '$1', want '$2'"; fail=1; }; }
+          want "$(got asking "$j")" asking "PreToolUse AskUserQuestion"
+          want "$(got idle "$j")" complete "idle after asking"
+          want "$(got waiting "$j")" waiting "permission prompt"
+          want "$(got prompt "$j")" "" "a new prompt clears"
+          want "$(got stop '{"session_id":"ci","background_tasks":[1]}')" background "stop with tasks"
+          : >"$t/tty"; echo "$j" | claude/tab-state.sh idle
+          [ -s "$t/tty" ] && { echo "FAIL: idle overwrote a background claim"; fail=1; }
+          want "$(got stop "$j")" complete "stop"
+          [ $fail -eq 0 ] && echo "ok: claims are made, and stale ones retired"
+          exit $fail
 
       # Under .claude/ this repo would also load it as project settings, and every hook would fire twice.
       - name: Claude settings are not also project-scoped
