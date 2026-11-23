@@ -153,7 +153,7 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
   with a list of old names.
 - **`h` is hand-maintained.** Adding, renaming or removing a command means editing `h` in
   `bash_productivity` in the same commit; CI checks both directions.
-- **The `[bash]` file split is enforced:** `bash_git` (git porcelain) → `bash_github` (plain
+- **The `[bash]` file split:** `bash_git` (git porcelain) → `bash_github` (plain
   `gh` and shared helpers). An interactive screen growing back into `bash_github` is drift;
   screens are Rust TUIs. History: [`docs/decisions/github-tui.md`](docs/decisions/github-tui.md).
 - **There are no interactive fzf commands left**, and fzf has no version floor. Only fzf's
