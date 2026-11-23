@@ -40,8 +40,8 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Split, Tick};
 use serde::Deserialize;
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Split, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::menu::{Act, Item, Menu};

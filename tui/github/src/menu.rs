@@ -1,7 +1,7 @@
 //! A row's actions, as a screen.
 //!
 //! The three-dots menu from the design doc, and the mechanism that makes "full
-//! functionality, all in a TUI" affordable. It needs nothing from `reticle`
+//! functionality, all in a TUI" affordable. It needs nothing from `tui-core`
 //! that was not already there: a menu is a list of labelled rows, `Flow::Push`
 //! opens it over the screen it came from, and `q` closes it.
 //!
@@ -26,12 +26,12 @@
 //! prints what it did and fails loudly. Handing them the real terminal gets
 //! text entry, confirmation and error reporting for free, in the words the
 //! tools themselves use -- so "full functionality" does NOT wait on a text
-//! input widget in `reticle`. That was the surprise of building this.
+//! input widget in `tui-core`. That was the surprise of building this.
 //!
 //! An item that only reads can still do its work in-process and return
 //! `Flow::Dirty`; `act` decides.
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::paint::{BOLD, DIM, GRY, OFF, ORG, RED};
 
@@ -151,7 +151,7 @@ fn wrap_argv(argv: &[String], width: usize) -> Vec<String> {
         i += 1;
         if line.is_empty() {
             line = piece;
-        } else if reticle::width::width(&line) + 1 + reticle::width::width(&piece) <= width {
+        } else if tui_core::width::width(&line) + 1 + tui_core::width::width(&piece) <= width {
             line.push(' ');
             line.push_str(&piece);
         } else {
@@ -443,7 +443,7 @@ mod tests {
         let lines = wrap_argv(&argv, 44);
         assert!(lines.len() > 1, "{lines:?}");
         for l in &lines {
-            assert!(reticle::width::width(l) <= 44 || !l.contains(' '), "{l:?}");
+            assert!(tui_core::width::width(l) <= 44 || !l.contains(' '), "{l:?}");
         }
         // Nothing lost, and the flags kept their values.
         assert_eq!(lines.join(" "), argv.join(" "));

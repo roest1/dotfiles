@@ -38,8 +38,8 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::sync::Arc;
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Split, Tick};
 use serde::Deserialize;
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Split, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::menu::{Act, Item, Menu};
@@ -513,7 +513,7 @@ impl Branches {
         } else {
             ""
         };
-        let flag = reticle::width::pad(flag, 2);
+        let flag = tui_core::width::pad(flag, 2);
         let mut row = Row::leaf(format!("{here}{flag} {}", b.name));
         // Depth 1, because a branch IS a child of its group -- and `depth` is
         // what says so. It was 0, which looked right because the marker column
@@ -559,11 +559,11 @@ impl Branches {
 
         // Padded in CELLS. `{:>9}` counts characters, so every checked row
         // would come out one column narrower than the blank ones -- the exact
-        // bug `reticle::width` was written for.
+        // bug `tui_core::width` was written for.
         let (check, check_colour) = match self.checks.get(&b.name) {
             Some(v) => {
                 let (t, c) = v.badge();
-                (reticle::width::rpad(t, 9), c)
+                (tui_core::width::rpad(t, 9), c)
             }
             None => (" ".repeat(9), idx::DIM),
         };
@@ -1075,11 +1075,11 @@ mod tests {
             }
             let marks: String = r.label.chars().take_while(|c| MARKS.contains(c)).collect();
             assert_eq!(
-                reticle::width::width(&marks),
+                tui_core::width::width(&marks),
                 4,
                 "marker prefix of {:?} is {} cells, so its name is in the wrong column",
                 r.label,
-                reticle::width::width(&marks)
+                tui_core::width::width(&marks)
             );
         }
     }

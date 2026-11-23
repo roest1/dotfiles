@@ -1,7 +1,7 @@
 //! The `dots` binary — a thin entry point.
 
 use dots::Console;
-use reticle::app;
+use tui_core::app;
 
 fn main() -> std::io::Result<()> {
     // Same reasoning as font's: Rust ignores SIGPIPE and turns the write error

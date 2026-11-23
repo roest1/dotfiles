@@ -1,7 +1,8 @@
 # The GitHub TUI
 
 **Status:** active, and the port is done. `github` is a Rust binary built from
-`tui/github`, installed by `make install tui`. The fzf implementation it
+`tui/github`, installed by `make install tui`. (`reticle` below is the framework, now
+[roest1/tui-core](https://github.com/roest1/tui-core), imported as `tui_core`.) The fzf implementation it
 replaced — `bash/bash_github_tui`, 2500 lines — was **deleted on 2026-10-24**,
 in one commit, which is what the whole of this file was written to make
 possible.

@@ -1,6 +1,6 @@
 //! A make target, streamed into the pane.
 //!
-//! Two reader threads and a channel, ticked by `reticle::Tick` — the same shape
+//! Two reader threads and a channel, ticked by `tui_core::Tick` — the same shape
 //! `font`'s prefetching cache already uses, so this adds no new concurrency
 //! idea to the workspace.
 //!
@@ -17,7 +17,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
 
-use reticle::Tick;
+use tui_core::Tick;
 
 /// Enough to scroll back through a long install without holding a build log in
 /// memory for the life of the process.

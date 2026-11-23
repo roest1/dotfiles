@@ -1,7 +1,7 @@
 //! The `github` binary — a thin entry point.
 
 use github::{index, Root};
-use reticle::app;
+use tui_core::app;
 
 fn main() -> std::io::Result<()> {
     // Same reasoning as font's and dots': Rust ignores SIGPIPE and turns the

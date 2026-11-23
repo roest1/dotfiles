@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use reticle::{nav::Action, Flow, Image, Pane, Row, Screen, Tick};
+use tui_core::{nav::Action, Flow, Image, Pane, Row, Screen, Tick};
 
 use crate::fetch::{self, Fetch, Fetcher};
 use crate::{fonts, render, specimen, Preview};
@@ -243,12 +243,12 @@ impl Screen for BrowseScreen {
         let lane = self.lane.clone();
         let size = self.size;
         let art_rows = rows.saturating_sub(14) as usize;
-        if self.preview == Preview::Specimen && art_rows >= 6 && reticle::image::supported() {
+        if self.preview == Preview::Specimen && art_rows >= 6 && tui_core::image::supported() {
             let lines = specimen(&lane);
             let row_h = (size * 1.55) as usize;
             // Exactly the pixels these cells will get, so the image is drawn
             // 1:1 rather than resampled. See the note at the picker's copy.
-            let (cw, ch) = reticle::term_info().cell;
+            let (cw, ch) = tui_core::term_info().cell;
             let canvas_w = cols as usize * cw as usize;
             let canvas_h = art_rows * ch as usize;
             let mut c = render::Canvas::new(canvas_w, canvas_h, crate::theme::bg());

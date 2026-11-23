@@ -1630,13 +1630,13 @@ jobs:
           exit $fail
 
       # A bash function named after a tui binary would win over PATH. Derived
-      # from the workspace members, not a list; reticle ships no binary.
+      # from the workspace members, not a list.
 
       - name: No bash function shadows a tui binary
         run: |
           fail=0
           bins=$(sed -n '/^members *= *\[/,/\]/p' tui/Cargo.toml \
-                 | grep -oE '"[a-z0-9_-]+"' | tr -d '"' | grep -v '^reticle$')
+                 | grep -oE '"[a-z0-9_-]+"' | tr -d '"')
           [ -n "$bins" ] || { echo "could not read workspace members from tui/Cargo.toml"; exit 1; }
           echo "tui binaries: $(echo "$bins" | tr '\n' ' ')"
           for b in $bins; do

@@ -25,7 +25,7 @@
 
 use std::path::PathBuf;
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::repo::{self, Section, Target};
 use crate::run::Run;

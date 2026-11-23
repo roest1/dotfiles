@@ -134,7 +134,7 @@ impl Verdict {
     /// The glyph is back. It was dropped because an emoji is two cells where a
     /// `char` is one, so it shifted every column after it -- but that was an
     /// arithmetic bug, not a reason to lose the one thing in a dense list you
-    /// can find without reading. `reticle::width` measures cells properly now,
+    /// can find without reading. `tui_core::width` measures cells properly now,
     /// and a screen building a table pads with `width::rpad`.
     ///
     /// The WORD stays beside it, because several of these are not guessable
@@ -286,7 +286,7 @@ mod tests {
 
     /// Every badge is glyph + word, and the glyph is two cells. A table pads
     /// these into a column, so one that measured wrong would shift every
-    /// column after it -- which is what `reticle::width` exists to prevent.
+    /// column after it -- which is what `tui_core::width` exists to prevent.
     #[test]
     fn every_badge_carries_a_glyph_and_a_word() {
         for v in [
@@ -309,7 +309,7 @@ mod tests {
             // every badge occupies exactly that many CELLS -- whatever mix of
             // one- and two-cell glyphs they use.
             assert_eq!(
-                reticle::width::width(&reticle::width::rpad(text, 9)),
+                tui_core::width::width(&tui_core::width::rpad(text, 9)),
                 9,
                 "{text:?} does not pad to nine cells"
             );

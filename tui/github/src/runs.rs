@@ -29,7 +29,7 @@
 //! ## What the list column says, and what it does not
 //!
 //! The fzf list had ~100 columns and spent them: glyph, HEAD marker, age,
-//! duration, event, branch, workflow, title. `reticle`'s left column is 52, so
+//! duration, event, branch, workflow, title. `tui-core`'s left column is 52, so
 //! the row has to choose, and the triple that IDENTIFIES a run is title, age
 //! and verdict. Branch, event, workflow, duration, actor and run number all
 //! moved into the pane, which is wider than the old preview was and is on
@@ -42,7 +42,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::index::Repo;
@@ -434,8 +434,8 @@ impl Actions {
 
     /// Ask before doing something that costs runner minutes or kills a build.
     ///
-    /// A screen-local two-key confirm rather than a `reticle` dialog, because
-    /// there is no dialog in `reticle` yet and this needs no text entry -- it
+    /// A screen-local two-key confirm rather than a `tui-core` dialog, because
+    /// there is no dialog in `tui-core` yet and this needs no text entry -- it
     /// needs one yes. It is safe by construction rather than by bookkeeping:
     /// the ONLY key that acts is `y`, and any other key the screen sees clears
     /// the prompt, so a stale prompt can never turn a later keystroke into a
@@ -867,7 +867,7 @@ mod tests {
 
     /// The property that keeps this screen off the CPU, and the one a live
     /// refresh is most likely to break: a list of finished runs schedules
-    /// NOTHING, so `reticle`'s poll blocks for an hour and the process costs
+    /// NOTHING, so `tui-core`'s poll blocks for an hour and the process costs
     /// nothing until a key is pressed.
     #[test]
     fn a_finished_list_arms_no_clock_at_all() {

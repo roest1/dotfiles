@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["reticle", "font", "dots", "github"]
+members = ["font", "dots", "github"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,4 +9,7 @@ rust-version = "1.82"
 license = "MIT"
 
 [workspace.dependencies]
+# The framework, roest1/tui-core. Cargo.lock pins the commit; every crate here uses
+# this one spec, so they share one copy (dots pushes font's screen onto its stack).
+tui-core = { git = "https://github.com/roest1/tui-core", branch = "main" }
 crossterm = "0.29"

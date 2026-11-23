@@ -119,7 +119,9 @@ updates:
       # to TypeScript 7's own `tsc --lsp`, and the ignore that held typescript
       # back went with it.
 
-  # The tui/ workspace: font, dots, github, reticle.
+  # The tui/ workspace: font, dots, github, and their framework roest1/tui-core,
+  # a git dependency this bumps to tui-core's main. tui-core is ours, so it skips
+  # the cooldown. To bump without waiting: cargo update -p tui-core.
   - package-ecosystem: "cargo"
     directory: "/tui"
     schedule:
@@ -130,6 +132,8 @@ updates:
       - "dependencies"
     cooldown:
       default-days: 7
+      exclude:
+        - "tui-core"
     groups:
       # Same split as lsp-servers: minor and patch together, majors alone.
       crates:

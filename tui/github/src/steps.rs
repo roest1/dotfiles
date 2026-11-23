@@ -2,7 +2,7 @@
 //!
 //! The fzf implementation listed these FLAT -- a job line, then its steps
 //! indented under it, all in one unfilterable column -- because fzf has no
-//! tree. `reticle` does, and a matrix build is the case that makes the
+//! tree. `tui-core` does, and a matrix build is the case that makes the
 //! difference: twelve jobs of fifteen steps is 180 rows flat, against twelve
 //! rows with the one you care about opened.
 //!
@@ -21,7 +21,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::model::{Job, Run, Verdict};

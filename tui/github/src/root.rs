@@ -13,8 +13,8 @@
 //! "which of my repos are in what state" is already a question github.com
 //! cannot answer, and this answers it offline.
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen};
 use std::path::PathBuf;
+use tui_core::{nav::Action, Flow, Pane, Row, Screen};
 
 use crate::index::{self, Remote, Repo};
 
@@ -254,7 +254,7 @@ impl Root {
                 let prs = crate::prs::Prs::open(&slug, &self.me, actions.fetcher());
                 let secrets = crate::secrets::Secrets::open(&slug, actions.fetcher());
                 let envs = crate::envs::Envs::open(&slug, actions.fetcher());
-                Flow::Push(Box::new(reticle::Host::new(
+                Flow::Push(Box::new(tui_core::Host::new(
                     Some(slug),
                     // The same glyphs the fzf screens used as border labels,
                     // so a repo reads the way it always did -- and the same

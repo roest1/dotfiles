@@ -123,7 +123,7 @@ version = "0.1.0"
 dependencies = [
  "font",
  "libc",
- "reticle",
+ "tui-core",
 ]
 
 [[package]]
@@ -174,9 +174,9 @@ dependencies = [
  "fontdue",
  "libc",
  "png",
- "reticle",
  "serde_json",
  "ttf-parser",
+ "tui-core",
 ]
 
 [[package]]
@@ -194,9 +194,9 @@ name = "github"
 version = "0.1.0"
 dependencies = [
  "libc",
- "reticle",
  "serde",
  "serde_json",
+ "tui-core",
 ]
 
 [[package]]
@@ -344,15 +344,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
 dependencies = [
  "bitflags",
-]
-
-[[package]]
-name = "reticle"
-version = "0.1.0"
-dependencies = [
- "base64",
- "crossterm",
- "libc",
 ]
 
 [[package]]
@@ -504,6 +495,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
+]
+
+[[package]]
+name = "tui-core"
+version = "0.1.0"
+source = "git+https://github.com/roest1/tui-core?branch=main#39bc65aba5e811fd0bcf027db11417700615fc00"
+dependencies = [
+ "base64",
+ "crossterm",
+ "libc",
 ]
 
 [[package]]
