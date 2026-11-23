@@ -75,7 +75,7 @@ pub fn browse(url: &str) -> String {
 
 /// The tab mark: `gh_tui`, an OSC 1337 user var that wezterm reads.
 ///
-/// `wezterm/shared.lua`'s `format-tab-title` puts GitHub's Octicons mark on
+/// `wezterm/wezterm.lua`'s `format-tab-title` puts GitHub's Octicons mark on
 /// the tab while a github session is running, and it learns that a session is
 /// running from this variable and nothing else. The bash implementation set it
 /// in `_gh_tab_var`, which is NOT one of `_ghw_main`'s verbs -- so the parity
@@ -135,7 +135,7 @@ pub use steps::Steps;
 mod tests {
     use super::*;
 
-    /// The wire format, pinned. `wezterm/shared.lua` reads it, so a change
+    /// The wire format, pinned. `wezterm/wezterm.lua` reads it, so a change
     /// here goes dark rather than failing: the config still loads, the tab
     /// still draws, and there is simply no icon with nothing to say why. The
     /// var is still named after the command's old name for that same reason.
