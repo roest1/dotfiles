@@ -1472,9 +1472,6 @@ jobs:
             [ -s "$f" ] || { echo "missing or empty: $f"; fail=1; }
           done
           grep -q 'wezterm/fonts' deps.conf || { echo "deps.conf does not link wezterm/fonts"; fail=1; }
-          # OFL 1.1 sections 2 and 5: the licence travels with the font, unrelicensed.
-          [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
-          grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
           # Any blink rate but exactly 0 animates.
           grep -q 'text_blink_rate_rapid = 0' wezterm/wezterm.lua \
             || { echo "wezterm.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }

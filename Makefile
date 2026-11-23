@@ -67,7 +67,7 @@ $(eval $(ARGS):;@:)
 #
 # CI asserts this list stays complete, because the failure is invisible until
 # a path happens to share a target's name.
-.PHONY: help install link check status plugins lint sync prune test shell update sections mise-lock mono-font $(SECTIONS)
+.PHONY: help install link check status plugins lint sync prune test shell update sections mise-lock $(SECTIONS)
 
 # One recipe line, not twelve, because lib/sgr.sh has to be sourced in the same
 # shell that uses it — make runs each recipe line in its own.
@@ -160,22 +160,6 @@ prune: ## Remove superseded mise tool versions (shows them first)
 mise-lock: ## Regenerate mise.toml from deps.conf and refresh mise.lock
 	@bash "$(DOTFILES_DIR)/tools/gen-mise.sh"
 	@cd "$(DOTFILES_DIR)" && mise lock
-
-# Science Gothic Mono is generated the same way mise.toml is: an authored
-# generator plus a committed artifact. The .ttf files live in wezterm/fonts and
-# are linked into ~/.config/wezterm, so a fresh machine needs no python, no
-# network and no font tooling — only this target does. Re-run after an upstream
-# Science Gothic release.
-mono-font: ## Regenerate wezterm/fonts from upstream Science Gothic
-	@command -v uv >/dev/null 2>&1 || { echo "uv not installed — declared in deps.conf [uv]; run: make install uv"; exit 1; }
-	@src=$$(mktemp); \
-	if curl -fsSL -o "$$src" \
-	     "https://raw.githubusercontent.com/google/fonts/main/ofl/sciencegothic/ScienceGothic%5BCTRS,slnt,wdth,wght%5D.ttf"; then \
-	  uv run "$(DOTFILES_DIR)/wezterm/mkmono.py" "$$src" "$(DOTFILES_DIR)/wezterm/fonts"; \
-	else \
-	  echo "download failed — wezterm/fonts left as-is"; rm -f "$$src"; exit 1; \
-	fi; \
-	rm -f "$$src"
 
 test: ## Run the Lua unit tests (no plugins, no network)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not installed — skipping"; exit 0; }

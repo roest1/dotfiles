@@ -140,17 +140,18 @@ updates:
           - "minor"
           - "patch"
 
-  # The prompt, roest1/PS1, is a submodule at ps1/. This is what moves its
-  # pin: a push to ps1 reaches machines only after a PR here bumps the
-  # commit and CI has run against it. Weekly with no cooldown, unlike the
-  # rest: the cooldown waits out a stranger's hijacked release, and PS1 is
-  # ours. To bump without waiting, see README.md ("Just want the prompt?").
+  # Our submodules, roest1/PS1 at ps1/ and roest1/fonts at wezterm/fonts/.
+  # This is what moves their pins: a push there reaches machines only after a
+  # PR here bumps the commit and CI has run against it. Weekly with no
+  # cooldown, unlike the rest: the cooldown waits out a stranger's hijacked
+  # release, and these are ours. To bump without waiting, see README.md
+  # ("Just want the prompt?").
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     schedule:
       interval: "weekly"
     commit-message:
-      prefix: "ps1"
+      prefix: "submodule"
     labels:
       - "dependencies"
 

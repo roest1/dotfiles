@@ -54,7 +54,8 @@ enumerates them; the `Makefile` reads sections from the manifest and does not kn
   rejects a global prompt coming back. A plugin's shell code goes in
   `~/.config/dotfiles/bashrc.d/*.bash`, which `bashrc` sources last.
 - **A public component this repo depends on is a git submodule, not a plugin.** The prompt
-  is `roest1/PS1` at `ps1/`, linked to `~/.bash_prompt`. A submodule pins a commit, so a push
+  is `roest1/PS1` at `ps1/`, linked to `~/.bash_prompt`; Science Gothic Mono is
+  `roest1/fonts` at `wezterm/fonts/`. A submodule pins a commit, so a push
   there reaches machines only through a bump PR here (Dependabot `gitsubmodule`), after CI;
   a plugin is never pinned. `make install` checks out a submodule that is not checked out
   and never touches one that is; `install.sh` sets `submodule.recurse` so `git pull` follows
@@ -130,8 +131,8 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
 - **`wezterm/wezterm.lua` declares the `mux` domain other tools connect to**; don't replace
   it with a stock config. Debug wezterm by suspecting a stale process first
   ([`wezterm/CLAUDE.md`](wezterm/CLAUDE.md)).
-- **The fonts in `wezterm/fonts/` are generated, OFL-licensed and read via `font_dirs`**,
-  never installed system-wide. `LICENSE` carves them out of MIT, and CI checks it.
+- **The fonts in `wezterm/fonts/` are read via `font_dirs`**, never installed system-wide.
+  They are the `roest1/fonts` submodule, which generates them and carries their OFL.
 - **`~/.gitconfig` is a symlink into the repo, so `git config --global` is a tracked edit.**
   So is `gh auth setup-git`: answer **no** to gh's *"Authenticate Git with your GitHub
   credentials?"*. GitHub auth is SSH. `git/gitconfig` declares no credential helper and
