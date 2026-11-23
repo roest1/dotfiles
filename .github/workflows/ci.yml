@@ -1612,6 +1612,11 @@ jobs:
       - name: Release build
         working-directory: tui
         run: cargo build --release --locked
+      # roest1/github-tui runs its own fmt and clippy; this proves the pinned
+      # commit builds and passes its tests here, which is what a bump changes.
+      - name: github builds and passes its tests at the pinned commit
+        working-directory: tui/github
+        run: cargo test --locked && cargo build --release --locked
 
       # The same three-condition guard as lib/sgr.sh: off a linked wezterm tty,
       # SGR 6 and SGR 5 blink, and in a pipe they are garbage.
@@ -1687,14 +1692,15 @@ jobs:
           exit $fail
 
       # A bash function named after a tui binary would win over PATH. Derived
-      # from the workspace members, not a list.
+      # from [tui]'s tool lines, not a list: tui/github is a submodule outside
+      # the workspace, so the members no longer name every binary.
 
       - name: No bash function shadows a tui binary
         run: |
           fail=0
-          bins=$(sed -n '/^members *= *\[/,/\]/p' tui/Cargo.toml \
-                 | grep -oE '"[a-z0-9_-]+"' | tr -d '"')
-          [ -n "$bins" ] || { echo "could not read workspace members from tui/Cargo.toml"; exit 1; }
+          source lib/manifest.sh
+          bins=$(manifest_lines tool tui | cut -f3 | grep -vx cargo)
+          [ -n "$bins" ] || { echo "could not read [tui]'s tools from deps.conf"; exit 1; }
           echo "tui binaries: $(echo "$bins" | tr '\n' ' ')"
           for b in $bins; do
             if grep -qE "^$b\(\) \{" bash/*; then
