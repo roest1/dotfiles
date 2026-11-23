@@ -25,7 +25,7 @@ Each section of `deps.conf` is one pillar. Install them all, or name the ones yo
 | `[uv]` | Astral's uv, kept self-updating, for Python tools |
 | `[nvim]` | Neovim config with language servers and formatters ([nvim/README.md](nvim/README.md)) |
 | `[wezterm]` | The terminal config and the Science Gothic Mono font |
-| `[tui]` | Terminal apps built from this repo: `github` (the current repo on GitHub, live), `dots` (this repo's console), `font` (pick fonts per lane) |
+| `[tui]` | Terminal apps: `github` (the current repo on GitHub, live; [roest1/github-tui](https://github.com/roest1/github-tui)), `dots` (this repo's console), `font` (pick fonts per lane) |
 | `[claude]` | Claude Code settings: deny rules for secrets, terminal status hooks |
 | `[git-autofetch]` | Fetches this repo, its plugins and `~/github` every 20 minutes, never pulls, and tells each new shell when you are behind |
 
@@ -49,7 +49,8 @@ gh pr create --fill
 ```
 
 Once it merges, every machine gets it on `git pull`. The fonts at `wezterm/fonts`
-([roest1/fonts](https://github.com/roest1/fonts)) bump the same way. The TUIs' framework,
+([roest1/fonts](https://github.com/roest1/fonts)) and `github` at `tui/github`
+([roest1/github-tui](https://github.com/roest1/github-tui)) bump the same way. The TUIs' framework,
 [roest1/tui-core](https://github.com/roest1/tui-core), is a Cargo dependency: bump it with
 `cargo update -p tui-core --manifest-path tui/Cargo.toml`.
 
@@ -164,7 +165,7 @@ git/             gitconfig, plus GitHub setup notes
 uv/              [uv]
 nvim/            [nvim] — its own Makefile and README
 wezterm/         [wezterm] — config; fonts/ is roest1/fonts
-tui/             [tui] — Rust workspace
+tui/             [tui] — Rust workspace; github/ is roest1/github-tui
 claude/          [claude]
 git-autofetch/   [git-autofetch] — the script, its systemd units, the shell notice
 docs/decisions/  why things are the way they are

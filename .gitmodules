@@ -4,3 +4,6 @@
 [submodule "wezterm/fonts"]
 	path = wezterm/fonts
 	url = https://github.com/roest1/fonts.git
+[submodule "tui/github"]
+	path = tui/github
+	url = https://github.com/roest1/github-tui.git

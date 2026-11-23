@@ -20,7 +20,7 @@ installs. Docs for a pillar live next to its code; this file holds only what cro
 | `[uv]` | Astral's self-updating uv and its config | "Providers" below |
 | `[nvim]` | the editor, its plugins and language servers | [`nvim/CLAUDE.md`](nvim/CLAUDE.md) |
 | `[wezterm]` | the terminal, Science Gothic Mono, the `mux` domain | [`wezterm/CLAUDE.md`](wezterm/CLAUDE.md) |
-| `[tui]` | Rust TUIs built from the tree: `github`, `dots`, `font` | [`tui/CLAUDE.md`](tui/CLAUDE.md) |
+| `[tui]` | Rust TUIs: `dots`, `font`, and `github` (roest1/github-tui at `tui/github`) | [`tui/CLAUDE.md`](tui/CLAUDE.md) |
 | `[claude]` | Claude Code settings and hooks | the `[claude]` comment block in `deps.conf` |
 | `[git-autofetch]` | a timer that fetches (never pulls) this clone, its plugins and `~/github`, and says when a machine is behind | the `[git-autofetch]` comment block in `deps.conf` |
 
@@ -55,7 +55,7 @@ enumerates them; the `Makefile` reads sections from the manifest and does not kn
   `~/.config/dotfiles/bashrc.d/*.bash`, which `bashrc` sources last.
 - **A public component this repo depends on is a git submodule, not a plugin.** The prompt
   is `roest1/PS1` at `ps1/`, linked to `~/.bash_prompt`; Science Gothic Mono is
-  `roest1/fonts` at `wezterm/fonts/`. A submodule pins a commit, so a push
+  `roest1/fonts` at `wezterm/fonts/`; `github` is `roest1/github-tui` at `tui/github`. A submodule pins a commit, so a push
   there reaches machines only through a bump PR here (Dependabot `gitsubmodule`), after CI;
   a plugin is never pinned. `make install` checks out a submodule that is not checked out
   and never touches one that is; `install.sh` sets `submodule.recurse` so `git pull` follows
@@ -159,7 +159,8 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
   `bash_productivity` in the same commit; CI checks both directions.
 - **The `[bash]` file split:** `bash_git` (git porcelain) → `bash_github` (plain
   `gh` and shared helpers). An interactive screen growing back into `bash_github` is drift;
-  screens are Rust TUIs. History: [`docs/decisions/github-tui.md`](docs/decisions/github-tui.md).
+  screens are Rust TUIs. History: roest1/github-tui's
+  [`docs/decisions/github-tui.md`](https://github.com/roest1/github-tui/blob/main/docs/decisions/github-tui.md).
 - **There are no interactive fzf commands left**, and fzf has no version floor. Only fzf's
   own Ctrl+R / Ctrl+T / Alt+C remain. Don't add a floor back without a caller that needs it:
   a floor cannot fail safe. If an fzf screen is ever wanted again, restore the menu

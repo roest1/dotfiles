@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["font", "dots", "github"]
+members = ["font", "dots"]
+# roest1/github-tui, a submodule: its own package, pinned by its own Cargo.lock.
+exclude = ["github"]
 
 [workspace.package]
 version = "0.1.0"
