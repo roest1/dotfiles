@@ -1259,7 +1259,7 @@ jobs:
           sudo tar -xzf /tmp/nvim.tar.gz -C /opt
           echo "/opt/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
 
-      - name: Unit-test the language server definitions
+      - name: Unit-test the language server definitions and the keymap counter
         run: |
           nvim --version | head -1
           make test

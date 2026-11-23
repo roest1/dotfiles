@@ -167,6 +167,11 @@ test: ## Run the Lua unit tests (no plugins, no network)
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/lsp_servers_spec.lua" -c "qa!" 2>&1 \
 		| tee /tmp/dotfiles-test.txt
 	@grep -q "ALL PASS" /tmp/dotfiles-test.txt || { echo "tests failed"; exit 1; }
+	@# The keymap counter writes keymap-usage.json: a fresh scratch state dir each run.
+	@XDG_STATE_HOME=$$(mktemp -d) nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+		-c "luafile $(DOTFILES_DIR)/nvim/tests/usage_spec.lua" -c "qa!" 2>&1 \
+		| tee /tmp/dotfiles-usage-test.txt
+	@grep -q "ALL PASS" /tmp/dotfiles-usage-test.txt || { echo "usage tests failed"; exit 1; }
 	@# LSP servers: only meaningful once they're installed, so skip rather than fail
 	@if command -v bun >/dev/null 2>&1 && [ -d "$(DOTFILES_DIR)/nvim/lsp-servers/node_modules" ]; then \
 		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee /tmp/dotfiles-lsp.txt; \
