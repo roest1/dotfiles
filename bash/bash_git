@@ -12,7 +12,6 @@
 # my personal preference (for now) is keeping these here.
 alias gstashls='git stash list'
 alias gstash='git stash'
-alias gstashpush='git stash push -m'
 alias gstashpop='git stash pop'
 alias gs='git status'
 alias gcommit='git commit -m'
