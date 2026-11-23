@@ -53,7 +53,9 @@ enumerates them; the `Makefile` reads sections from the manifest and does not kn
   employer URL rules, ssh config, the agent git identity) belong in a private plugin; CI
   rejects a global prompt coming back. A plugin's shell code goes in
   `~/.config/dotfiles/bashrc.d/*.bash`, which `bashrc` sources last.
-- **A public component this repo depends on is a git submodule, not a plugin.** The prompt
+- **A public component this repo depends on is a git submodule, not a plugin**
+  ([`docs/decisions/components.md`](docs/decisions/components.md); to extract one, the
+  `extract-component` skill). The prompt
   is `roest1/PS1` at `ps1/`, linked to `~/.bash_prompt`; Science Gothic Mono is
   `roest1/fonts` at `wezterm/fonts/`; the TUIs `font` and `github` are
   `roest1/theme-tui` at `tui/font` and `roest1/github-tui` at `tui/github`. A submodule pins a commit, so a push
