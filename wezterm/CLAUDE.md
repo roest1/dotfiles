@@ -45,7 +45,7 @@ config both are blinking text.
 The four lanes are `shell`, `nvim.ui`, `nvim.editor` and `claude`. `nvim.ui` is NOT "oil" —
 oil is the most visible thing it draws, but the lane is the window's base font while nvim
 holds focus, so it is also telescope, the statusline, the gutter and every float. Which
-font each lane gets is picked by `font` (`tui/font`) and written to
+font each lane gets is picked by `font` (`tui/font`, roest1/theme-tui) and written to
 `~/.config/wezterm/fonts.conf` — machine-local, not linked, not in `deps.conf`, same footing
 as `~/.bash_local`. Details: `wezterm.lua` for the lanes, `nvim/CLAUDE.md` for the writer,
 `tui/CLAUDE.md` for the picker.

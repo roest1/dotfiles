@@ -119,7 +119,7 @@ updates:
       # to TypeScript 7's own `tsc --lsp`, and the ignore that held typescript
       # back went with it.
 
-  # The tui/ workspace: font, dots, and their framework roest1/tui-core,
+  # The tui/ workspace: dots, font's lib (by path), and roest1/tui-core,
   # a git dependency this bumps to tui-core's main. tui-core is ours, so it skips
   # the cooldown. To bump without waiting: cargo update -p tui-core.
   - package-ecosystem: "cargo"
@@ -144,8 +144,8 @@ updates:
           - "minor"
           - "patch"
 
-  # Our submodules: roest1/PS1 at ps1/, roest1/fonts at wezterm/fonts/ and
-  # roest1/github-tui at tui/github/.
+  # Our submodules: roest1/PS1 at ps1/, roest1/fonts at wezterm/fonts/,
+  # roest1/theme-tui at tui/font/ and roest1/github-tui at tui/github/.
   # This is what moves their pins: a push there reaches machines only after a
   # PR here bumps the commit and CI has run against it. Weekly with no
   # cooldown, unlike the rest: the cooldown waits out a stranger's hijacked

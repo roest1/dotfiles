@@ -1612,8 +1612,12 @@ jobs:
       - name: Release build
         working-directory: tui
         run: cargo build --release --locked
-      # roest1/github-tui runs its own fmt and clippy; this proves the pinned
+      # The submodules run their own fmt and clippy; these prove each pinned
       # commit builds and passes its tests here, which is what a bump changes.
+      # font's prompt-specimen test reads the ps1 submodule two levels up.
+      - name: font builds and passes its tests at the pinned commit
+        working-directory: tui/font
+        run: cargo test --locked && cargo build --release --locked
       - name: github builds and passes its tests at the pinned commit
         working-directory: tui/github
         run: cargo test --locked && cargo build --release --locked
@@ -1626,7 +1630,7 @@ jobs:
           esc=$'\033['
           carrier=$'\033[6'   # SGR 6, the `make` output lane
           slow=$'\033[5m'     # SGR 5, the nvim editor lane
-          F=tui/target/release/font
+          F=tui/font/target/release/font
 
           # A pipe is the case CI itself creates.
           if "$F" show | grep -qF "$esc"; then
