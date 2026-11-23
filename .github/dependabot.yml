@@ -78,9 +78,9 @@ version: 2
 # CLI tool or a neovim plugin has a CVE. That's an accepted cost of the manifest
 # design, not an oversight.
 #
-# Monthly, not weekly — this repo is small enough that weekly would be noise.
+# Monthly for the third-party ecosystems: small enough that weekly would be noise.
 #
-# `cooldown: 7` on every entry: a release must be a week old before a version
+# `cooldown: 7` on every third-party entry: a release must be a week old before a version
 # PR proposes it, the same week nvim/Makefile's SERVER_COOLDOWN and Renovate's
 # minimumReleaseAge wait. A hijacked release is usually caught within days, and
 # this repo has no reason to be early. GitHub applies cooldown to version
@@ -142,17 +142,17 @@ updates:
 
   # The prompt, roest1/PS1, is a submodule at ps1/. This is what moves its
   # pin: a push to ps1 reaches machines only after a PR here bumps the
-  # commit and CI has run against it.
+  # commit and CI has run against it. Weekly with no cooldown, unlike the
+  # rest: the cooldown waits out a stranger's hijacked release, and PS1 is
+  # ours. To bump without waiting, see README.md ("Just want the prompt?").
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
     commit-message:
       prefix: "ps1"
     labels:
       - "dependencies"
-    cooldown:
-      default-days: 7
 
   - package-ecosystem: "github-actions"
     directory: "/"
