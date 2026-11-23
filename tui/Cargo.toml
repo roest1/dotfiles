@@ -1,8 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["font", "dots"]
-# roest1/github-tui, a submodule: its own package, pinned by its own Cargo.lock.
-exclude = ["github"]
+members = ["dots"]
+# Submodules, each its own package pinned by its own Cargo.lock: roest1/theme-tui
+# (font, which dots also uses by path) and roest1/github-tui.
+exclude = ["font", "github"]
 
 [workspace.package]
 version = "0.1.0"

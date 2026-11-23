@@ -45,7 +45,7 @@ cargo_can_link || exit 1
 crates=(font dots github)
 failed=0
 for crate in "${crates[@]}"; do
-  # tui/github is a submodule: empty until it is checked out.
+  # tui/font and tui/github are submodules: empty until checked out.
   if [[ ! -f "$HERE/$crate/Cargo.toml" ]]; then
     echo "  ⚠️  tui/$crate is not checked out — run \`make install\` (needs network)"
     failed=1

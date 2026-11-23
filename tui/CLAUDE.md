@@ -3,8 +3,9 @@
 ## Overview
 
 The Rust terminal UIs. One crate per screen, **one binary per command** —
-`font` and `dots` here, and `github` in its own repo,
-[roest1/github-tui](https://github.com/roest1/github-tui), pinned as a submodule at `tui/github`. They share
+`dots` here; `font` and `github` in their own repos,
+[roest1/theme-tui](https://github.com/roest1/theme-tui) at `tui/font` and
+[roest1/github-tui](https://github.com/roest1/github-tui) at `tui/github`, both pinned as submodules. They share
 [roest1/tui-core](https://github.com/roest1/tui-core) (the framework, `tui_core::…`) and nothing else, because a font picker and a CI dashboard have
 nothing else in common.
 
@@ -47,22 +48,17 @@ these crates, clone it to `~/github/tui-core` and build with
 `--config "patch.'https://github.com/roest1/tui-core'.tui-core.path='$HOME/github/tui-core'"`.
 That build rewrites `Cargo.lock` to the unpinned path, so run `git checkout tui/Cargo.lock`
 before committing; CI's `--locked` build fails on a lock left that way. Never commit a
-`[patch]` or a path dependency.
+`[patch]` or a path dependency on tui-core.
 
-`tui/github` is the roest1/github-tui submodule, excluded from this workspace: it is its own
-package with its own `Cargo.lock`, which pins its tui-core. `tui/deps.sh` installs it from
-that path like the others, and its notes are in its own `CLAUDE.md`.
+`tui/font` (roest1/theme-tui) and `tui/github` (roest1/github-tui) are submodules, excluded
+from this workspace: each is its own package with its own `Cargo.lock`, and `tui/deps.sh`
+installs each from its path. Their notes are in their own `CLAUDE.md`. `dots` depends on
+`font` by path (`../font`), so it builds `FontScreen` against this workspace's single
+tui-core; that is why `font` uses the same tui-core spec as here.
 
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
   only thing here that is WRITTEN), `console` (the tree), plus the lib/bin pair.
-- `font/` — two screens, and a LIB plus a thin bin. `lib` (the module index
-  and the crate-root re-exports), `picker` (the lane tree — the root screen),
-  `fonts` (discovery + measurement), `render` (rasterising, the contact sheet,
-  glyph-distinctness), `lanes` (the machine-local `fonts.conf`), `fetch` (the
-  prefetching cache behind the browse screen), `browse` (the Google-fonts
-  screen), `show` (`font show` — the lane report and the carrier), `main`
-  (argument handling and nothing else).
 
 ## Things not to undo
 
@@ -87,59 +83,6 @@ that path like the others, and its notes are in its own `CLAUDE.md`.
 - **No bash function may be named after a binary here.** A shell function wins
   over PATH, so a `font()` in `bash_productivity` would silently reinstate the
   picker this replaced. CI asserts it.
-- **Prefetch is driven by `Screen::focus`, not by `pane`.** A row you skim past
-  without stopping on still has to be fetched — that is precisely what makes the
-  NEXT keypress instant rather than the current one slow. `pane` only ever sees
-  where you stopped.
-- **`Fetcher::request` checks the disk synchronously.** Leaving that to the
-  worker meant a family cached from a previous session still went Pending →
-  queue → thread → Ready, so moving across fonts you had already fetched
-  flashed "fetching…" every time. A `read_dir` costs microseconds.
-- **You cannot rasterise a font you do not have.** "Preview without
-  downloading" is not a thing; preview without INSTALLING is, and that is what
-  the cache is for. Nothing reaches `~/.local/share/fonts` without Enter.
-- **There is ONE implementation of "measure a font", `fonts::measure`.** The
-  Python previewer that used to carry a second one was deleted because the two
-  had already drifted on which file counted as Regular. (This bullet used to
-  name a `font inspect` subcommand and a `fontbrowse` bash caller; neither
-  exists — the command surface is the three below, and browsing is a row inside
-  the picker. The principle outlived both spellings.)
-
-- **`font show`'s carrier is the only part of this crate that does not
-  rasterise.** Everything else here draws type by decoding the file with fontdue
-  and shipping a PNG, which is why the picker looked perfect on a machine where
-  the lanes were dead: a rasterised specimen is a picture of what this process
-  thinks the font is, not of what wezterm did with it. The carrier prints real
-  SGR 6 and SGR 5 text and lets the terminal answer. Do not "unify" it with the
-  rendering path — the whole value is that it goes through the code being tested.
-
-  It replaced a version floor (`wezterm/MIN_VERSION`) that inferred the same
-  answer from a build stamp. That could not fail safe: every build at or above
-  the floor passed untested. Don't bring it back — `status_fonts` in
-  `lib/status.sh` asks the provable half, and this asks your eyes.
-
-  Each sample resets with `\x1b[22;25m` immediately after itself, so a
-  truncated line cannot leave the terminal in SGR 6 and silently reskin
-  everything printed after it.
-
-- **`font show` exits non-zero ONLY for a lane naming a family this machine does
-  not have**, because that is the only thing here a program can judge.
-  `status_fonts` counts that as drift and counts nothing else, so `make status`
-  stays green over ssh, in a pipe and on a non-wezterm terminal — all places the
-  carrier is unreadable and the machine is fine.
-
-- **A screen's type is public; everything else can stay crate-private.**
-  `lib.rs` re-exports `FontScreen`, `Preview` and `specimen` at the crate ROOT
-  rather than making callers reach into `picker::`, because that is where they
-  already lived when this was one file and `browse` addresses them as
-  `crate::specimen` / `crate::Preview`. Keeping the paths identical is what
-  made the lib/bin split a move rather than a rewrite.
-
-  Making `new()` public turned on `clippy::new_without_default`, which only
-  fires for public items — so the split surfaced two real omissions rather than
-  inventing them. They got `Default` impls, not `#[allow]`: a type whose `new()`
-  takes no arguments and cannot fail *is* `Default`, and saying so is the fix.
-
 - **`dots` reads the repo; it does not restate it.** Target names and summaries
   are the `##` markers `make help` already renders, a target's long form is the
   comment block above its rule, and sections come from `deps.conf`. Nothing is
@@ -250,42 +193,6 @@ that path like the others, and its notes are in its own `CLAUDE.md`.
   support), the scanner read the directive as a new rule, and the escalation
   was attributed to no target at all — the tree and the console agreeing when they did not, which is the
   exact failure the test exists to prevent.
-
-## The command surface is three commands
-
-`font`, `font show`, `font reset`. Everything else lives inside the TUI, which
-states its own keys in the footer — including browsing, which is the last row
-under an opened lane rather than a subcommand or a keybinding. A key you have
-to be told about is a key nobody finds, and a subcommand is worse: it needs a
-man page to discover something that could have been a row.
-
-`app` keeps a screen STACK for this. `Flow::Push` opens one on top, `q` pops
-below the root and quits at it, and each frame carries its own cursor, scroll
-offset and reticle — so coming back lands on the row you left. That is the same
-property github gets from running one fzf inside another, and it is the reason
-github can move here without losing it.
-
-## Theme, absorbed rather than parsed
-
-Colours come from the terminal, not from `wezterm/wezterm.lua`: `OSC 11`, `OSC
-10` and `OSC 4` return what it actually resolved, so a theme change is picked
-up with nothing here aware that a theme exists. Parsing the Lua would have been
-a second implementation of somebody else's format, wrong the first time that
-file is rearranged.
-
-Indices 16-255 are **computed** locally (`theme::xterm256`) rather than
-required from the terminal — the 6x6x6 cube and the grey ramp are fixed by
-xterm. That is what keeps the query an improvement instead of a dependency:
-falling back to the foreground colour made the prompt specimen monochrome on a
-quiet terminal, and only a test asserting the runs *differed* caught it.
-
-The shell specimen renders **this machine's PS1**, as bash expands it: a
-non-interactive bash sources `~/.bash_local` (where `PS1_COLOR_*` overrides
-live) and then `~/.bash_prompt`, fills the runtime-only slots by hand, and
-prints `${PS1@P}`. It does not parse the `PS1='…'` line any more, because since
-roest1/PS1#2 that line names colour variables, not colours. The unit test runs
-the same expansion over the pinned submodule, `ps1/ps1.bash`, so a PS1 change
-that breaks the specimen fails `cargo test` in CI.
 
 ## Adding a screen
 
