@@ -836,7 +836,7 @@ jobs:
       - name: git-autofetch fetches and reports, never pulls
         run: |
           set -euo pipefail
-          t=$(mktemp -d)
+          t=$(mktemp -d); export GIT_CONFIG_GLOBAL=$t/gitconfig  # safe to run on a real machine
           git config --global user.name ci; git config --global user.email ci@example.invalid
           # Run from a local clone: the script always fetches its own repo, and
           # this checkout's remote is not one the test should depend on.
