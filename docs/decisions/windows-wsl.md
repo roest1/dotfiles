@@ -35,10 +35,8 @@ macOS left the same way on 2026-10-26 ([`macos.md`](macos.md)).
 
 ## What stayed
 
-- `wezterm/shared.lua` is still a separate file. The split existed so two entry
-  points could share one body, and with one entry point left it can fold back
-  into `wezterm.lua`. That merge was left for a later change, so that this
-  change only deletes code and doesn't rearrange a working terminal config.
+- `wezterm/shared.lua` stayed a separate file at first, so that this change only
+  deleted code. It was folded back into `wezterm.lua` on 2026-11-23.
 - `.gitattributes`' `eol=lf` and the `_netrc` secret pattern cost nothing and
   still guard against a file arriving from a Windows-configured git.
 - TypeScript's `win32` platform map in `lsp_servers.lua`. It is data, not a

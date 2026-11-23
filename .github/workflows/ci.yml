@@ -292,27 +292,25 @@ jobs:
           # OFL 1.1 sections 2 and 5: the licence travels with the font, unrelicensed.
           [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
           grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
-          # Both carriers live in shared.lua; any blink rate but exactly 0 animates.
-          grep -q 'shared.lua' wezterm/wezterm.lua \
-            || { echo "wezterm.lua does not load shared.lua, so it has no lanes at all"; fail=1; }
-          grep -q 'text_blink_rate_rapid = 0' wezterm/shared.lua \
-            || { echo "shared.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
-          grep -q 'text_blink_rate = 0' wezterm/shared.lua \
-            || { echo "shared.lua: SGR 5 would blink without text_blink_rate = 0"; fail=1; }
-          grep -q 'Science Gothic Mono' wezterm/shared.lua \
-            || { echo "shared.lua: no font_rule for the SGR 6 carrier"; fail=1; }
+          # Any blink rate but exactly 0 animates.
+          grep -q 'text_blink_rate_rapid = 0' wezterm/wezterm.lua \
+            || { echo "wezterm.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
+          grep -q 'text_blink_rate = 0' wezterm/wezterm.lua \
+            || { echo "wezterm.lua: SGR 5 would blink without text_blink_rate = 0"; fail=1; }
+          grep -q 'Science Gothic Mono' wezterm/wezterm.lua \
+            || { echo "wezterm.lua: no font_rule for the SGR 6 carrier"; fail=1; }
 
           # Four rules, {bold, regular} x {italic, upright}: a missing one flattens
-          # that style. Comments stripped first, since shared.lua quotes the pattern.
-          n=$(grep -vE '^[[:space:]]*--' wezterm/shared.lua | grep -cE "blink = ['\"]Slow['\"]")
+          # that style. Comments stripped first, since wezterm.lua quotes the pattern.
+          n=$(grep -vE '^[[:space:]]*--' wezterm/wezterm.lua | grep -cE "blink = ['\"]Slow['\"]")
           [ "$n" -eq 4 ] \
-            || { echo "shared.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
+            || { echo "wezterm.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
 
-          # Every family shared.lua names (DEFAULT_FONTS and window_frame) must be
+          # Every family wezterm.lua names (DEFAULT_FONTS and window_frame) must be
           # installed by deps.sh: a fallback that resolves is silent.
           {
-            sed -n '/^local DEFAULT_FONTS = {/,/^}/p' wezterm/shared.lua
-            sed -n '/config.window_frame = {/,/^\t}/p' wezterm/shared.lua
+            sed -n '/^local DEFAULT_FONTS = {/,/^}/p' wezterm/wezterm.lua
+            sed -n '/config.window_frame = {/,/^\t}/p' wezterm/wezterm.lua
           } | grep -oE '"[^"]+"' | tr -d '"' | sort -u \
           | while IFS= read -r fam; do
               case "$fam" in
@@ -781,13 +779,10 @@ jobs:
           # the config itself
           grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
             echo "[wezterm] no longer links wezterm.lua"; bad=1; }
-          # the shared body, which wezterm.lua dofile()s
-          grep -qx 'wezterm/shared.lua' <<<"$links" || {
-            echo "[wezterm] no longer links shared.lua — the config would load unstyled"; bad=1; }
           # the fonts: font_dirs reads them, and lib/sgr.sh treats this link as "config is live"
           grep -qx 'wezterm/fonts' <<<"$links" || {
             echo "[wezterm] no longer links the fonts directory"; bad=1; }
-          [ $bad -eq 0 ] && echo "ok: [wezterm] links config, shared body and fonts"
+          [ $bad -eq 0 ] && echo "ok: [wezterm] links its config and fonts"
           exit $bad
 
       # The installer preference cannot live in a || chain (pkg would win, and

@@ -13,7 +13,7 @@ memory instead of one. That paid off exactly as intended — the command you typ
 did not change on the day the thing underneath it did.
 
 The wezterm user-var is still `gh_tui`. It is a WIRE name: the TUI writes it
-and `wezterm/shared.lua` reads it, so renaming it means changing both together
+and `wezterm/wezterm.lua` reads it, so renaming it means changing both together
 for a name nobody types. The writer moved from bash's `_gh_tab_var` to Rust's `TabMark`; the name
 and the bytes did not.
 
@@ -812,7 +812,7 @@ Two were mechanical and CI would have caught them: `bashrc` sourced
 `~/.bash_github_tui`, and `deps.conf` linked it.
 
 The third would have shipped silently. **`_gh_tab_var` wrote the `gh_tui` user
-var** that `wezterm/shared.lua` reads to put GitHub's Octicons mark on the tab
+var** that `wezterm/wezterm.lua` reads to put GitHub's Octicons mark on the tab
 while a session is running — real, user-visible functionality, with no row in
 the table because it is not a verb. It is now `TabMark` in
 `tui/github/src/lib.rs`: a `Drop` guard rather than two calls, for the same

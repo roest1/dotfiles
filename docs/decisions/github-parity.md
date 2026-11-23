@@ -30,7 +30,7 @@ not dispatcher verbs:
 
 - `bashrc` sourced `~/.bash_github_tui`, and `deps.conf` linked it. Mechanical,
   and CI would have caught both.
-- **`_gh_tab_var`** — the OSC 1337 `gh_tui` user var that `wezterm/shared.lua`
+- **`_gh_tab_var`** — the OSC 1337 `gh_tui` user var that `wezterm/wezterm.lua`
   reads to put GitHub's mark on the tab while a session is running. Nothing
   would have caught this. It is real, user-visible functionality that the gate
   was built to protect and could not see, and it was found by grepping for

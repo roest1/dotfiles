@@ -18,7 +18,7 @@
 --   nvim.editor.transparent  = false
 --
 -- An editor key left out follows the ui lane, so one line moves both.
--- Same reader discipline as fonts.conf in wezterm/shared.lua: a mangled line
+-- Same reader discipline as fonts.conf in wezterm/wezterm.lua: a mangled line
 -- or unknown key is skipped rather than failing startup, because a theme TUI
 -- will be writing this file and the two sides can be out of step.
 --

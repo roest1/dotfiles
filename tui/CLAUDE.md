@@ -732,7 +732,7 @@ pins that.
 
 - **`TabMark` is the one piece of this that talks to wezterm.** `github` sets
   the `gh_tui` user var (OSC 1337) on startup and clears it on the way out, and
-  `wezterm/shared.lua`'s `format-tab-title` reads it to put GitHub's Octicons
+  `wezterm/wezterm.lua`'s `format-tab-title` reads it to put GitHub's Octicons
   mark on the tab. It is a `Drop` guard rather than two calls for the reason
   the bash version hung the clear on a `RETURN` trap: the variable is state
   inside somebody else's process, and one left set leaves the pane wearing the
@@ -742,7 +742,7 @@ pins that.
 
   It writes to `/dev/tty`, not stdout: the escape is addressed to the terminal
   and must not land in a pipe. The var name and the base64 values are the wire
-  format `wezterm/shared.lua` reads, so a change here goes dark rather than
+  format `wezterm/wezterm.lua` reads, so a change here goes dark rather than
   failing — `lib.rs`'s test pins the exact bytes.
 
 - **`index` groups by PATH and identifies by REMOTE, because on the real tree

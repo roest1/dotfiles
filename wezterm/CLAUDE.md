@@ -1,8 +1,8 @@
 # wezterm/ — the terminal
 
-`deps.conf` links `wezterm.lua`, `shared.lua` and `fonts/` one by one into
-`~/.config/wezterm/`, so this file never reaches that directory. The code comments in
-`shared.lua` are the detailed reference; this is what to know before changing it.
+`deps.conf` links `wezterm.lua` and `fonts/` one by one into `~/.config/wezterm/`, so this
+file never reaches that directory. The code comments in `wezterm.lua` are the detailed
+reference; this is what to know before changing it.
 
 ## `wezterm.lua` is load-bearing beyond wezterm
 
@@ -10,9 +10,8 @@ It declares the `mux` unix domain that the Jarvis sidecar connects to
 (`JARVIS_WEZTERM_DOMAIN` defaults to `'mux'` in `jarvis-ui/server/workerSession.ts`).
 Don't replace it with a stock config.
 
-`shared.lua` is the rest of the terminal config (fonts, carrier, palette, tab titles),
-dofile()d from `wezterm.lua`. The split existed for a second, Windows entry point; with
-that gone it is a candidate to fold back in.
+It is one file. `shared.lua` was split out for a Windows entry point and folded back in on
+2026-11-23, once that entry point was gone.
 
 ## Science Gothic Mono is generated, not downloaded
 
