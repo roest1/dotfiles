@@ -150,7 +150,7 @@ updates:
   # PR here bumps the commit and CI has run against it. Weekly with no
   # cooldown, unlike the rest: the cooldown waits out a stranger's hijacked
   # release, and these are ours. To bump without waiting, see README.md
-  # ("Just want the prompt?").
+  # ("Use a piece on its own").
   - package-ecosystem: "gitsubmodule"
     directory: "/"
     schedule:

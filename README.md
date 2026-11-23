@@ -29,17 +29,25 @@ Each section of `deps.conf` is one pillar. Install them all, or name the ones yo
 | `[claude]` | Claude Code settings: deny rules for secrets, terminal status hooks |
 | `[git-autofetch]` | Fetches this repo, its plugins and `~/github` every 20 minutes, never pulls, and tells each new shell when you are behind |
 
-### Just want the prompt?
+### Use a piece on its own
 
-The bash prompt is its own repo, [roest1/PS1](https://github.com/roest1/PS1): one file
-with a two-line install. Here it is a git submodule at `ps1/`, pinned to a commit and
-bumped by Dependabot, so a change there reaches your machines only through a PR in this
-repo. Its colors and icons are `PS1_COLOR_*` and `PS1_ICON_*` variables
+These parts are their own repos, each with an install that needs nothing from here. In
+this repo they are git submodules, pinned to a commit and bumped by Dependabot, so a
+change there reaches your machines only through a PR here.
+
+| Component | Here at | What it is |
+| --------- | ------- | ---------- |
+| [roest1/PS1](https://github.com/roest1/PS1) | `ps1/` | The bash prompt: one file, a two-line install |
+| [roest1/fonts](https://github.com/roest1/fonts) | `wezterm/fonts/` | Science Gothic Mono |
+| [roest1/github-tui](https://github.com/roest1/github-tui) | `tui/github/` | `github`: the current repo on GitHub, live |
+| [roest1/theme-tui](https://github.com/roest1/theme-tui) | `tui/font/` | `font`: pick fonts per lane |
+
+The prompt's colors and icons are `PS1_COLOR_*` and `PS1_ICON_*` variables
 ([list](https://github.com/roest1/PS1#colors-and-icons)); here they go in
 `~/.bash_local`, which bashrc loads before the prompt.
 
-Dependabot proposes a bump weekly. To bump now, move the pin to PS1's `main` and open
-the same PR it would:
+Dependabot proposes bumps weekly. To bump one now, move its pin to `main` and open the
+same PR it would:
 
 ```bash
 git switch -c ps1-bump
@@ -48,10 +56,8 @@ git commit -am "ps1: bump"
 gh pr create --fill
 ```
 
-Once it merges, every machine gets it on `git pull`. The fonts at `wezterm/fonts`
-([roest1/fonts](https://github.com/roest1/fonts)), `font` at `tui/font`
-([roest1/theme-tui](https://github.com/roest1/theme-tui)) and `github` at `tui/github`
-([roest1/github-tui](https://github.com/roest1/github-tui)) bump the same way. The TUIs' framework,
+Once it merges, every machine gets it on `git pull`. Why these are submodules and not
+plugins: [docs/decisions/components.md](docs/decisions/components.md). The TUIs' framework,
 [roest1/tui-core](https://github.com/roest1/tui-core), is a Cargo dependency: bump it with
 `cargo update -p tui-core --manifest-path tui/Cargo.toml`.
 
