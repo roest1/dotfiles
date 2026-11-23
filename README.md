@@ -38,6 +38,18 @@ repo. Its colors and icons are `PS1_COLOR_*` and `PS1_ICON_*` variables
 ([list](https://github.com/roest1/PS1#colors-and-icons)); here they go in
 `~/.bash_local`, which bashrc loads before the prompt.
 
+Dependabot proposes a bump weekly. To bump now, move the pin to PS1's `main` and open
+the same PR it would:
+
+```bash
+git switch -c ps1-bump
+git submodule update --remote ps1
+git commit -am "ps1: bump"
+gh pr create --fill
+```
+
+Once it merges, every machine gets it on `git pull`.
+
 ## Everything lives in `deps.conf`
 
 One file declares every config symlink and every dependency. **Toggling is
