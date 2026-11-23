@@ -32,9 +32,10 @@ Do not extract when:
   own path. Pulling it out would duplicate the plugins file format in a second repo.
 - **You edit it more often than you would bump it.** Every change becomes two PRs: a commit
   there, then a pin bump here. Dependabot bumps weekly; anything sooner is a manual bump.
-- **Its dependencies only make sense here.** Its Dependabot, `bun audit` and Socket checks
-  move with it, and its alerts arrive on its own repo, not this one. The `gitsubmodule`
-  ecosystem sees new commits, not advisories.
+- **Its tools are installed here.** If a section of this repo installs what it needs (nvim's
+  language servers are `[nvim]` tool lines), its README cannot offer an install that works
+  alone until it carries its own. Extracting also moves its dependency alerts to the new
+  repo: the `gitsubmodule` ecosystem here sees new commits, not advisories.
 
 ## What a component must have
 
@@ -60,6 +61,15 @@ In this repo, in one commit:
    CI builds and tests it at the pin.
 5. Docs that left with the code are removed here. `CLAUDE.md` names the submodule in the
    "public component" bullet, and the README's components table gets a row.
+
+## A library shared by components is a Cargo dependency, not a submodule
+
+`roest1/tui-core` is used by `dots` here and by theme-tui and github-tui. Each declares
+`tui-core = { git = "https://github.com/roest1/tui-core", branch = "main" }`, identically,
+and each `Cargo.lock` pins the commit. Nested submodules would check it out twice at two
+paths, which Cargo treats as two crates (`dots` pushes theme-tui's screen onto its own
+stack, so their types must match), and Dependabot cannot bump a nested pin. Dependabot's
+cargo ecosystem bumps a git dependency's lock to its branch head.
 
 ## What a plugin must have
 
