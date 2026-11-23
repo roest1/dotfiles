@@ -32,7 +32,7 @@ every other terminal: **rapid blink**, over ssh, in GNOME Terminal, in a plain c
 repo's config is the live one — on a machine that hasn't run `make link`, or one
 pointed at a stock config, it blinks again. The linked font directory is the cheapest
 true proxy for that, since `deps.conf` links config and fonts together. All three
-directions are asserted in the `manifest` CI job, because none of them is visible to
+directions are asserted in the `engine` CI job, because none of them is visible to
 whoever writes the code — they're always in WezTerm, always on a tty, always linked.
 
 Italic looks like the obvious carrier and is wrong: rose-pine italicises nvim's

@@ -8,9 +8,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-  # So the audit job sees advisories published while nobody pushes.
+  # Monday: everything, so drift in the images or upstream shows within a week.
+  # Other days: the audit alone, so a new advisory against a pinned package
+  # shows within a day. A failed scheduled run emails whoever last edited this.
   schedule:
     - cron: '0 6 * * 1'
+    - cron: '0 6 * * 0,2-6'
 
 # mise resolves releases through the GitHub API; the token lifts the shared
 # 60/hour anonymous limit that once failed the nvim floor job (issue #12).
@@ -26,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       full: ${{ steps.classify.outputs.full }}
+      audit: ${{ steps.classify.outputs.audit }}
     steps:
       - name: Classify the change
         id: classify
@@ -34,7 +38,13 @@ jobs:
           EVENT: ${{ github.event_name }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          SCHEDULE: ${{ github.event.schedule }}
         run: |
+          if [[ "$EVENT" == schedule && "$SCHEDULE" != '0 6 * * 1' ]]; then
+            echo "full=false" >>"$GITHUB_OUTPUT"; echo "audit=true" >>"$GITHUB_OUTPUT"
+            echo "daily schedule: audit only"
+            exit 0
+          fi
           if [[ "$EVENT" != pull_request ]]; then
             echo "full=true" >>"$GITHUB_OUTPUT"
             echo "$EVENT: full run"
@@ -55,7 +65,8 @@ jobs:
           echo "$files" | sed 's/^/  /'
           echo "full=$full" >>"$GITHUB_OUTPUT"
           echo "full=$full"
-  # ── Lint ───────────────────────────────────────────────────────────────────
+
+  # ── Lint: the whole tree, on every PR ───────────────────────────────────────────────────────────────────
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
@@ -63,45 +74,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: true
-
-      # wezterm/MIN_VERSION stays retired: a version floor cannot fail safe.
-      - name: The font lane check asks what it can prove
-        run: |
-          set -uo pipefail
-          bad=0
-          [ -e wezterm/MIN_VERSION ] \
-            && { echo "wezterm/MIN_VERSION is back -- a build stamp cannot answer this; see status_fonts"; bad=1; }
-          # Comments stripped first: the file explains why the floor is gone.
-          grep -v '^[[:space:]]*#' wezterm/deps.sh | grep -q 'MIN_VERSION' \
-            && { echo "wezterm/deps.sh reads MIN_VERSION again"; bad=1; }
-          grep -q '^status_fonts()' lib/status.sh \
-            || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
-          grep -q 'status_fonts "\${scope\[@\]}"' lib/status.sh \
-            || { echo "status_all no longer calls status_fonts with its scope"; bad=1; }
-          # Only the provable half may count as drift; the carrier is unreadable off a wezterm tty.
-          grep -q '_drift_font' lib/status.sh \
-            || { echo "status_fonts records no drift at all -- the provable half should"; bad=1; }
-          [ $bad -eq 0 ] && echo "ok: no floor, and status_fonts asks only answerable questions"
-          exit $bad
-
-      # A target that shares a name with a path silently runs nothing.
-      - name: Every Makefile target is .PHONY
-        run: |
-          set -uo pipefail
-          phony=$(grep -E '^\.PHONY:' Makefile | sed 's/^\.PHONY://' | tr '\n' ' ')
-          bad=0
-          for t in $(grep -oE '^[a-z][a-z-]*:' Makefile | tr -d ':'); do
-            case " $phony " in
-              *" $t "*) ;;
-              *) echo "target '$t' is not in .PHONY"; bad=1 ;;
-            esac
-          done
-          if [ $bad -ne 0 ]; then
-            echo ""
-            echo "A target sharing a name with a file or directory silently does nothing."
-            exit 1
-          fi
-          echo "ok: every Makefile target is declared .PHONY"
 
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
@@ -142,18 +114,36 @@ jobs:
           fi
           echo "ok: no credential helper, insteadOf scoped to owners"
 
-  # ── Manifest sanity ────────────────────────────────────────────────────────
-  manifest:
-    name: manifest parses
+  # ── engine: deps.conf, make, links, status ─────────────────────────────────
+  # What every pillar runs through. Stays in this repo after any split.
+  engine:
+    name: engine
     needs: changes
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
     steps:
-      # Full history: the alias check compares against the merge base.
       - uses: actions/checkout@v7
         with:
           submodules: true
-          fetch-depth: 0
+      # A target that shares a name with a path silently runs nothing.
+      - name: Every Makefile target is .PHONY
+        run: |
+          set -uo pipefail
+          phony=$(grep -E '^\.PHONY:' Makefile | sed 's/^\.PHONY://' | tr '\n' ' ')
+          bad=0
+          for t in $(grep -oE '^[a-z][a-z-]*:' Makefile | tr -d ':'); do
+            case " $phony " in
+              *" $t "*) ;;
+              *) echo "target '$t' is not in .PHONY"; bad=1 ;;
+            esac
+          done
+          if [ $bad -ne 0 ]; then
+            echo ""
+            echo "A target sharing a name with a file or directory silently does nothing."
+            exit 1
+          fi
+          echo "ok: every Makefile target is declared .PHONY"
+
       # ARGS was once a blocklist whose stub rules silently overrode real targets.
       - name: No target overrides its own recipe
         run: |
@@ -280,60 +270,6 @@ jobs:
           fi
           exit $fail
 
-      # The committed .ttf files must exist while the config names them; a
-      # missing one silently falls back to another font.
-      - name: Science Gothic Mono ships with the config that names it
-        run: |
-          fail=0
-          for f in wezterm/fonts/ScienceGothicMono.ttf wezterm/fonts/ScienceGothicMono-Bold.ttf; do
-            [ -s "$f" ] || { echo "missing or empty: $f"; fail=1; }
-          done
-          grep -q 'wezterm/fonts' deps.conf || { echo "deps.conf does not link wezterm/fonts"; fail=1; }
-          # OFL 1.1 sections 2 and 5: the licence travels with the font, unrelicensed.
-          [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
-          grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
-          # Any blink rate but exactly 0 animates.
-          grep -q 'text_blink_rate_rapid = 0' wezterm/wezterm.lua \
-            || { echo "wezterm.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
-          grep -q 'text_blink_rate = 0' wezterm/wezterm.lua \
-            || { echo "wezterm.lua: SGR 5 would blink without text_blink_rate = 0"; fail=1; }
-          grep -q 'Science Gothic Mono' wezterm/wezterm.lua \
-            || { echo "wezterm.lua: no font_rule for the SGR 6 carrier"; fail=1; }
-
-          # Four rules, {bold, regular} x {italic, upright}: a missing one flattens
-          # that style. Comments stripped first, since wezterm.lua quotes the pattern.
-          n=$(grep -vE '^[[:space:]]*--' wezterm/wezterm.lua | grep -cE "blink = ['\"]Slow['\"]")
-          [ "$n" -eq 4 ] \
-            || { echo "wezterm.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
-
-          # Every family wezterm.lua names (DEFAULT_FONTS and window_frame) must be
-          # installed by deps.sh: a fallback that resolves is silent.
-          {
-            sed -n '/^local DEFAULT_FONTS = {/,/^}/p' wezterm/wezterm.lua
-            sed -n '/config.window_frame = {/,/^\t}/p' wezterm/wezterm.lua
-          } | grep -oE '"[^"]+"' | tr -d '"' | sort -u \
-          | while IFS= read -r fam; do
-              case "$fam" in
-                # wezterm bundles these -- requiring an installer would be wrong.
-                'JetBrains Mono'|'Noto Color Emoji'|'Symbols Nerd Font Mono'|Roboto) continue ;;
-                # weight/style values caught by the same quote scrape.
-                Bold|Regular|Medium|Italic|Normal|Light|Thin) continue ;;
-                # Lane keys like ["nvim.ui"], not families; no family has a period.
-                *.*) continue ;;
-                '') continue ;;
-              esac
-              # Nerd Fonts are installed by archive name; others by family.
-              needle=${fam% Nerd Font}
-              grep -q "$needle" wezterm/deps.sh \
-                || { echo "wezterm/deps.sh does not install '$fam'"; exit 1; }
-              echo "  ok wezterm/deps.sh installs $fam"
-            done || fail=1
-
-          # The writer half: without it nothing emits into the lane.
-          grep -q "require('external.altfont')" nvim/init.lua \
-            || { echo "nvim/init.lua does not load external.altfont"; fail=1; }
-          exit $fail
-
       # Each row is a way ~/.config/dotfiles/sections could go wrong quietly.
       - name: A machine's section file narrows, and never widens
         run: |
@@ -412,6 +348,7 @@ jobs:
           for want in bash nvim wezterm; do
             echo "$sections" | grep -qw "$want" || { echo "missing section: $want"; exit 1; }
           done
+
       - name: Every tool line has a known provider
         run: |
           source lib/manifest.sh
@@ -425,6 +362,7 @@ jobs:
             done
           done < <(manifest_lines tool)
           exit $bad
+
       - name: Every link source exists in the repo
         run: |
           source lib/manifest.sh
@@ -432,129 +370,6 @@ jobs:
           while IFS=$'\t' read -r section src dest; do
             [ -e "$src" ] || { echo "[$section] missing link source: $src"; bad=1; }
           done < <(manifest_lines link)
-          exit $bad
-
-      # The reverse of the check above: a path bashrc sources unguarded must be
-      # declared, or every shell on a new machine errors. Guarded ones are machine-local.
-      - name: Every unguarded source in bashrc is declared
-        run: |
-          source lib/manifest.sh
-          declared=$(manifest_lines link | cut -f3 | xargs -r -n1 basename | sort -u)
-          bad=0
-          while read -r path; do
-            base=$(basename "$path")
-            echo "$declared" | grep -qx "$base" || {
-              echo "bashrc sources $path with no link line in deps.conf"; bad=1; }
-          done < <(grep -oE '^source[[:space:]]+~/\.[A-Za-z0-9_.-]+' bash/bashrc | awk '{print $2}')
-          exit $bad
-
-      # A line that lost its `#` parses fine and only shows up at runtime.
-      - name: Bash configs source without emitting output
-        run: |
-          bad=0
-          for f in bash/bash_theme ps1/ps1.bash bash/bash_productivity bash/bash_git \
-                   bash/bash_github; do
-            # expand_aliases: that is how an interactive shell parses these files.
-            out=$(bash -c "shopt -s expand_aliases; source $f" 2>&1)
-            [ -z "$out" ] || { echo "$f is noisy when sourced:"; echo "$out"; bad=1; }
-          done
-          exit $bad
-
-      # `reload` re-sources into a live shell, where a stale alias turns `f() {`
-      # into a syntax error. An alias that became a function needs `unalias` first.
-      - name: Aliases turned into functions are unaliased first
-        run: |
-          base=$(git merge-base origin/main HEAD 2>/dev/null) || base=""
-          if [ -z "$base" ]; then echo "no merge base; skipping"; exit 0; fi
-
-          old_aliases=$(for f in $(git ls-tree -r --name-only "$base" -- bash/); do
-                          git show "$base:$f" 2>/dev/null
-                        done | grep -hE '^[[:space:]]*alias ' | sed 's/.*alias //;s/=.*//' | sort -u)
-          bad=0
-          for fn in $(grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' bash/bash_* | tr -d '()' | sort -u); do
-            echo "$old_aliases" | grep -qx -- "$fn" || continue
-            grep -qE "^[[:space:]]*unalias .*\b${fn}\b" bash/bash_* || {
-              echo "'$fn' was an alias and is now a function, with no 'unalias $fn' guard"
-              echo "  a reload in a shell running the older config will fail to parse it"
-              bad=1
-            }
-          done
-          exit $bad
-
-      # `h` is hand-maintained: it names every public command and nothing that is gone.
-      - name: Every command is documented in h, and h documents nothing missing
-        run: |
-          source lib/manifest.sh
-
-          defined=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
-                         bash/bash_productivity bash/bash_git bash/bash_github \
-                         | tr -d '()'
-                       grep -hE '^alias ' bash/bash_productivity bash/bash_git \
-                         | sed 's/alias //;s/=.*//'
-                     } | grep -vE '^_' | sort -u )
-          hbody=$(sed -n '/^h() {/,/^}/p' bash/bash_productivity)
-          bad=0
-          for c in $defined; do
-            echo "$hbody" | grep -qw -- "$c" || { echo "undocumented in h: $c"; bad=1; }
-          done
-
-          # ...and the reverse. Static against the sources: many commands sit behind
-          # `command -v` guards, so a runner may lack them. A command counts if the
-          # configs define it or deps.conf declares it.
-          defines=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
-                         bash/bash_productivity bash/bash_git bash/bash_github \
-                         | tr -d '()'
-                       grep -hE '^[[:space:]]*alias ' \
-                         bash/bash_productivity bash/bash_git bash/bash_github \
-                         | sed 's/.*alias //;s/=.*//'
-                       manifest_lines tool | cut -f3
-                     } | sort -u )
-
-          # Quick reference only (the no-args heredoc); two spaces end a command name.
-          quickref=$(sed -n '/^h() {/,/^    return$/p' bash/bash_productivity)
-          listed=$(echo "$quickref" | sed -n 's/^    \([a-z][a-z0-9-]*\)  \+.*/\1/p' | sort -u)
-          for c in $listed; do
-            echo "$defines" | grep -qx -- "$c" \
-              || { echo "h documents '$c', which nothing defines or declares"; bad=1; }
-          done
-          exit $bad
-
-      # The editor's `h` check: <leader> keys and user commands, read from lua/.
-      - name: nvim help names only mappings that exist, and every mapping and command is documented
-        run: |
-          set -uo pipefail
-          bad=0
-          docs="nvim/doc/*.txt nvim/README.md"
-
-          # Quoted <leader> literals under lua/; comments are unquoted and do not count.
-          defined=$(grep -rhoE "['\"]<leader>[^'\"]+['\"]" nvim/lua nvim/init.lua \
-                    | tr -d "'\"" | sort -u)
-
-          # A token ends at whitespace, a backtick, a pipe, or punctuation.
-          token='<leader>[^[:space:]`|),.*]+'
-          # shellcheck disable=SC2086
-          named=$(grep -hoE "$token" $docs | sort -u)
-          for k in $named; do
-            echo "$defined" | grep -qxF -- "$k" \
-              || { echo "docs name $k, which nothing under nvim/lua defines"; bad=1; }
-          done
-
-          # ...and the reverse, against the one file that claims to be complete.
-          in_keymaps=$(grep -hoE "$token" nvim/doc/dotfiles-keymaps.txt | sort -u)
-          for k in $defined; do
-            echo "$in_keymaps" | grep -qxF -- "$k" \
-              || { echo "$k is defined but missing from nvim/doc/dotfiles-keymaps.txt"; bad=1; }
-          done
-
-          # Every user command has a help page.
-          cmds=$(grep -rhoE "nvim_create_user_command\(\s*'[A-Za-z]+'" nvim/lua nvim/init.lua \
-                 | sed -E "s/.*'([A-Za-z]+)'/\1/" | sort -u)
-          for c in $cmds; do
-            grep -qE "(^|[[:space:]*]):$c([^A-Za-z]|$)" nvim/doc/*.txt \
-              || { echo ":$c is defined but has no line in nvim/doc"; bad=1; }
-          done
-
-          [ $bad -eq 0 ] && echo "ok: $(echo "$defined" | wc -l) leader keys and $(echo "$cmds" | wc -l) commands, all documented, nothing stale"
           exit $bad
 
       # deps.conf, mise.toml and mise.lock must agree. Registry-free: no mise here.
@@ -691,284 +506,6 @@ jobs:
           got=$(shadowed_copies no-such-tool-xyz)
           [ -z "$got" ] || { echo "an absent tool reported copies: '$got'"; exit 1; }
           echo "ok: one real duplicate reported, a symlinked alias and an absent tool are not"
-
-      # Git sees the defaults whatever a machine set, personal keys never reach
-      # this public repo, other keys survive, and the committed file is already
-      # the filter's output.
-      - name: The claude settings filter swaps preferences for the defaults
-        run: |
-          set -euo pipefail
-          want=$(jq -S '{model, modelSettings}' claude/model-defaults.json)
-          out=$(printf '%s' '{"model":"sonnet","effortLevel":"low","modelSettings":{"claude-opus-5-5":{"effortLevel":"low"},"x":{}},"theme":"dark","skipAutoPermissionPrompt":true,"attribution":{"commit":""},"permissions":{"defaultMode":"auto","deny":["Read(~/.ssh/**)"]}}' \
-                | tools/clean-claude-settings.sh)
-          echo "$out"
-          [ "$(jq -S '{model, modelSettings}' <<<"$out")" = "$want" ] \
-            || { echo "filter let this machine's model/effort through"; exit 1; }
-          jq -e 'has("effortLevel") | not' <<<"$out" >/dev/null \
-            || { echo "filter kept the legacy top-level effortLevel"; exit 1; }
-          jq -e '(has("theme") or has("skipAutoPermissionPrompt") or (.permissions | has("defaultMode"))) | not' <<<"$out" >/dev/null \
-            || { echo "filter let a personal key into the public repo"; exit 1; }
-          jq -e '.attribution == {"commit":""} and .permissions == {"deny":["Read(~/.ssh/**)"]}' <<<"$out" >/dev/null \
-            || { echo "filter changed configuration it should keep"; exit 1; }
-
-          committed=$(git show HEAD:claude/settings.json)
-          [ "$(tools/clean-claude-settings.sh <<<"$committed")" = "$(jq -S . <<<"$committed")" ] || {
-            echo "claude/settings.json is not what the filter produces —"
-            echo "re-stage it: git add --renormalize claude/settings.json"; exit 1; }
-          echo "ok: defaults committed, local preferences never reach git"
-
-      # A filtered file differs in size from its blob, so git calls it modified
-      # without running the filter. The refresh clears that only when the filtered
-      # file equals the index; the dangerous direction is hiding a real change.
-      - name: The settings refresh clears only the FALSE modified flag
-        run: |
-          set -euo pipefail
-          # Link ~/.claude/settings.json into the clone, as `make link` would.
-          mkdir -p "$HOME/.claude"
-          ln -sfn "$PWD/claude/settings.json" "$HOME/.claude/settings.json"
-          git add claude/settings.json          # baseline: stat recorded
-
-          # 0. No filter registered: do nothing, or `git add` stages this machine's model.
-          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
-          tools/refresh-claude-settings.sh
-          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
-            || { echo "FAIL: refresh staged the raw file with no filter registered"; exit 1; }
-          git checkout -- claude/settings.json
-
-          # From here on, the filter as claude/deps.sh registers it.
-          git config filter.claude-settings.clean "$PWD/tools/clean-claude-settings.sh"
-          git add claude/settings.json
-
-          # 1. A model change is volatile: the flag clears and nothing is staged.
-          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
-          [ -n "$(git status --porcelain claude/settings.json)" ] \
-            || { echo "FAIL: a size change did not go stat-dirty — premise gone"; exit 1; }
-          tools/refresh-claude-settings.sh
-          [ -z "$(git status --porcelain claude/settings.json)" ] \
-            || { echo "FAIL: refresh left the false modified flag in place"; exit 1; }
-          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
-            || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
-
-          # 2. A deny-rule change is real and must survive (theme is filtered out).
-          jq '.permissions.deny += ["Read(~/x)"]' claude/settings.json > t && mv t claude/settings.json
-          tools/refresh-claude-settings.sh
-          [ -n "$(git status --porcelain claude/settings.json)" ] \
-            || { echo "FAIL: refresh hid a real settings change"; exit 1; }
-          git checkout -- claude/settings.json
-          echo "ok: false flag cleared, real change left visible"
-
-      # Named, not counted. SessionEnd does the work; SessionStart catches killed sessions.
-      - name: Both refresh hooks are declared
-        run: |
-          set -euo pipefail
-          for ev in SessionStart SessionEnd; do
-            jq -e --arg ev "$ev" \
-              '.hooks[$ev][0].hooks[0].command | test("refresh-claude-settings")' \
-              claude/settings.json >/dev/null \
-              || { echo "FAIL: $ev no longer calls tools/refresh-claude-settings.sh"; exit 1; }
-          done
-          echo "ok: SessionStart and SessionEnd both refresh the stat"
-
-      # Named, not counted: a count misses a swap.
-      - name: '[wezterm] still declares its links'
-        run: |
-          set -euo pipefail
-          source lib/manifest.sh
-          links=$(manifest_lines link wezterm | awk -F'\t' '{print $2}')
-          bad=0
-          # the config itself
-          grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
-            echo "[wezterm] no longer links wezterm.lua"; bad=1; }
-          # the fonts: font_dirs reads them, and lib/sgr.sh treats this link as "config is live"
-          grep -qx 'wezterm/fonts' <<<"$links" || {
-            echo "[wezterm] no longer links the fonts directory"; bad=1; }
-          [ $bad -eq 0 ] && echo "ok: [wezterm] links its config and fonts"
-          exit $bad
-
-      # The installer preference cannot live in a || chain (pkg would win, and
-      # the distro's uv cannot self-update), so the declaration is asserted here.
-      - name: '[uv] is installed by its own installer, never the distro''s'
-        run: |
-          set -euo pipefail
-          source lib/manifest.sh
-          bad=0
-
-          # uv.toml carries the two settings from /etc/uv/uv.toml, which the RPM owns.
-          manifest_lines link uv | awk -F'\t' '{print $2}' | grep -qx 'uv/uv.toml' || {
-            echo "[uv] no longer links uv/uv.toml — removing the distro package"
-            echo "     would revert python-downloads and python-preference"; bad=1; }
-
-          # No section may declare uv through pkg, in any position of a chain.
-          while IFS=$'\t' read -r section provider cmd _pkg; do
-            [ "$cmd" = "uv" ] || continue
-            for p in ${provider//||/ }; do
-              if [ "$p" = "pkg" ]; then
-                echo "[$section] declares uv via 'pkg'. That build cannot"
-                echo "     'uv self update'. Let ensure_uv (lib/pkg.sh) choose —"
-                echo "     it already falls back to pkg when astral.sh is down."
-                bad=1
-              fi
-            done
-          done < <(manifest_lines tool)
-
-          # ensure_uv must still try the installer first.
-          grep -q '^ensure_uv()' lib/pkg.sh || {
-            echo "lib/pkg.sh no longer defines ensure_uv"; bad=1; }
-          grep -q 'ensure_uv ||' lib/pkg.sh || {
-            echo "uv_install no longer bootstraps uv through ensure_uv"; bad=1; }
-          body=$(sed -n '/^ensure_uv()/,/^}/p' lib/pkg.sh)
-          first=$(grep -n -E 'astral\.sh|pkg_install' <<<"$body" | head -1 || true)
-          case "$first" in
-            *astral.sh*) ;;
-            *) echo "ensure_uv reaches pkg_install before the official installer:"
-               echo "     $first"; bad=1 ;;
-          esac
-
-          [ $bad -eq 0 ] && echo "ok: uv comes from Astral's installer, with pkg as the fallback"
-          exit $bad
-
-      # Fetch only: HEAD never moves, a clone behind is named, a busy one is skipped.
-      - name: git-autofetch fetches and reports, never pulls
-        run: |
-          set -euo pipefail
-          t=$(mktemp -d); export GIT_CONFIG_GLOBAL=$t/gitconfig  # safe to run on a real machine
-          git config --global user.name ci; git config --global user.email ci@example.invalid
-          # Run from a local clone: the script always fetches its own repo, and
-          # this checkout's remote is not one the test should depend on.
-          git clone -q "$PWD" "$t/core" 2>/dev/null; G=$t/core/git-autofetch/git-autofetch
-          git init -q --bare -b main "$t/o.git"
-          git clone -q "$t/o.git" "$t/a" 2>/dev/null
-          git -C "$t/a" commit -q --allow-empty -m one && git -C "$t/a" push -q origin main
-          git clone -q "$t/o.git" "$t/p"
-          git -C "$t/a" commit -q --allow-empty -m two && git -C "$t/a" push -q
-          printf 'p  file://%s/o.git  %s/p\n' "$t" "$t" > "$t/plugins"
-          export DOTFILES_PLUGINS_FILE=$t/plugins GIT_AUTOFETCH_ROOT=$t/none
-          before=$(git -C "$t/p" rev-parse HEAD)
-          [ -z "$($G --report)" ] || { echo "reported before anything was fetched"; exit 1; }
-          $G
-          [ "$(git -C "$t/p" rev-parse HEAD)" = "$before" ] || { echo "the fetch moved HEAD"; exit 1; }
-          $G --report | grep -q "$t/p is 1 commit(s) behind origin/main" \
-            || { echo "a plugin one commit behind was not reported"; $G --report; exit 1; }
-          touch "$t/p/.git/MERGE_HEAD"
-          $G --dry-run | grep -q "skip  $t/p (MERGE_HEAD in progress)" \
-            || { echo "a repo mid-merge was not skipped"; exit 1; }
-          echo "ok: fetched without moving HEAD, reported the plugin, skipped the busy repo"
-
-  # ── the Rust TUIs ──────────────────────────────────────────────────────────
-  # fmt and clippy are gates: a warning nobody fails on is a warning nobody reads.
-  tui:
-    name: tui (rust)
-    needs: changes
-    if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: true
-      - name: Toolchain
-        run: rustup component add rustfmt clippy
-      - name: Format
-        working-directory: tui
-        run: cargo fmt --all --check
-      - name: Clippy
-        working-directory: tui
-        run: cargo clippy --all-targets --locked -- -D warnings
-      - name: Tests
-        working-directory: tui
-        run: cargo test --locked
-      - name: Release build
-        working-directory: tui
-        run: cargo build --release --locked
-
-      # The same three-condition guard as lib/sgr.sh: off a linked wezterm tty,
-      # SGR 6 and SGR 5 blink, and in a pipe they are garbage.
-      - name: font show carries escapes only on a linked wezterm tty
-        run: |
-          fail=0
-          esc=$'\033['
-          carrier=$'\033[6'   # SGR 6, the `make` output lane
-          slow=$'\033[5m'     # SGR 5, the nvim editor lane
-          F=tui/target/release/font
-
-          # A pipe is the case CI itself creates.
-          if "$F" show | grep -qF "$esc"; then
-            echo "font show leaked escapes into a pipe"; fail=1
-          fi
-
-          if ! command -v script >/dev/null 2>&1; then
-            echo "no script(1) here; the tty rows were skipped"; exit $fail
-          fi
-
-          # Fixture homes, as in the make help truth table.
-          unlinked=$(mktemp -d)
-          linked=$(mktemp -d)
-          HOME="$linked" make link wezterm >/dev/null
-
-          on_tty() {
-            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
-              script -qec "$PWD/$F show" /dev/null | grep -qF "$3"
-          }
-
-          if on_tty "$unlinked" WezTerm "$esc"; then
-            echo "escapes on a wezterm tty before the config was linked"; fail=1
-          fi
-          if on_tty "$linked" xterm "$esc"; then
-            echo "escapes on a non-wezterm tty -- SGR 6 there is rapid blink"; fail=1
-          fi
-          # Both lanes, by their exact attribute.
-          if ! on_tty "$linked" WezTerm "$carrier"; then
-            echo "SGR 6 missing on a linked wezterm tty"; fail=1
-          fi
-          if ! on_tty "$linked" WezTerm "$slow"; then
-            echo "SGR 5 missing on a linked wezterm tty"; fail=1
-          fi
-          exit $fail
-
-      # `font` on crates.io is someone else's crate, and cargo installs by name.
-      - name: The tui section installs from a path, not from crates.io
-        run: |
-          source lib/manifest.sh
-          fail=0
-          while IFS=$'\t' read -r _section provider cmd _; do
-            [ "$provider" = manual ] || { echo "[tui] $cmd is '$provider'; must be manual"; fail=1; }
-          done < <(manifest_lines tool tui)
-          grep -q -- '--path' tui/deps.sh \
-            || { echo "tui/deps.sh does not install from a local path"; fail=1; }
-          exit $fail
-
-      # lib/pkg.sh is the only place that installs a tool, rustup included.
-      - name: The tui section bootstraps cargo through lib/pkg.sh
-        run: |
-          fail=0
-          grep -q '^ensure_cargo()' lib/pkg.sh \
-            || { echo "lib/pkg.sh lost ensure_cargo"; fail=1; }
-          grep -q 'ensure_cargo' tui/deps.sh \
-            || { echo "tui/deps.sh does not require cargo"; fail=1; }
-          if grep -q 'rustup.rs' tui/deps.sh; then
-            echo "tui/deps.sh has its own rustup bootstrap; use ensure_cargo"
-            fail=1
-          fi
-          source lib/manifest.sh
-          manifest_lines tool tui | cut -f3 | grep -qx cargo \
-            || { echo "[tui] does not declare cargo"; fail=1; }
-          exit $fail
-
-      # A bash function named after a tui binary would win over PATH. Derived
-      # from the workspace members, not a list; reticle ships no binary.
-
-      - name: No bash function shadows a tui binary
-        run: |
-          fail=0
-          bins=$(sed -n '/^members *= *\[/,/\]/p' tui/Cargo.toml \
-                 | grep -oE '"[a-z0-9_-]+"' | tr -d '"' | grep -v '^reticle$')
-          [ -n "$bins" ] || { echo "could not read workspace members from tui/Cargo.toml"; exit 1; }
-          echo "tui binaries: $(echo "$bins" | tr '\n' ' ')"
-          for b in $bins; do
-            if grep -qE "^$b\(\) \{" bash/*; then
-              echo "a bash function named '$b' would shadow the tui binary"; fail=1
-            fi
-          done
-          exit $fail
 
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
@@ -1185,151 +722,102 @@ jobs:
             || { echo "make status does not report the value"; echo "$st"; exit 1; }
           echo "ok: one key, effective value $got, idempotent without sudo"
 
-  # ── the neovim floor, on the platform that can't meet it ───────────────────
-  # RHEL 9's EPEL neovim is too old, so mise is the whole answer. Drives the
-  # real provider code; stops short of `make install nvim`, which proves nothing more.
-  nvim-floor:
-    name: neovim floor (${{ matrix.name }}, mise fallback)
+  # ── [bash] ─────────────────────────────────────────────────────────────────
+  bash:
+    name: bash
     needs: changes
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
-    container: ${{ matrix.container }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # EPEL's neovim is 0.8, and this is the fleet's oldest glibc.
-          - name: rhel 9
-            container: almalinux:9
     steps:
-      # util-linux for script(1).
-      - name: Container prerequisites (EPEL on, as on the RHEL box)
-        run: |
-          dnf install -y epel-release
-          dnf install -y --allowerasing git make sudo findutils curl util-linux
-
+      # Full history: the alias check compares against the merge base.
       - uses: actions/checkout@v7
         with:
           submodules: true
-
-      - name: Resolve nvim through the real provider chain
+          fetch-depth: 0
+      # The reverse of the check above: a path bashrc sources unguarded must be
+      # declared, or every shell on a new machine errors. Guarded ones are machine-local.
+      - name: Every unguarded source in bashrc is declared
         run: |
-          set -euo pipefail
           source lib/manifest.sh
-          source lib/providers.sh
-          pkg_detect
-          # Spec read from the manifest, so flipping deps.conf fails here.
-          spec=$(manifest_lines tool nvim | awk -F'\t' '$3=="nvim" {print $2}')
-          echo "declared provider chain: $spec"
-          [ "$spec" = "mise||pkg" ] || { echo "expected mise||pkg"; exit 1; }
-          provider_install "$spec" nvim neovim
-          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          declared=$(manifest_lines link | cut -f3 | xargs -r -n1 basename | sort -u)
+          bad=0
+          while read -r path; do
+            base=$(basename "$path")
+            echo "$declared" | grep -qx "$base" || {
+              echo "bashrc sources $path with no link line in deps.conf"; bad=1; }
+          done < <(grep -oE '^source[[:space:]]+~/\.[A-Za-z0-9_.-]+' bash/bashrc | awk '{print $2}')
+          exit $bad
 
-      - name: Exactly one nvim, and it meets the floor
+      # A line that lost its `#` parses fine and only shows up at runtime.
+      - name: Bash configs source without emitting output
         run: |
-          set -euo pipefail
-          command -v nvim
-          nvim --version | head -1
-          v=$(nvim --version | awk 'NR==1 { sub(/^v/,"",$2); print $2 }')
-          maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
-          [ "$maj" -gt 0 ] || [ "$min" -ge 12 ] || { echo "nvim $v is below the 0.12 floor"; exit 1; }
-          # `type -ap`: the EL image has no `which`.
-          n=$(type -ap nvim | sort -u | wc -l)
-          echo "nvim binaries on PATH: $n"
-          type -ap nvim
-          [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
-          if command -v rpm >/dev/null 2>&1 && rpm -q neovim >/dev/null 2>&1; then
-            echo "dnf's neovim got installed after all"; exit 1
-          fi
-          echo "one nvim, $v, no distro package — mise-first held"
+          bad=0
+          for f in bash/bash_theme ps1/ps1.bash bash/bash_productivity bash/bash_git \
+                   bash/bash_github; do
+            # expand_aliases: that is how an interactive shell parses these files.
+            out=$(bash -c "shopt -s expand_aliases; source $f" 2>&1)
+            [ -z "$out" ] || { echo "$f is noisy when sourced:"; echo "$out"; bad=1; }
+          done
+          exit $bad
 
-      # A machine whose global mise config predates the pin must move onto it.
-      - name: make install moves an existing mise tool onto the pin
+      # `reload` re-sources into a live shell, where a stale alias turns `f() {`
+      # into a syntax error. An alias that became a function needs `unalias` first.
+      - name: Aliases turned into functions are unaliased first
         run: |
-          set -euo pipefail
-          source lib/pkg.sh
-          cfg=$(_mise_global_config)
-          spec=$(_mise_pin nvim neovim)
-          echo "pin: $spec"
-          case "$spec" in aqua:*) ;; *) echo "neovim is not pinned under aqua:"; exit 1 ;; esac
-          sed -i 's|^"aqua:neovim[^"]*" = .*|neovim = "latest"|' "$cfg"
-          cat "$cfg"
-          out=$(mise_install nvim neovim); echo "$out"
-          grep -q 'repo pins' <<<"$out" || { echo "the stale entry was not noticed"; exit 1; }
-          cat "$cfg"
-          grep -qx "\"${spec%@*}\" = \"${spec#*@}\"" "$cfg" || { echo "global config is not the pin"; exit 1; }
-          if grep -q '^neovim = ' "$cfg"; then echo "the old entry survived"; exit 1; fi
-          out=$(mise_install nvim neovim); echo "$out"
-          [ "$out" = "  ✅ nvim" ] || { echo "second run did more than confirm"; exit 1; }
-          if make status nvim | grep 'repo pins'; then echo "make status still reports pin drift"; exit 1; fi
-          echo "ok: converged to $spec, idempotent, and make status agrees"
+          base=$(git merge-base origin/main HEAD 2>/dev/null) || base=""
+          if [ -z "$base" ]; then echo "no merge base; skipping"; exit 0; fi
 
-      # Runtime, not a grep: a blink highlight reaches the terminal through nvim's
-      # TUI and terminfo. Off wezterm, SGR 5 blinks a whole file.
-      - name: nvim emits the alternate-font carrier only under wezterm
-        # Once is enough: it tests altfont.lua's guard, not the platform.
-        if: matrix.name == 'rhel 9'
+          old_aliases=$(for f in $(git ls-tree -r --name-only "$base" -- bash/); do
+                          git show "$base:$f" 2>/dev/null
+                        done | grep -hE '^[[:space:]]*alias ' | sed 's/.*alias //;s/=.*//' | sort -u)
+          bad=0
+          for fn in $(grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' bash/bash_* | tr -d '()' | sort -u); do
+            echo "$old_aliases" | grep -qx -- "$fn" || continue
+            grep -qE "^[[:space:]]*unalias .*\b${fn}\b" bash/bash_* || {
+              echo "'$fn' was an alias and is now a function, with no 'unalias $fn' guard"
+              echo "  a reload in a shell running the older config will fail to parse it"
+              bad=1
+            }
+          done
+          exit $bad
+
+      # `h` is hand-maintained: it names every public command and nothing that is gone.
+      - name: Every command is documented in h, and h documents nothing missing
         run: |
-          set -uo pipefail
-          fail=0
-          command -v script >/dev/null 2>&1 || { echo "no script(1) here"; exit 0; }
+          source lib/manifest.sh
 
-          # SGR 5 exactly; a looser pattern also matches ESC[25m (blink off).
-          carrier=$'\033\\[([0-9;]*;)?5m'
+          defined=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
+                         bash/bash_productivity bash/bash_git bash/bash_github \
+                         | tr -d '()'
+                       grep -hE '^alias ' bash/bash_productivity bash/bash_git \
+                         | sed 's/alias //;s/=.*//'
+                     } | grep -vE '^_' | sort -u )
+          hbody=$(sed -n '/^h() {/,/^}/p' bash/bash_productivity)
+          bad=0
+          for c in $defined; do
+            echo "$hbody" | grep -qw -- "$c" || { echo "undocumented in h: $c"; bad=1; }
+          done
 
-          # Fixture homes built by the real installer, as in the sgr.sh table.
-          linked=$(mktemp -d)
-          unlinked=$(mktemp -d)
-          HOME="$linked" make link wezterm >/dev/null
+          # ...and the reverse. Static against the sources: many commands sit behind
+          # `command -v` guards, so a runner may lack them. A command counts if the
+          # configs define it or deps.conf declares it.
+          defines=$( { grep -hoE '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' \
+                         bash/bash_productivity bash/bash_git bash/bash_github \
+                         | tr -d '()'
+                       grep -hE '^[[:space:]]*alias ' \
+                         bash/bash_productivity bash/bash_git bash/bash_github \
+                         | sed 's/.*alias //;s/=.*//'
+                       manifest_lines tool | cut -f3
+                     } | sort -u )
 
-          # The real binary: mise's shim under a fixture HOME would download neovim@latest.
-          nvim_bin=$(mise which nvim 2>/dev/null || command -v nvim)
-          echo "nvim under test: $nvim_bin"
-
-          work=$(mktemp -d)
-          printf 'local x = 1\n' > "$work/probe.lua"
-          # Only altfont, on the repo's runtimepath: the full config clones every plugin.
-          printf "vim.opt.runtimepath:prepend('%s/nvim')\nrequire('external.altfont').setup()\n" \
-            "$PWD" > "$work/init.lua"
-
-          # $1 home, $2 TERM_PROGRAM: true when the carrier reaches the tty.
-          # Captured, then grepped: grep -q under pipefail SIGPIPEs script.
-          emits() {
-            local out
-            out=$(HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
-              script -qec "'$nvim_bin' --clean -u '$work/init.lua' -c 'redraw!' -c 'sleep 300m' -c 'q!' '$work/probe.lua'" \
-                /dev/null 2>/dev/null) || true
-            grep -aqE "$carrier" <<<"$out"
-          }
-
-          if emits "$linked" xterm; then
-            echo "carrier emitted outside wezterm — this is literally blinking text"; fail=1
-          fi
-          if emits "$unlinked" WezTerm; then
-            echo "carrier emitted in wezterm before the config was linked"; fail=1
-          fi
-          if ! emits "$linked" WezTerm; then
-            echo "carrier missing on a linked wezterm tty"; fail=1
-          fi
-
-          # oil is buftype=acwrite; assert it is excluded.
-          {
-            printf "vim.opt.runtimepath:prepend('%s/nvim')\n" "$PWD"
-            printf "require('external.altfont').setup()\n"
-            printf "local b = vim.api.nvim_create_buf(true, false)\n"
-            printf "vim.api.nvim_buf_set_name(b, 'oil:///tmp/')\n"
-            printf "vim.bo[b].buftype = 'acwrite'\n"
-            printf "vim.api.nvim_buf_set_lines(b, 0, -1, false, { 'oilrow' })\n"
-            printf "vim.api.nvim_set_current_buf(b)\n"
-          } > "$work/oil.lua"
-          oil_out=$(HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
-             script -qec "'$nvim_bin' --clean -u '$work/oil.lua' -c 'redraw!' -c 'sleep 300m' -c 'qa!'" \
-               /dev/null 2>/dev/null) || true
-          if grep -aqE "$carrier" <<<"$oil_out"; then
-            echo "carrier reached an oil-style buffer — it must be files only"; fail=1
-          fi
-          exit $fail
+          # Quick reference only (the no-args heredoc); two spaces end a command name.
+          quickref=$(sed -n '/^h() {/,/^    return$/p' bash/bash_productivity)
+          listed=$(echo "$quickref" | sed -n 's/^    \([a-z][a-z0-9-]*\)  \+.*/\1/p' | sort -u)
+          for c in $listed; do
+            echo "$defines" | grep -qx -- "$c" \
+              || { echo "h documents '$c', which nothing defines or declares"; bad=1; }
+          done
+          exit $bad
 
   # ── 2* conversions ─────────────────────────────────────────────────────────
   # The only commands that call a second runtime. A conversion can succeed
@@ -1553,13 +1041,63 @@ jobs:
           [ "$leaked" -eq 0 ] || { echo "FAIL: $leaked temp file(s) leaked"; exit 1; }
           echo "ALL PASS"
 
-  # ── transitive advisories: what Dependabot cannot see ──────────────────────
-  # GitHub's dependency graph cannot parse bun.lock, so it misses the packages
-  # under the declared servers; `bun audit` resolves the installed tree.
-  # package.json's override forces minimatch 11 over editorconfig's ~10.2.4
-  # (GHSA-g3hv-75wg-m249); drop it once editorconfig declares ^11.
-  audit:
-    name: bun audit (transitive advisories)
+  # ── [uv] ───────────────────────────────────────────────────────────────────
+  uv:
+    name: uv
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      # The installer preference cannot live in a || chain (pkg would win, and
+      # the distro's uv cannot self-update), so the declaration is asserted here.
+      - name: '[uv] is installed by its own installer, never the distro''s'
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          bad=0
+
+          # uv.toml carries the two settings from /etc/uv/uv.toml, which the RPM owns.
+          manifest_lines link uv | awk -F'\t' '{print $2}' | grep -qx 'uv/uv.toml' || {
+            echo "[uv] no longer links uv/uv.toml — removing the distro package"
+            echo "     would revert python-downloads and python-preference"; bad=1; }
+
+          # No section may declare uv through pkg, in any position of a chain.
+          while IFS=$'\t' read -r section provider cmd _pkg; do
+            [ "$cmd" = "uv" ] || continue
+            for p in ${provider//||/ }; do
+              if [ "$p" = "pkg" ]; then
+                echo "[$section] declares uv via 'pkg'. That build cannot"
+                echo "     'uv self update'. Let ensure_uv (lib/pkg.sh) choose —"
+                echo "     it already falls back to pkg when astral.sh is down."
+                bad=1
+              fi
+            done
+          done < <(manifest_lines tool)
+
+          # ensure_uv must still try the installer first.
+          grep -q '^ensure_uv()' lib/pkg.sh || {
+            echo "lib/pkg.sh no longer defines ensure_uv"; bad=1; }
+          grep -q 'ensure_uv ||' lib/pkg.sh || {
+            echo "uv_install no longer bootstraps uv through ensure_uv"; bad=1; }
+          body=$(sed -n '/^ensure_uv()/,/^}/p' lib/pkg.sh)
+          first=$(grep -n -E 'astral\.sh|pkg_install' <<<"$body" | head -1 || true)
+          case "$first" in
+            *astral.sh*) ;;
+            *) echo "ensure_uv reaches pkg_install before the official installer:"
+               echo "     $first"; bad=1 ;;
+          esac
+
+          [ $bad -eq 0 ] && echo "ok: uv comes from Astral's installer, with pkg as the fallback"
+          exit $bad
+
+  # ── [nvim] ─────────────────────────────────────────────────────────────────
+  # The help matches the config, and the servers run under bun: nothing may
+  # bring back node, npm, pip or a node shim.
+  nvim:
+    name: nvim (docs, servers under bun)
     needs: changes
     if: needs.changes.outputs.full == 'true'
     runs-on: ubuntu-latest
@@ -1568,71 +1106,43 @@ jobs:
         with:
           submodules: true
 
-      # setup-bun (pinned, Dependabot-watched), not a curl-piped installer. Its
-      # version comes from mise.toml: another bun rewrites yarn.lock's header.
-      - id: bun
+      # The editor's `h` check: <leader> keys and user commands, read from lua/.
+      - name: nvim help names only mappings that exist, and every mapping and command is documented
         run: |
-          set -euo pipefail
-          # Fail rather than default: an empty bun-version means latest.
-          v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
-          if [ -z "$v" ]; then
-            echo "mise.toml declares no bun version; deps.conf must keep bun" \
-                 "on the mise lane, or this job needs another pin." >&2
-            exit 1
-          fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+          set -uo pipefail
+          bad=0
+          docs="nvim/doc/*.txt nvim/README.md"
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ steps.bun.outputs.version }}
+          # Quoted <leader> literals under lua/; comments are unquoted and do not count.
+          defined=$(grep -rhoE "['\"]<leader>[^'\"]+['\"]" nvim/lua nvim/init.lua \
+                    | tr -d "'\"" | sort -u)
 
-      # --frozen-lockfile: audit the committed tree, not today's resolution.
-      - name: Install the language servers
-        run: bun install --cwd nvim/lsp-servers --frozen-lockfile
+          # A token ends at whitespace, a backtick, a pipe, or punctuation.
+          token='<leader>[^[:space:]`|),.*]+'
+          # shellcheck disable=SC2086
+          named=$(grep -hoE "$token" $docs | sort -u)
+          for k in $named; do
+            echo "$defined" | grep -qxF -- "$k" \
+              || { echo "docs name $k, which nothing under nvim/lua defines"; bad=1; }
+          done
 
-      # Fails on any advisory; an unfixable one gets --ignore=<id> with its reason.
-      # GHSA-vfj7-8cjw-p6xm (braces <=3.0.3) has no fixed release and needs a
-      # hostile glob in the editor's own config. Drop it once braces ships a fix.
-      - name: No known advisories in the language server tree
-        run: bun audit --cwd nvim/lsp-servers --ignore=GHSA-vfj7-8cjw-p6xm
+          # ...and the reverse, against the one file that claims to be complete.
+          in_keymaps=$(grep -hoE "$token" nvim/doc/dotfiles-keymaps.txt | sort -u)
+          for k in $defined; do
+            echo "$in_keymaps" | grep -qxF -- "$k" \
+              || { echo "$k is defined but missing from nvim/doc/dotfiles-keymaps.txt"; bad=1; }
+          done
 
-      # yarn.lock exists only for GitHub's dependency graph; it must match bun.lock.
-      - name: yarn.lock matches bun.lock
-        run: |
-          set -euo pipefail
-          bun install --cwd nvim/lsp-servers --yarn --frozen-lockfile
-          if ! git diff --exit-code -- nvim/lsp-servers/yarn.lock; then
-            echo
-            echo "yarn.lock is stale. Regenerate it:"
-            echo "    bun install --cwd nvim/lsp-servers --yarn"
-            exit 1
-          fi
+          # Every user command has a help page.
+          cmds=$(grep -rhoE "nvim_create_user_command\(\s*'[A-Za-z]+'" nvim/lua nvim/init.lua \
+                 | sed -E "s/.*'([A-Za-z]+)'/\1/" | sort -u)
+          for c in $cmds; do
+            grep -qE "(^|[[:space:]*]):$c([^A-Za-z]|$)" nvim/doc/*.txt \
+              || { echo ":$c is defined but has no line in nvim/doc"; bad=1; }
+          done
 
-      # Socket blocks malicious packages during install. CI only: it fails closed
-      # without network, and `make install` must work offline.
-      - name: Scan for malicious packages (Socket, CI only)
-        run: |
-          set -euo pipefail
-          cat > nvim/lsp-servers/bunfig.toml <<'TOML'
-          [install.security]
-          scanner = "@socketsecurity/bun-security-scanner"
-          TOML
-          # Free mode — no SOCKET_API_KEY, no account, no secret to leak.
-          rm -rf nvim/lsp-servers/node_modules
-          bun install --cwd nvim/lsp-servers --frozen-lockfile
-          rm -f nvim/lsp-servers/bunfig.toml
-
-  # ── the toolchain is bun and uv ────────────────────────────────────────────
-  # Nothing may bring back node, npm, pip or a node shim; the servers run under bun.
-  toolchain:
-    name: bun-only toolchain
-    needs: changes
-    if: needs.changes.outputs.full == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          submodules: true
+          [ $bad -eq 0 ] && echo "ok: $(echo "$defined" | wc -l) leader keys and $(echo "$cmds" | wc -l) commands, all documented, nothing stale"
+          exit $bad
 
       # Same setup-bun as the audit job. bun lands outside ~/.bun/bin, so later steps use command -v.
       - id: bun
@@ -1708,13 +1218,568 @@ jobs:
           PATH=$MIN bun nvim/lsp-servers/verify.ts | tee /tmp/lsp.txt
           grep -q "ALL PASS" /tmp/lsp.txt
 
+  # ── the neovim floor, on the platform that can't meet it ───────────────────
+  # RHEL 9's EPEL neovim is too old, so mise is the whole answer. Drives the
+  # real provider code; stops short of `make install nvim`, which proves nothing more.
+  nvim-floor:
+    name: neovim floor (${{ matrix.name }}, mise fallback)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # EPEL's neovim is 0.8, and this is the fleet's oldest glibc.
+          - name: rhel 9
+            container: almalinux:9
+    steps:
+      # util-linux for script(1).
+      - name: Container prerequisites (EPEL on, as on the RHEL box)
+        run: |
+          dnf install -y epel-release
+          dnf install -y --allowerasing git make sudo findutils curl util-linux
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Resolve nvim through the real provider chain
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          source lib/providers.sh
+          pkg_detect
+          # Spec read from the manifest, so flipping deps.conf fails here.
+          spec=$(manifest_lines tool nvim | awk -F'\t' '$3=="nvim" {print $2}')
+          echo "declared provider chain: $spec"
+          [ "$spec" = "mise||pkg" ] || { echo "expected mise||pkg"; exit 1; }
+          provider_install "$spec" nvim neovim
+          echo "$HOME/.local/share/mise/shims" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Exactly one nvim, and it meets the floor
+        run: |
+          set -euo pipefail
+          command -v nvim
+          nvim --version | head -1
+          v=$(nvim --version | awk 'NR==1 { sub(/^v/,"",$2); print $2 }')
+          maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
+          [ "$maj" -gt 0 ] || [ "$min" -ge 12 ] || { echo "nvim $v is below the 0.12 floor"; exit 1; }
+          # `type -ap`: the EL image has no `which`.
+          n=$(type -ap nvim | sort -u | wc -l)
+          echo "nvim binaries on PATH: $n"
+          type -ap nvim
+          [ "$n" -eq 1 ] || { echo "expected exactly one nvim, found $n"; exit 1; }
+          if command -v rpm >/dev/null 2>&1 && rpm -q neovim >/dev/null 2>&1; then
+            echo "dnf's neovim got installed after all"; exit 1
+          fi
+          echo "one nvim, $v, no distro package — mise-first held"
+
+      # A machine whose global mise config predates the pin must move onto it.
+      - name: make install moves an existing mise tool onto the pin
+        run: |
+          set -euo pipefail
+          source lib/pkg.sh
+          cfg=$(_mise_global_config)
+          spec=$(_mise_pin nvim neovim)
+          echo "pin: $spec"
+          case "$spec" in aqua:*) ;; *) echo "neovim is not pinned under aqua:"; exit 1 ;; esac
+          sed -i 's|^"aqua:neovim[^"]*" = .*|neovim = "latest"|' "$cfg"
+          cat "$cfg"
+          out=$(mise_install nvim neovim); echo "$out"
+          grep -q 'repo pins' <<<"$out" || { echo "the stale entry was not noticed"; exit 1; }
+          cat "$cfg"
+          grep -qx "\"${spec%@*}\" = \"${spec#*@}\"" "$cfg" || { echo "global config is not the pin"; exit 1; }
+          if grep -q '^neovim = ' "$cfg"; then echo "the old entry survived"; exit 1; fi
+          out=$(mise_install nvim neovim); echo "$out"
+          [ "$out" = "  ✅ nvim" ] || { echo "second run did more than confirm"; exit 1; }
+          if make status nvim | grep 'repo pins'; then echo "make status still reports pin drift"; exit 1; fi
+          echo "ok: converged to $spec, idempotent, and make status agrees"
+
+      # Runtime, not a grep: a blink highlight reaches the terminal through nvim's
+      # TUI and terminfo. Off wezterm, SGR 5 blinks a whole file.
+      - name: nvim emits the alternate-font carrier only under wezterm
+        # Once is enough: it tests altfont.lua's guard, not the platform.
+        if: matrix.name == 'rhel 9'
+        run: |
+          set -uo pipefail
+          fail=0
+          command -v script >/dev/null 2>&1 || { echo "no script(1) here"; exit 0; }
+
+          # SGR 5 exactly; a looser pattern also matches ESC[25m (blink off).
+          carrier=$'\033\\[([0-9;]*;)?5m'
+
+          # Fixture homes built by the real installer, as in the sgr.sh table.
+          linked=$(mktemp -d)
+          unlinked=$(mktemp -d)
+          HOME="$linked" make link wezterm >/dev/null
+
+          # The real binary: mise's shim under a fixture HOME would download neovim@latest.
+          nvim_bin=$(mise which nvim 2>/dev/null || command -v nvim)
+          echo "nvim under test: $nvim_bin"
+
+          work=$(mktemp -d)
+          printf 'local x = 1\n' > "$work/probe.lua"
+          # Only altfont, on the repo's runtimepath: the full config clones every plugin.
+          printf "vim.opt.runtimepath:prepend('%s/nvim')\nrequire('external.altfont').setup()\n" \
+            "$PWD" > "$work/init.lua"
+
+          # $1 home, $2 TERM_PROGRAM: true when the carrier reaches the tty.
+          # Captured, then grepped: grep -q under pipefail SIGPIPEs script.
+          emits() {
+            local out
+            out=$(HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+              script -qec "'$nvim_bin' --clean -u '$work/init.lua' -c 'redraw!' -c 'sleep 300m' -c 'q!' '$work/probe.lua'" \
+                /dev/null 2>/dev/null) || true
+            grep -aqE "$carrier" <<<"$out"
+          }
+
+          if emits "$linked" xterm; then
+            echo "carrier emitted outside wezterm — this is literally blinking text"; fail=1
+          fi
+          if emits "$unlinked" WezTerm; then
+            echo "carrier emitted in wezterm before the config was linked"; fail=1
+          fi
+          if ! emits "$linked" WezTerm; then
+            echo "carrier missing on a linked wezterm tty"; fail=1
+          fi
+
+          # oil is buftype=acwrite; assert it is excluded.
+          {
+            printf "vim.opt.runtimepath:prepend('%s/nvim')\n" "$PWD"
+            printf "require('external.altfont').setup()\n"
+            printf "local b = vim.api.nvim_create_buf(true, false)\n"
+            printf "vim.api.nvim_buf_set_name(b, 'oil:///tmp/')\n"
+            printf "vim.bo[b].buftype = 'acwrite'\n"
+            printf "vim.api.nvim_buf_set_lines(b, 0, -1, false, { 'oilrow' })\n"
+            printf "vim.api.nvim_set_current_buf(b)\n"
+          } > "$work/oil.lua"
+          oil_out=$(HOME="$linked" XDG_CONFIG_HOME= TERM_PROGRAM=WezTerm \
+             script -qec "'$nvim_bin' --clean -u '$work/oil.lua' -c 'redraw!' -c 'sleep 300m' -c 'qa!'" \
+               /dev/null 2>/dev/null) || true
+          if grep -aqE "$carrier" <<<"$oil_out"; then
+            echo "carrier reached an oil-style buffer — it must be files only"; fail=1
+          fi
+          exit $fail
+
+  # ── transitive advisories: what Dependabot cannot see ──────────────────────
+  # GitHub's dependency graph cannot parse bun.lock, so it misses the packages
+  # under the declared servers; `bun audit` resolves the installed tree.
+  # package.json's override forces minimatch 11 over editorconfig's ~10.2.4
+  # (GHSA-g3hv-75wg-m249); drop it once editorconfig declares ^11.
+  audit:
+    name: bun audit (transitive advisories)
+    needs: changes
+    if: needs.changes.outputs.full == 'true' || needs.changes.outputs.audit == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      # setup-bun (pinned, Dependabot-watched), not a curl-piped installer. Its
+      # version comes from mise.toml: another bun rewrites yarn.lock's header.
+      - id: bun
+        run: |
+          set -euo pipefail
+          # Fail rather than default: an empty bun-version means latest.
+          v=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
+          if [ -z "$v" ]; then
+            echo "mise.toml declares no bun version; deps.conf must keep bun" \
+                 "on the mise lane, or this job needs another pin." >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun.outputs.version }}
+
+      # --frozen-lockfile: audit the committed tree, not today's resolution.
+      - name: Install the language servers
+        run: bun install --cwd nvim/lsp-servers --frozen-lockfile
+
+      # Fails on any advisory; an unfixable one gets --ignore=<id> with its reason.
+      # GHSA-vfj7-8cjw-p6xm (braces <=3.0.3) has no fixed release and needs a
+      # hostile glob in the editor's own config. Drop it once braces ships a fix.
+      - name: No known advisories in the language server tree
+        run: bun audit --cwd nvim/lsp-servers --ignore=GHSA-vfj7-8cjw-p6xm
+
+      # yarn.lock exists only for GitHub's dependency graph; it must match bun.lock.
+      - name: yarn.lock matches bun.lock
+        run: |
+          set -euo pipefail
+          bun install --cwd nvim/lsp-servers --yarn --frozen-lockfile
+          if ! git diff --exit-code -- nvim/lsp-servers/yarn.lock; then
+            echo
+            echo "yarn.lock is stale. Regenerate it:"
+            echo "    bun install --cwd nvim/lsp-servers --yarn"
+            exit 1
+          fi
+
+      # Socket blocks malicious packages during install. CI only: it fails closed
+      # without network, and `make install` must work offline.
+      - name: Scan for malicious packages (Socket, CI only)
+        run: |
+          set -euo pipefail
+          cat > nvim/lsp-servers/bunfig.toml <<'TOML'
+          [install.security]
+          scanner = "@socketsecurity/bun-security-scanner"
+          TOML
+          # Free mode — no SOCKET_API_KEY, no account, no secret to leak.
+          rm -rf nvim/lsp-servers/node_modules
+          bun install --cwd nvim/lsp-servers --frozen-lockfile
+          rm -f nvim/lsp-servers/bunfig.toml
+
+  # ── [wezterm] ──────────────────────────────────────────────────────────────
+  wezterm:
+    name: wezterm
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      # wezterm/MIN_VERSION stays retired: a version floor cannot fail safe.
+      - name: The font lane check asks what it can prove
+        run: |
+          set -uo pipefail
+          bad=0
+          [ -e wezterm/MIN_VERSION ] \
+            && { echo "wezterm/MIN_VERSION is back -- a build stamp cannot answer this; see status_fonts"; bad=1; }
+          # Comments stripped first: the file explains why the floor is gone.
+          grep -v '^[[:space:]]*#' wezterm/deps.sh | grep -q 'MIN_VERSION' \
+            && { echo "wezterm/deps.sh reads MIN_VERSION again"; bad=1; }
+          grep -q '^status_fonts()' lib/status.sh \
+            || { echo "lib/status.sh no longer defines status_fonts"; bad=1; }
+          grep -q 'status_fonts "\${scope\[@\]}"' lib/status.sh \
+            || { echo "status_all no longer calls status_fonts with its scope"; bad=1; }
+          # Only the provable half may count as drift; the carrier is unreadable off a wezterm tty.
+          grep -q '_drift_font' lib/status.sh \
+            || { echo "status_fonts records no drift at all -- the provable half should"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: no floor, and status_fonts asks only answerable questions"
+          exit $bad
+
+      # The committed .ttf files must exist while the config names them; a
+      # missing one silently falls back to another font.
+      - name: Science Gothic Mono ships with the config that names it
+        run: |
+          fail=0
+          for f in wezterm/fonts/ScienceGothicMono.ttf wezterm/fonts/ScienceGothicMono-Bold.ttf; do
+            [ -s "$f" ] || { echo "missing or empty: $f"; fail=1; }
+          done
+          grep -q 'wezterm/fonts' deps.conf || { echo "deps.conf does not link wezterm/fonts"; fail=1; }
+          # OFL 1.1 sections 2 and 5: the licence travels with the font, unrelicensed.
+          [ -s wezterm/fonts/OFL.txt ] || { echo "wezterm/fonts/OFL.txt is missing"; fail=1; }
+          grep -q 'Open Font License' LICENSE || { echo "LICENSE lost the OFL carve-out"; fail=1; }
+          # Any blink rate but exactly 0 animates.
+          grep -q 'text_blink_rate_rapid = 0' wezterm/wezterm.lua \
+            || { echo "wezterm.lua: SGR 6 would blink without text_blink_rate_rapid = 0"; fail=1; }
+          grep -q 'text_blink_rate = 0' wezterm/wezterm.lua \
+            || { echo "wezterm.lua: SGR 5 would blink without text_blink_rate = 0"; fail=1; }
+          grep -q 'Science Gothic Mono' wezterm/wezterm.lua \
+            || { echo "wezterm.lua: no font_rule for the SGR 6 carrier"; fail=1; }
+
+          # Four rules, {bold, regular} x {italic, upright}: a missing one flattens
+          # that style. Comments stripped first, since wezterm.lua quotes the pattern.
+          n=$(grep -vE '^[[:space:]]*--' wezterm/wezterm.lua | grep -cE "blink = ['\"]Slow['\"]")
+          [ "$n" -eq 4 ] \
+            || { echo "wezterm.lua: expected 4 SGR 5 font_rules (bold/regular x italic/upright), found $n"; fail=1; }
+
+          # Every family wezterm.lua names (DEFAULT_FONTS and window_frame) must be
+          # installed by deps.sh: a fallback that resolves is silent.
+          {
+            sed -n '/^local DEFAULT_FONTS = {/,/^}/p' wezterm/wezterm.lua
+            sed -n '/config.window_frame = {/,/^\t}/p' wezterm/wezterm.lua
+          } | grep -oE '"[^"]+"' | tr -d '"' | sort -u \
+          | while IFS= read -r fam; do
+              case "$fam" in
+                # wezterm bundles these -- requiring an installer would be wrong.
+                'JetBrains Mono'|'Noto Color Emoji'|'Symbols Nerd Font Mono'|Roboto) continue ;;
+                # weight/style values caught by the same quote scrape.
+                Bold|Regular|Medium|Italic|Normal|Light|Thin) continue ;;
+                # Lane keys like ["nvim.ui"], not families; no family has a period.
+                *.*) continue ;;
+                '') continue ;;
+              esac
+              # Nerd Fonts are installed by archive name; others by family.
+              needle=${fam% Nerd Font}
+              grep -q "$needle" wezterm/deps.sh \
+                || { echo "wezterm/deps.sh does not install '$fam'"; exit 1; }
+              echo "  ok wezterm/deps.sh installs $fam"
+            done || fail=1
+
+          # The writer half: without it nothing emits into the lane.
+          grep -q "require('external.altfont')" nvim/init.lua \
+            || { echo "nvim/init.lua does not load external.altfont"; fail=1; }
+          exit $fail
+
+      # Named, not counted: a count misses a swap.
+      - name: '[wezterm] still declares its links'
+        run: |
+          set -euo pipefail
+          source lib/manifest.sh
+          links=$(manifest_lines link wezterm | awk -F'\t' '{print $2}')
+          bad=0
+          # the config itself
+          grep -qx 'wezterm/wezterm.lua' <<<"$links" || {
+            echo "[wezterm] no longer links wezterm.lua"; bad=1; }
+          # the fonts: font_dirs reads them, and lib/sgr.sh treats this link as "config is live"
+          grep -qx 'wezterm/fonts' <<<"$links" || {
+            echo "[wezterm] no longer links the fonts directory"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: [wezterm] links its config and fonts"
+          exit $bad
+
+  # ── the Rust TUIs ──────────────────────────────────────────────────────────
+  # fmt and clippy are gates: a warning nobody fails on is a warning nobody reads.
+  tui:
+    name: tui (rust)
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Toolchain
+        run: rustup component add rustfmt clippy
+      - name: Format
+        working-directory: tui
+        run: cargo fmt --all --check
+      - name: Clippy
+        working-directory: tui
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        working-directory: tui
+        run: cargo test --locked
+      - name: Release build
+        working-directory: tui
+        run: cargo build --release --locked
+
+      # The same three-condition guard as lib/sgr.sh: off a linked wezterm tty,
+      # SGR 6 and SGR 5 blink, and in a pipe they are garbage.
+      - name: font show carries escapes only on a linked wezterm tty
+        run: |
+          fail=0
+          esc=$'\033['
+          carrier=$'\033[6'   # SGR 6, the `make` output lane
+          slow=$'\033[5m'     # SGR 5, the nvim editor lane
+          F=tui/target/release/font
+
+          # A pipe is the case CI itself creates.
+          if "$F" show | grep -qF "$esc"; then
+            echo "font show leaked escapes into a pipe"; fail=1
+          fi
+
+          if ! command -v script >/dev/null 2>&1; then
+            echo "no script(1) here; the tty rows were skipped"; exit $fail
+          fi
+
+          # Fixture homes, as in the make help truth table.
+          unlinked=$(mktemp -d)
+          linked=$(mktemp -d)
+          HOME="$linked" make link wezterm >/dev/null
+
+          on_tty() {
+            HOME="$1" XDG_CONFIG_HOME= TERM_PROGRAM="$2" \
+              script -qec "$PWD/$F show" /dev/null | grep -qF "$3"
+          }
+
+          if on_tty "$unlinked" WezTerm "$esc"; then
+            echo "escapes on a wezterm tty before the config was linked"; fail=1
+          fi
+          if on_tty "$linked" xterm "$esc"; then
+            echo "escapes on a non-wezterm tty -- SGR 6 there is rapid blink"; fail=1
+          fi
+          # Both lanes, by their exact attribute.
+          if ! on_tty "$linked" WezTerm "$carrier"; then
+            echo "SGR 6 missing on a linked wezterm tty"; fail=1
+          fi
+          if ! on_tty "$linked" WezTerm "$slow"; then
+            echo "SGR 5 missing on a linked wezterm tty"; fail=1
+          fi
+          exit $fail
+
+      # `font` on crates.io is someone else's crate, and cargo installs by name.
+      - name: The tui section installs from a path, not from crates.io
+        run: |
+          source lib/manifest.sh
+          fail=0
+          while IFS=$'\t' read -r _section provider cmd _; do
+            [ "$provider" = manual ] || { echo "[tui] $cmd is '$provider'; must be manual"; fail=1; }
+          done < <(manifest_lines tool tui)
+          grep -q -- '--path' tui/deps.sh \
+            || { echo "tui/deps.sh does not install from a local path"; fail=1; }
+          exit $fail
+
+      # lib/pkg.sh is the only place that installs a tool, rustup included.
+      - name: The tui section bootstraps cargo through lib/pkg.sh
+        run: |
+          fail=0
+          grep -q '^ensure_cargo()' lib/pkg.sh \
+            || { echo "lib/pkg.sh lost ensure_cargo"; fail=1; }
+          grep -q 'ensure_cargo' tui/deps.sh \
+            || { echo "tui/deps.sh does not require cargo"; fail=1; }
+          if grep -q 'rustup.rs' tui/deps.sh; then
+            echo "tui/deps.sh has its own rustup bootstrap; use ensure_cargo"
+            fail=1
+          fi
+          source lib/manifest.sh
+          manifest_lines tool tui | cut -f3 | grep -qx cargo \
+            || { echo "[tui] does not declare cargo"; fail=1; }
+          exit $fail
+
+      # A bash function named after a tui binary would win over PATH. Derived
+      # from the workspace members, not a list; reticle ships no binary.
+
+      - name: No bash function shadows a tui binary
+        run: |
+          fail=0
+          bins=$(sed -n '/^members *= *\[/,/\]/p' tui/Cargo.toml \
+                 | grep -oE '"[a-z0-9_-]+"' | tr -d '"' | grep -v '^reticle$')
+          [ -n "$bins" ] || { echo "could not read workspace members from tui/Cargo.toml"; exit 1; }
+          echo "tui binaries: $(echo "$bins" | tr '\n' ' ')"
+          for b in $bins; do
+            if grep -qE "^$b\(\) \{" bash/*; then
+              echo "a bash function named '$b' would shadow the tui binary"; fail=1
+            fi
+          done
+          exit $fail
+
+  # ── [claude] ───────────────────────────────────────────────────────────────
+  claude:
+    name: claude
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      # Git sees the defaults whatever a machine set, personal keys never reach
+      # this public repo, other keys survive, and the committed file is already
+      # the filter's output.
+      - name: The claude settings filter swaps preferences for the defaults
+        run: |
+          set -euo pipefail
+          want=$(jq -S '{model, modelSettings}' claude/model-defaults.json)
+          out=$(printf '%s' '{"model":"sonnet","effortLevel":"low","modelSettings":{"claude-opus-5-5":{"effortLevel":"low"},"x":{}},"theme":"dark","skipAutoPermissionPrompt":true,"attribution":{"commit":""},"permissions":{"defaultMode":"auto","deny":["Read(~/.ssh/**)"]}}' \
+                | tools/clean-claude-settings.sh)
+          echo "$out"
+          [ "$(jq -S '{model, modelSettings}' <<<"$out")" = "$want" ] \
+            || { echo "filter let this machine's model/effort through"; exit 1; }
+          jq -e 'has("effortLevel") | not' <<<"$out" >/dev/null \
+            || { echo "filter kept the legacy top-level effortLevel"; exit 1; }
+          jq -e '(has("theme") or has("skipAutoPermissionPrompt") or (.permissions | has("defaultMode"))) | not' <<<"$out" >/dev/null \
+            || { echo "filter let a personal key into the public repo"; exit 1; }
+          jq -e '.attribution == {"commit":""} and .permissions == {"deny":["Read(~/.ssh/**)"]}' <<<"$out" >/dev/null \
+            || { echo "filter changed configuration it should keep"; exit 1; }
+
+          committed=$(git show HEAD:claude/settings.json)
+          [ "$(tools/clean-claude-settings.sh <<<"$committed")" = "$(jq -S . <<<"$committed")" ] || {
+            echo "claude/settings.json is not what the filter produces —"
+            echo "re-stage it: git add --renormalize claude/settings.json"; exit 1; }
+          echo "ok: defaults committed, local preferences never reach git"
+
+      # A filtered file differs in size from its blob, so git calls it modified
+      # without running the filter. The refresh clears that only when the filtered
+      # file equals the index; the dangerous direction is hiding a real change.
+      - name: The settings refresh clears only the FALSE modified flag
+        run: |
+          set -euo pipefail
+          # Link ~/.claude/settings.json into the clone, as `make link` would.
+          mkdir -p "$HOME/.claude"
+          ln -sfn "$PWD/claude/settings.json" "$HOME/.claude/settings.json"
+          git add claude/settings.json          # baseline: stat recorded
+
+          # 0. No filter registered: do nothing, or `git add` stages this machine's model.
+          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
+          tools/refresh-claude-settings.sh
+          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
+            || { echo "FAIL: refresh staged the raw file with no filter registered"; exit 1; }
+          git checkout -- claude/settings.json
+
+          # From here on, the filter as claude/deps.sh registers it.
+          git config filter.claude-settings.clean "$PWD/tools/clean-claude-settings.sh"
+          git add claude/settings.json
+
+          # 1. A model change is volatile: the flag clears and nothing is staged.
+          jq '.model = "claude-haiku-5-5"' claude/settings.json > t && mv t claude/settings.json
+          [ -n "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: a size change did not go stat-dirty — premise gone"; exit 1; }
+          tools/refresh-claude-settings.sh
+          [ -z "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: refresh left the false modified flag in place"; exit 1; }
+          [ -z "$(git diff --cached --name-only claude/settings.json)" ] \
+            || { echo "FAIL: refresh staged content instead of just the stat"; exit 1; }
+
+          # 2. A deny-rule change is real and must survive (theme is filtered out).
+          jq '.permissions.deny += ["Read(~/x)"]' claude/settings.json > t && mv t claude/settings.json
+          tools/refresh-claude-settings.sh
+          [ -n "$(git status --porcelain claude/settings.json)" ] \
+            || { echo "FAIL: refresh hid a real settings change"; exit 1; }
+          git checkout -- claude/settings.json
+          echo "ok: false flag cleared, real change left visible"
+
+      # Named, not counted. SessionEnd does the work; SessionStart catches killed sessions.
+      - name: Both refresh hooks are declared
+        run: |
+          set -euo pipefail
+          for ev in SessionStart SessionEnd; do
+            jq -e --arg ev "$ev" \
+              '.hooks[$ev][0].hooks[0].command | test("refresh-claude-settings")' \
+              claude/settings.json >/dev/null \
+              || { echo "FAIL: $ev no longer calls tools/refresh-claude-settings.sh"; exit 1; }
+          done
+          echo "ok: SessionStart and SessionEnd both refresh the stat"
+
+  # ── [git-autofetch] ────────────────────────────────────────────────────────
+  git-autofetch:
+    name: git-autofetch
+    needs: changes
+    if: needs.changes.outputs.full == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      # Fetch only: HEAD never moves, a clone behind is named, a busy one is skipped.
+      - name: git-autofetch fetches and reports, never pulls
+        run: |
+          set -euo pipefail
+          t=$(mktemp -d); export GIT_CONFIG_GLOBAL=$t/gitconfig  # safe to run on a real machine
+          git config --global user.name ci; git config --global user.email ci@example.invalid
+          # Run from a local clone: the script always fetches its own repo, and
+          # this checkout's remote is not one the test should depend on.
+          git clone -q "$PWD" "$t/core" 2>/dev/null; G=$t/core/git-autofetch/git-autofetch
+          git init -q --bare -b main "$t/o.git"
+          git clone -q "$t/o.git" "$t/a" 2>/dev/null
+          git -C "$t/a" commit -q --allow-empty -m one && git -C "$t/a" push -q origin main
+          git clone -q "$t/o.git" "$t/p"
+          git -C "$t/a" commit -q --allow-empty -m two && git -C "$t/a" push -q
+          printf 'p  file://%s/o.git  %s/p\n' "$t" "$t" > "$t/plugins"
+          export DOTFILES_PLUGINS_FILE=$t/plugins GIT_AUTOFETCH_ROOT=$t/none
+          before=$(git -C "$t/p" rev-parse HEAD)
+          [ -z "$($G --report)" ] || { echo "reported before anything was fetched"; exit 1; }
+          $G
+          [ "$(git -C "$t/p" rev-parse HEAD)" = "$before" ] || { echo "the fetch moved HEAD"; exit 1; }
+          $G --report | grep -q "$t/p is 1 commit(s) behind origin/main" \
+            || { echo "a plugin one commit behind was not reported"; $G --report; exit 1; }
+          touch "$t/p/.git/MERGE_HEAD"
+          $G --dry-run | grep -q "skip  $t/p (MERGE_HEAD in progress)" \
+            || { echo "a repo mid-merge was not skipped"; exit 1; }
+          echo "ok: fetched without moving HEAD, reported the plugin, skipped the busy repo"
+
   # ── The one required check ─────────────────────────────────────────────────
   # main-ci requires only this job, so adding or renaming a job cannot desync
   # the ruleset. `if: always()`: a skipped required check counts as passing.
   ci-ok:
     name: ci ok
     if: always()
-    needs: [changes, shellcheck, manifest, tui, link-only, install, nvim-floor, conversions, audit, toolchain]
+    needs: [changes, shellcheck, engine, link-only, install, bash, conversions, uv, nvim, nvim-floor, audit, wezterm, tui, claude, git-autofetch]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
