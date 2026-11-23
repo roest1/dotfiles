@@ -104,7 +104,7 @@ fi
 # terminal cut is narrow. It is fine for `claude`, and it is the wrong choice
 # for `ui` while `editor` is a 0.60em font, because the editor lane draws inside
 # the base lane's cell and a wider glyph in a narrower cell collides. Same
-# arithmetic mkmono.py exists to satisfy.
+# arithmetic Science Gothic Mono is built to satisfy (roest1/fonts).
 if command -v fc-list >/dev/null 2>&1; then
   # grep without -q, for the SIGPIPE reason spelled out above.
   if fc-list | grep -i 'IosevkaTerm Nerd Font' >/dev/null; then

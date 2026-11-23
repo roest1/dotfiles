@@ -48,7 +48,8 @@ git commit -am "ps1: bump"
 gh pr create --fill
 ```
 
-Once it merges, every machine gets it on `git pull`.
+Once it merges, every machine gets it on `git pull`. The fonts at `wezterm/fonts`
+([roest1/fonts](https://github.com/roest1/fonts)) bump the same way.
 
 ## Everything lives in `deps.conf`
 
@@ -160,7 +161,7 @@ ps1/             submodule: roest1/PS1, linked as ~/.bash_prompt
 git/             gitconfig, plus GitHub setup notes
 uv/              [uv]
 nvim/            [nvim] — its own Makefile and README
-wezterm/         [wezterm] — config and the generated fonts
+wezterm/         [wezterm] — config; fonts/ is roest1/fonts
 tui/             [tui] — Rust workspace
 claude/          [claude]
 git-autofetch/   [git-autofetch] — the script, its systemd units, the shell notice
@@ -181,4 +182,4 @@ aren't (fork instead — the layout is built for it). See
 
 ## License
 
-MIT, except the fonts in `wezterm/fonts/`, which are OFL ([LICENSE](LICENSE)).
+MIT ([LICENSE](LICENSE)). The fonts at `wezterm/fonts/` are the [roest1/fonts](https://github.com/roest1/fonts) submodule, under the OFL.

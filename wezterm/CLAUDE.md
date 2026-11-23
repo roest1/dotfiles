@@ -13,14 +13,12 @@ Don't replace it with a stock config.
 It is one file. `shared.lua` was split out for a Windows entry point and folded back in on
 2026-11-23, once that entry point was gone.
 
-## Science Gothic Mono is generated, not downloaded
+## Science Gothic Mono comes from roest1/fonts
 
-`wezterm/mkmono.py` (PEP 723, run by `make mono-font`, same arrangement as `mise.toml`)
-derives a monospaced cut from upstream's variable Science Gothic, and the two `.ttf` files
-it writes are committed under `wezterm/fonts/`. A fresh machine builds nothing. It exists
-because a terminal is a fixed grid and Science Gothic is proportional: its `m` wants 0.99em
-against a 0.62em cell while its `l` wants 0.30em, so raw Science Gothic collides and gaps.
-It works in the tab bar only because that is proportional text laid out proportionally.
+`fonts/` is the [roest1/fonts](https://github.com/roest1/fonts) submodule: a monospaced cut
+of the proportional Science Gothic at 0xProto's 0.62em advance, generated there by
+`mkmono.py` and committed, with its OFL and the CI that checks it. A fresh machine builds
+nothing. To change the font, change roest1/fonts, then bump the pin here, as with `ps1/`.
 
 **The fonts are read via `font_dirs`, never installed into the system font path.**
 `deps.conf` links `wezterm/fonts` → `~/.config/wezterm/fonts` and the config says
@@ -28,15 +26,6 @@ It works in the tab bar only because that is proportional text laid out proporti
 reason — no chance of a stale copy elsewhere shadowing it. Two files claiming family
 `Science Gothic Mono` style `Regular` resolve by first match, and the loser is silently the
 wrong glyphs. That already happened once during development and cost an afternoon.
-
-**The two `.ttf` files are OFL, not MIT, and `LICENSE` carves them out explicitly.** That
-is required, not tidy: OFL 1.1 §5 says the font must be distributed *entirely* under the
-OFL and under no other licence, so a repo-wide MIT grant would conflict.
-`wezterm/fonts/OFL.txt` is the standalone copy, and `mkmono.py` deliberately preserves name
-IDs 0/13/14 (upstream copyright and licence) — don't "clean up" those fields. Upstream
-declares **no** Reserved Font Name, which is the only OFL clause that would have restricted
-the derivative's name, so `Science Gothic Mono` is permissible. CI asserts both the licence
-file and the carve-out survive.
 
 ## The blink attribute is fully spent — both halves
 

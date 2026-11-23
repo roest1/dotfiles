@@ -1,3 +1,6 @@
 [submodule "ps1"]
 	path = ps1
 	url = https://github.com/roest1/PS1.git
+[submodule "wezterm/fonts"]
+	path = wezterm/fonts
+	url = https://github.com/roest1/fonts.git

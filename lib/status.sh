@@ -366,7 +366,7 @@ status_fonts() {
   if [[ "$ttfs" -gt 0 ]]; then
     printf "%s  $MARK_OK %-38s %s font file(s)%s\n" "$SG" "$shown" "$ttfs" "$SG_OFF"
   else
-    printf "%s  $MARK_BAD %-38s no font files — run 'make link'%s\n" "$SG" "$shown" "$SG_OFF"
+    printf "%s  $MARK_BAD %-38s no font files — run 'make install'%s\n" "$SG" "$shown" "$SG_OFF"
     _drift_font
   fi
 
