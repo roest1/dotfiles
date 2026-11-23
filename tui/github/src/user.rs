@@ -25,8 +25,8 @@
 
 use std::sync::Arc;
 
-use reticle::{nav::Action, Flow, Host, Pane, Row, Screen, Tick};
 use serde::Deserialize;
+use tui_core::{nav::Action, Flow, Host, Pane, Row, Screen, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::orgs::OrgList;

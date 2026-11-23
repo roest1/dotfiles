@@ -5,7 +5,7 @@
 //! left here is argument handling and the one process-level concern below.
 
 use font::{lanes, show, FontScreen};
-use reticle::app;
+use tui_core::app;
 
 fn main() -> std::io::Result<()> {
     // Rust ignores SIGPIPE and turns the resulting write error into a PANIC, so

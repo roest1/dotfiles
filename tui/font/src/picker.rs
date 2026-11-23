@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use reticle::{nav::Action, Flow, Image, Pane, Row, Screen};
+use tui_core::{nav::Action, Flow, Image, Pane, Row, Screen};
 
 use crate::{browse, fonts, lanes, render, theme};
 
@@ -251,8 +251,8 @@ pub fn specimen(lane: &str) -> Vec<theme::Line> {
             line("\u{f07b} nvim  \u{f0e7} oil \u{00b7} ~/dotfiles/tui", cyan),
             blank(),
             line("  ../", dim),
+            line("  \u{f115} dots/", cyan),
             line("  \u{f115} font/", cyan),
-            line("  \u{f115} reticle/", cyan),
             line("  \u{f15b} Cargo.toml         412 B", fg),
             line("  \u{f15b} deps.sh            1.1 K", fg),
             blank(),
@@ -399,14 +399,14 @@ impl Screen for FontScreen {
         // `supported()` is checked here as well as in the framework so a
         // terminal without inline images does not pay to rasterise something it
         // cannot show.
-        if self.preview == Preview::Specimen && art_rows >= 6 && reticle::image::supported() {
+        if self.preview == Preview::Specimen && art_rows >= 6 && tui_core::image::supported() {
             let lines = specimen(&lane);
             let size = self.size;
             let row_h = (size * 1.55) as usize;
             // EXACTLY the pixels the terminal will give these cells, so the
             // image is drawn 1:1 instead of resampled. Resampled text is the
             // blur; nothing else about the rasteriser was ever the problem.
-            let (cw, ch) = reticle::term_info().cell;
+            let (cw, ch) = tui_core::term_info().cell;
             let canvas_w = cols as usize * cw as usize;
             let canvas_h = art_rows * ch as usize;
             let mut c = render::Canvas::new(canvas_w, canvas_h, theme::bg());
@@ -433,7 +433,7 @@ impl Screen for FontScreen {
         }
 
         let sheet_rows = art_rows.min(self.families.len());
-        if self.preview == Preview::Sheet && sheet_rows >= 3 && reticle::image::supported() {
+        if self.preview == Preview::Sheet && sheet_rows >= 3 && tui_core::image::supported() {
             let idx = self.families.iter().position(|f| *f == family).unwrap_or(0);
             let lo = idx
                 .saturating_sub(sheet_rows / 2)
@@ -449,7 +449,7 @@ impl Screen for FontScreen {
             // One font per terminal ROW, at the terminal's own cell size, so
             // the sheet is drawn 1:1 rather than squeezed into whatever the
             // scaler makes of a 34px row.
-            let (cw, ch) = reticle::term_info().cell;
+            let (cw, ch) = tui_core::term_info().cell;
             let row_h = ch as usize;
             let canvas_w = cols as usize * cw as usize;
             let mut c = render::Canvas::new(canvas_w, row_h * window.len(), theme::bg());
@@ -474,7 +474,7 @@ impl Screen for FontScreen {
             }
         }
 
-        if !reticle::image::supported() {
+        if !tui_core::image::supported() {
             pane.lines.push(
                 "\x1b[38;5;244m  (the contact sheet needs wezterm — metrics only here)\x1b[0m"
                     .into(),
@@ -574,7 +574,7 @@ impl Screen for FontScreen {
                 Flow::Dirty
             }
             // Screen-local keys arrive as Action::Key rather than being added to
-            // the shared table in reticle::nav, so a key added here can never
+            // the shared table in tui_core::nav, so a key added here can never
             // change what it means in github or the make-it console.
             (Action::Key('p'), _) => {
                 self.preview = match self.preview {

@@ -5,13 +5,13 @@
 //! you look at fifty times a day, in the palette your terminal really resolved,
 //! tells you whether you want to live in this font.
 //!
-//! Colours come from `reticle::term_info()`, which asked the terminal rather
+//! Colours come from `tui_core::term_info()`, which asked the terminal rather
 //! than parsing `wezterm/wezterm.lua`. The prompt is `~/.bash_prompt` as bash
 //! itself expands it — not a copy of its contents, and not a parse of its PS1
 //! line — so changing PS1 or its colours changes the specimen with nothing
 //! here aware that it did.
 
-use reticle::term_info;
+use tui_core::term_info;
 
 pub type Line = Vec<(String, [u8; 3])>;
 

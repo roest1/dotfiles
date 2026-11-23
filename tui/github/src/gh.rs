@@ -12,7 +12,7 @@
 //! ## Why it is threaded
 //!
 //! Every call here is a network round trip of 100ms to several seconds, and
-//! `reticle`'s loop must stay at 60fps through all of them. So requests go to
+//! `tui-core`'s loop must stay at 60fps through all of them. So requests go to
 //! a small pool and results come back through a shared map, with an epoch
 //! counter so the screen can tell "something landed" from "still waiting"
 //! without diffing it. That is `font::fetch::Fetcher`'s shape, deliberately:

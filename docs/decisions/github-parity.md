@@ -104,7 +104,7 @@ half was rewritten in the same commit; its `gha` half is unchanged.
 | `rulesets` | dropped | the browser/EDITOR, unvalidated, which is a different thing from the read-only `rules.rs` that `branch-menu` now opens: that one is two GETs rendered as lines, where this one writes. Porting a write path nobody has exercised would preserve its bugs and let it set a screen's shape. Use it on github.com first. See github-tui.md |
 | `runs-label` | ported | `runs::Scope::label` in the title bar |
 | `runs-toggle` | ported | `b` on the Actions screen |
-| `screen` | ported | the tab strip dispatches to a screen; `reticle::Host` |
+| `screen` | ported | the tab strip dispatches to a screen; `tui_core::Host` |
 | `screen-actions` | ported | the 🚀 Actions tab |
 | `screen-actions-for` | ported | the PR menu's Workflow runs for this commit, which is bash's `ctrl-a` as a row. `runs::Actions::for_commit` takes a slug and a sha, because a pull request's head commit need not be on this disk at all; `b` there pairs the commit with the branch carrying it rather than widening to everything, so the screen can get back to the question it was opened for |
 | `screen-branches` | ported | the 🌿 Branches tab |

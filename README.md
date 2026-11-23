@@ -49,7 +49,9 @@ gh pr create --fill
 ```
 
 Once it merges, every machine gets it on `git pull`. The fonts at `wezterm/fonts`
-([roest1/fonts](https://github.com/roest1/fonts)) bump the same way.
+([roest1/fonts](https://github.com/roest1/fonts)) bump the same way. The TUIs' framework,
+[roest1/tui-core](https://github.com/roest1/tui-core), is a Cargo dependency: bump it with
+`cargo update -p tui-core --manifest-path tui/Cargo.toml`.
 
 ## Everything lives in `deps.conf`
 

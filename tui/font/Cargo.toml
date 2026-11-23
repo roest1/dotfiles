@@ -11,7 +11,7 @@ name = "font"
 path = "src/main.rs"
 
 [dependencies]
-reticle = { path = "../reticle" }
+tui-core.workspace = true
 ttf-parser = "0.25"
 fontdue = "0.9"
 png = "0.18"

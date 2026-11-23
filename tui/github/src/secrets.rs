@@ -35,8 +35,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
 use serde::Deserialize;
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::menu::{Act, Item, Menu};

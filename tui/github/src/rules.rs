@@ -33,9 +33,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reticle::{nav::Action, Flow, Pane, Row, Screen, Tick};
 use serde::Deserialize;
 use serde_json::Value;
+use tui_core::{nav::Action, Flow, Pane, Row, Screen, Tick};
 
 use crate::gh::{Fetcher, Got, Req};
 use crate::paint::{idx, BOLD, DIM, GRY, OFF, ORG, RED, YEL};

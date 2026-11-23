@@ -15,7 +15,7 @@ name = "github"
 path = "src/main.rs"
 
 [dependencies]
-reticle = { path = "../reticle" }
+tui-core.workspace = true
 libc = "0.2"
 # The 67 jq programs the fzf implementation spent describing the Actions API,
 # replaced by one set of typed structs. See the header of src/model.rs.

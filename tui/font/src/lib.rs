@@ -1,6 +1,6 @@
 //! `font` — pick the font for each of wezterm's lanes.
 //!
-//! A LIBRARY as well as a binary, and the library half is the point. `reticle`
+//! A LIBRARY as well as a binary, and the library half is the point. `tui-core`
 //! takes a `Box<dyn Screen>` from anywhere, so a screen is reusable across
 //! binaries: `font` runs the picker as its root, and the `make it` console will
 //! push this same `FontScreen` as a row in its tree. One implementation, two
