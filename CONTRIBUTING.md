@@ -67,7 +67,7 @@ Providers: `pkg` (system package manager), `mise`, `uv`, `cargo`, and
 `manual`. Use `||` for fallbacks: `pkg||cargo eza`.
 
 There is no `npm` provider. It was removed once nothing could reach it — the
-`bun-only toolchain` job rejects any `npm` line in `deps.conf`, so the
+`nvim` CI job rejects any `npm` line in `deps.conf`, so the
 dispatcher case, the installer, the global-prefix setup and the provenance
 detection were all unreachable. JavaScript tools go in
 `nvim/lsp-servers/package.json` and run under `bun`.
@@ -125,22 +125,26 @@ podman run --rm -v "$PWD":/mnt:Z -w /mnt docker.io/koalaman/shellcheck:stable \
   --severity=warning bootstrap.sh install.sh lib/*.sh */deps.sh tools/*.sh
 ```
 
-CI runs ten jobs on every push and PR; all ten are required to merge.
+CI groups its jobs by pillar, so a component that moves to its own repo takes its
+jobs with it. Only `ci ok` is required to merge; it fails unless every job passed,
+or was skipped on a docs-only PR.
 
-| Job                                    | Proves                                              |
-| -------------------------------------- | --------------------------------------------------- |
-| `shellcheck`                           | Shell sources lint clean                            |
-| `manifest parses`                      | deps.conf parses; no Makefile target overrides its own recipe; every link source exists; `adopt.sh` output round-trips |
-| `link only (linux)`                    | The no-sudo, no-network path works and is idempotent |
-| `install (ubuntu / apt)` / `(fedora / dnf)` | `make install bash` completes with nothing MISSING |
-| `neovim floor (ubuntu, mise fallback)` | Exactly one nvim, at or above 0.12, on the one platform whose distro can't reach it |
-| `bun audit (transitive advisories)`    | No known advisories in the language-server tree, including transitively |
-| `bun-only toolchain`                   | No node/npm/pip in the manifest, no shim anywhere, and all six language servers complete a real LSP handshake with node absent from PATH |
+| Job | Proves |
+| --- | --- |
+| `shellcheck` | The whole tree lints clean; no secrets, credentials or home paths are tracked |
+| `engine` | deps.conf, make, linking, sections, plugins and `make status` behave |
+| `link only (…)` | The no-sudo, no-network path works and is idempotent, on Fedora 45, RHEL 9 and 10 |
+| `install (…)` | `make install bash` and `uv` complete on the same three |
+| `bash`, `2* conversions`, `uv` | The shell configs, `h`, and the converters |
+| `nvim (docs, servers under bun)` | The help matches the config; no node/npm/pip; every server completes an LSP handshake |
+| `neovim floor (…)` | Exactly one nvim, at or above 0.12, on RHEL 9 |
+| `bun audit (transitive advisories)` | No known advisories in the language-server tree |
+| `wezterm`, `tui (rust)`, `claude`, `git-autofetch` | Each pillar's own checks |
 
-`bun audit` also runs weekly on a schedule, because an advisory published on a
-Tuesday shouldn't wait for someone to push. It is the only job that can go red
-with no change to the repo; when that happens the fix is a version bump or an
-`--ignore` entry with a comment on the `audit` target, not deleting the job.
+The audit also runs daily on a schedule, and everything runs on Mondays. An
+advisory published on a quiet day should not wait for a push. It is the only job
+that can go red with no change to the repo; the fix is a version bump or an
+`--ignore` entry with its reason, not deleting the job.
 
 ## Invariants
 

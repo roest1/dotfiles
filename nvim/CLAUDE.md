@@ -118,7 +118,7 @@ exist so that does not repeat:
   accident. Do not move it under `~/.config/nvim`, which is a symlink into
   the repo. `tools/usage.sh` in the repo root prints it next to the shell's
   history counts. The next cleanup deletes zeros; it does not guess.
-- **CI checks `doc/` against `lua/` in both directions** (the `manifest`
+- **CI checks `doc/` against `lua/` in both directions** (the `nvim`
   job): every `<leader>` key named in `doc/*.txt` or `README.md` must be
   defined under `lua/`, every `<leader>` key defined under `lua/` must be
   named in `doc/dotfiles-keymaps.txt`, and every `nvim_create_user_command`
