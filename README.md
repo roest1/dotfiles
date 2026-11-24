@@ -38,7 +38,7 @@ change there reaches your machines only through a PR here.
 | Component | Here at | What it is |
 | --------- | ------- | ---------- |
 | [roest1/PS1](https://github.com/roest1/PS1) | `ps1/` | The bash prompt: one file, a two-line install |
-| [roest1/fonts](https://github.com/roest1/fonts) | `wezterm/fonts/` | Science Gothic Mono |
+| [roest1/fonts](https://github.com/roest1/fonts) | `wezterm/fonts/` | Science Gothic Mono, and the catalogue the other fonts install from |
 | [roest1/github-tui](https://github.com/roest1/github-tui) | `tui/github/` | `github`: the current repo on GitHub, live |
 | [roest1/theme-tui](https://github.com/roest1/theme-tui) | `tui/font/` | `font`: pick fonts per lane |
 

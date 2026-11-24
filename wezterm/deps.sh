@@ -20,139 +20,30 @@ source "$HERE/../lib/pkg.sh"
 pkg_detect
 ensure_local_bin_on_path
 
-# ─── 0xProto Nerd Font ───────────────────────────────────────────────────────
+# ─── Fonts ───────────────────────────────────────────────────────────────────
 #
-# wezterm.lua names '0xProto Nerd Font'; without it wezterm silently falls back
-# to its bundled JetBrains Mono, so a failure here degrades looks, not function.
+# Every family wezterm.lua names, plus IosevkaTerm: no lane defaults to it, but
+# it is the one family that draws Claude Code's glyphs at cell width, so it is
+# here for `font` to offer. CI holds this list to wezterm.lua.
 #
-# Unlike the wezterm binary below, this download IS safe to hardcode: nerd-fonts'
-# `releases/latest/download/<Name>.zip` pattern is distro-independent and stable
-# across releases, so there's no per-platform asset name to guess wrong.
-if command -v fc-list >/dev/null 2>&1; then
-  # grep without -q: under pipefail, `grep -q` exits at first match and can
-  # SIGPIPE fc-list mid-write, failing the pipeline and re-installing every run.
-  if fc-list | grep -i '0xProto Nerd Font' >/dev/null; then
-    echo "  ✅ 0xProto Nerd Font (already installed)"
-  else
-    echo "  installing 0xProto Nerd Font → ~/.local/share/fonts/0xProto"
-    font_zip="$(mktemp)"
-    if curl -fsSL -o "$font_zip" \
-         https://github.com/ryanoasis/nerd-fonts/releases/latest/download/0xProto.zip; then
-      mkdir -p "$HOME/.local/share/fonts/0xProto"
-      unzip -o -q "$font_zip" -d "$HOME/.local/share/fonts/0xProto"
-      fc-cache -f "$HOME/.local/share/fonts/0xProto" >/dev/null 2>&1 || true
-      echo "  ✅ 0xProto Nerd Font"
-    else
-      echo "  ⚠️  0xProto Nerd Font download failed — wezterm falls back to JetBrains Mono"
-    fi
-    rm -f "$font_zip"
-  fi
-fi
-
-# ─── JetBrainsMono Nerd Font ─────────────────────────────────────────────────
-#
-# The `editor` lane's default — the font wezterm.lua's SGR 5 font_rules put the
-# file you are editing in nvim into. Same nerd-fonts release pattern as 0xProto
-# above, and the same bargain: without it the rules fall through to wezterm's
-# bundled 'JetBrains Mono', which is the same typeface without the patched icon
-# glyphs, so `font editor` still works and the editor still renders.
-#
-# Not merely a fallback any more, which is the change worth noticing. This
-# family used to appear only as the second entry in config.font's chain, where
-# it was what you got when 0xProto was missing. Now it is a named default that
-# a correctly installed machine actually renders with, so it earns an install
-# of its own rather than riding on wezterm's bundled copy.
-if command -v fc-list >/dev/null 2>&1; then
-  # grep without -q, for the SIGPIPE reason spelled out above.
-  if fc-list | grep -i 'JetBrainsMono Nerd Font' >/dev/null; then
-    echo "  ✅ JetBrainsMono Nerd Font (already installed)"
-  else
-    echo "  installing JetBrainsMono Nerd Font → ~/.local/share/fonts/JetBrainsMono"
-    jb_zip="$(mktemp)"
-    if curl -fsSL -o "$jb_zip" \
-         https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip; then
-      mkdir -p "$HOME/.local/share/fonts/JetBrainsMono"
-      unzip -o -q "$jb_zip" -d "$HOME/.local/share/fonts/JetBrainsMono"
-      fc-cache -f "$HOME/.local/share/fonts/JetBrainsMono" >/dev/null 2>&1 || true
-      echo "  ✅ JetBrainsMono Nerd Font"
-    else
-      echo "  ⚠️  JetBrainsMono Nerd Font download failed — the editor lane falls back to JetBrains Mono"
-    fi
-    rm -f "$jb_zip"
-  fi
-fi
-
-# ─── IosevkaTerm Nerd Font ───────────────────────────────────────────────────
-#
-# The `claude` lane. Claude Code's TUI draws U+23FA (the tool-call bullet) and
-# U+23BF (the tool-result elbow) on EVERY tool call, plus U+2733 and the
-# U+25D0-D3 spinner -- Misc Technical and Dingbats codepoints that coding fonts
-# routinely skip. Measured against the font files: neither 0xProto nor
-# JetBrainsMono carries either of the two per-tool-call glyphs. They fall
-# through to STIX Two Math, Noto Serif CJK and Symbola, and come back WIDER
-# THAN THE CELL -- U+23BF at 16 units in a 10-unit cell.
-#
-# Count them flat and this looks survivable, which is the trap: Fira Code has
-# five of the nine and none of the two that matter. wezterm/fontpreview.py
-# scores them in tiers for that reason.
-#
-# IosevkaTerm is the only family tested that carries all nine natively AND
-# keeps the Nerd Font icons at exact cell width. Adwaita Mono covers the nine
-# too but has no patched icons, so those fall back 25% oversized.
-#
-# Note the advance: 0.50em against 0xProto's 0.62em. Deliberate -- Iosevka's
-# terminal cut is narrow. It is fine for `claude`, and it is the wrong choice
-# for `ui` while `editor` is a 0.60em font, because the editor lane draws inside
-# the base lane's cell and a wider glyph in a narrower cell collides. Same
-# arithmetic Science Gothic Mono is built to satisfy (roest1/fonts).
-if command -v fc-list >/dev/null 2>&1; then
-  # grep without -q, for the SIGPIPE reason spelled out above.
-  if fc-list | grep -i 'IosevkaTerm Nerd Font' >/dev/null; then
-    echo "  ✅ IosevkaTerm Nerd Font (already installed)"
-  else
-    echo "  installing IosevkaTerm Nerd Font → ~/.local/share/fonts/IosevkaTerm"
-    io_zip="$(mktemp)"
-    if curl -fsSL -o "$io_zip" \
-         https://github.com/ryanoasis/nerd-fonts/releases/latest/download/IosevkaTerm.zip; then
-      mkdir -p "$HOME/.local/share/fonts/IosevkaTerm"
-      unzip -o -q "$io_zip" -d "$HOME/.local/share/fonts/IosevkaTerm"
-      fc-cache -f "$HOME/.local/share/fonts/IosevkaTerm" >/dev/null 2>&1 || true
-      echo "  ✅ IosevkaTerm Nerd Font"
-    else
-      echo "  ⚠️  IosevkaTerm Nerd Font download failed — the claude lane falls back to its default"
-    fi
-    rm -f "$io_zip"
-  fi
-fi
-
-# ─── Science Gothic (tab bar font) ────────────────────────────────────────
-#
-# wezterm.lua's window_frame.font names 'Science Gothic'; without it wezterm
-# falls back to 0xProto for the tab bar, so a failure here degrades looks,
-# not function.
-#
-# A Google Fonts family (OFL-licensed), pulled from google/fonts' own repo
-# rather than fonts.google.com — the latter has no stable direct-download
-# URL, while raw.githubusercontent.com/google/fonts is a stable, checksum-free
-# but content-addressed-by-path source that doesn't change under a family
-# once published.
-if command -v fc-list >/dev/null 2>&1; then
-  if fc-list | grep -i 'Science Gothic' >/dev/null; then
-    echo "  ✅ Science Gothic (already installed)"
-  else
-    echo "  installing Science Gothic → ~/.local/share/fonts/ScienceGothic"
-    sg_font="$(mktemp)"
-    if curl -fsSL -o "$sg_font" \
-         "https://raw.githubusercontent.com/google/fonts/main/ofl/sciencegothic/ScienceGothic%5BCTRS,slnt,wdth,wght%5D.ttf"; then
-      mkdir -p "$HOME/.local/share/fonts/ScienceGothic"
-      cp "$sg_font" "$HOME/.local/share/fonts/ScienceGothic/ScienceGothic.ttf"
-      fc-cache -f "$HOME/.local/share/fonts/ScienceGothic" >/dev/null 2>&1 || true
-      echo "  ✅ Science Gothic"
-    else
-      echo "  ⚠️  Science Gothic download failed — tab bar falls back to 0xProto"
-    fi
-    rm -f "$sg_font"
-  fi
+# Where each one comes from is not this repo's to know. roest1/fonts, the
+# submodule at fonts/, keeps a catalogue with one file per font and installs
+# from it, skipping a family fontconfig already has. Why each font is here --
+# 0xProto's 0.62em cell, the glyphs IosevkaTerm has and the others lack -- is
+# written in those files.
+FONTS=(
+  '0xProto Nerd Font'
+  'JetBrainsMono Nerd Font'
+  'IosevkaTerm Nerd Font'
+  'Science Gothic'
+)
+if [[ -x "$HERE/fonts/install.sh" ]]; then
+  # Exit 1 is a download that failed, which costs looks, not function: wezterm
+  # falls back to its bundled JetBrains Mono. Exit 2 is a family the catalogue
+  # does not have, which no retry fixes, so that one stops the script.
+  "$HERE/fonts/install.sh" "${FONTS[@]}" || [[ $? -eq 1 ]]
+else
+  echo "  ⚠️  wezterm/fonts has no install.sh — is the submodule checked out? No fonts installed."
 fi
 
 # There used to be a version floor here, reading wezterm/MIN_VERSION, and it was
