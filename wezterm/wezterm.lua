@@ -34,6 +34,84 @@ local palette = {
 	subtle = "#908caa",
 }
 
+-- ─── What this machine picked ────────────────────────────────────────────────
+--
+-- ~/.config/dotfiles/theme.conf, written by `font` and keyed by lane:
+--
+--   shell.font          = 0xProto Nerd Font
+--   shell.colors        = dracula
+--   shell.opacity       = 0.9
+--   nvim.editor.font    = JetBrainsMono Nerd Font
+--   nvim.editor.colors  = onedark
+--
+-- One file for every reader. nvim/lua/external/theme.lua takes the nvim color
+-- keys from it and this file takes the rest. It is NOT linked and NOT in
+-- deps.conf, the same footing as ~/.bash_local: it describes this machine's
+-- taste, not what every machine gets. A missing file means the defaults in this
+-- file, which are what the repo shipped before any of it existed.
+--
+-- A hand-rolled `key = value` reader and not json_parse: a half-written or
+-- hand-mangled line is skipped instead of taking the whole config down with a
+-- parse error, and a key nobody here knows is ignored, so the config keeps
+-- working while the writer and the readers are out of step.
+local CONFIG_HOME = os.getenv("XDG_CONFIG_HOME") or ((os.getenv("HOME") or "") .. "/.config")
+local THEME_STATE = CONFIG_HOME .. "/dotfiles/theme.conf"
+
+local function read_conf(path)
+	local set = {}
+	local fh = io.open(path, "r")
+	if not fh then
+		return set
+	end
+	for line in fh:lines() do
+		-- A dot is part of a key, so the class has to admit it.
+		local k, v = line:match("^%s*([%a_][%w_.]*)%s*=%s*(.-)%s*$")
+		if k and v ~= "" then
+			set[k] = v
+		end
+	end
+	fh:close()
+	return set
+end
+
+local THEME = read_conf(THEME_STATE)
+
+-- Picking anything rewrites that file; this is what turns the rewrite into a
+-- repaint of every open window with no keystroke and no `wezterm cli`. pcall
+-- because the file legitimately does not exist until the first pick.
+pcall(wezterm.add_to_config_reload_watch_list, THEME_STATE)
+
+-- `shell.colors` names a file in wezterm/themes, which deps.conf links beside
+-- this one. Each holds the nine colors above and nothing else, so a theme is
+-- the terminal's background and the tab bar; the ANSI 16 stay where they are
+-- for the reason given over config.colors below.
+--
+-- Whole or not at all. A file missing a color, or holding something that is not
+-- one, leaves the palette above in place: half of one theme over half of
+-- another is worse than the default. That is also what a machine gets between a
+-- pull that adds a theme and the `make link` that links the directory.
+--
+-- The default is the table above and not themes/rose-pine.conf, so this file
+-- still colors the terminal when the directory is not linked. CI holds the two
+-- to each other.
+local function themed(name)
+	if not name or not name:match("^[%w_-]+$") then
+		return nil
+	end
+	local got = read_conf(wezterm.config_dir .. "/themes/" .. name .. ".conf")
+	local out = {}
+	for key in pairs(palette) do
+		local color = got[key]
+		if not (color and color:match("^#%x%x%x%x%x%x$")) then
+			return nil
+		end
+		out[key] = color
+	end
+	return out
+end
+
+palette = themed(THEME["shell.colors"]) or palette
+
 -- ─── Which font, where ───────────────────────────────────────────────────────
 --
 -- Three fonts can be on screen at once, and they arrive by two different
@@ -66,12 +144,11 @@ local palette = {
 -- set to zero. nvim cannot reach SGR 6 from the other side either: its `blink`
 -- highlight attribute emits terminfo's blink, which is SGR 5 and nothing else.
 --
--- The four names live in a machine-local file written by `font`
--- (bash/bash_productivity). It is NOT linked and NOT in deps.conf -- same
--- footing as ~/.bash_local, because it describes this machine's taste rather
--- than what every machine gets. Missing file means the defaults below, which
--- are what this repo shipped before any of this existed.
-local FONT_STATE = (os.getenv("XDG_CONFIG_HOME") or ((os.getenv("HOME") or "") .. "/.config")) .. "/wezterm/fonts.conf"
+-- The four names are `<lane>.font` in theme.conf, read above. Until 2026-11 they
+-- had a file of their own, ~/.config/wezterm/fonts.conf, keyed by the bare lane
+-- name. It is still read, underneath theme.conf, so a machine keeps its fonts
+-- between pulling this and rebuilding `font`, which moves them on its next pick.
+local FONT_STATE = CONFIG_HOME .. "/wezterm/fonts.conf"
 
 -- Bracket syntax because the nvim lanes carry a dot. The prefix is doing real
 -- work: it says the two of them are the same editor seen from two sides, and
@@ -88,36 +165,18 @@ local DEFAULT_FONTS = {
 	claude = "0xProto Nerd Font",
 }
 
--- Deliberately a hand-rolled `key = value` reader rather than json_parse: the
--- file is written by a shell function, and this way a half-written or
--- hand-mangled line is skipped instead of taking the whole config down with a
--- parse error. An unknown key is ignored for the same reason -- the config
--- keeps working while the two sides are out of step.
 local function read_fontset()
+	local old = read_conf(FONT_STATE)
 	local set = {}
-	for k, v in pairs(DEFAULT_FONTS) do
-		set[k] = v
+	for lane, default in pairs(DEFAULT_FONTS) do
+		set[lane] = THEME[lane .. ".font"] or old[lane] or default
 	end
-	local fh = io.open(FONT_STATE, "r")
-	if not fh then
-		return set
-	end
-	for line in fh:lines() do
-		-- A dot is part of a key now, so the class has to admit it.
-		local k, v = line:match("^%s*([%a_][%w_.]*)%s*=%s*(.-)%s*$")
-		if k and v and v ~= "" and DEFAULT_FONTS[k] then
-			set[k] = v
-		end
-	end
-	fh:close()
 	return set
 end
 
 local FONTS = read_fontset()
 
--- Picking a font rewrites that file; this is what turns the rewrite into a
--- repaint of every open window with no keystroke and no `wezterm cli`. pcall
--- because the file legitimately does not exist until the first pick.
+-- Watched as well, for the `font` that still writes it.
 pcall(wezterm.add_to_config_reload_watch_list, FONT_STATE)
 
 -- Changes whenever any of the four picks change, which is how the override
@@ -334,6 +393,15 @@ local function apply(config)
 		}),
 		font_size = 11.0,
 	}
+
+	-- `shell.opacity` lets the desktop show through the terminal's background;
+	-- text stays opaque. Only a number from 0.3 up to 1 is taken: below that the
+	-- text is unreadable over most wallpapers, and anything else is a typo. The
+	-- key is left unset at 1 so "off" is wezterm's default, whatever that becomes.
+	local opacity = tonumber(THEME["shell.opacity"])
+	if opacity and opacity >= 0.3 and opacity < 1 then
+		config.window_background_opacity = opacity
+	end
 
 	config.tab_max_width = 32
 	config.use_fancy_tab_bar = true

@@ -178,6 +178,16 @@ test: ## Run the Lua unit tests (no plugins, no network)
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/plugins_spec.lua" -c "qa!" 2>&1 \
 		| tee "$${TMPDIR:-/tmp}/dotfiles-plugins-test.txt"
 	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-plugins-test.txt" || { echo "plugin list and nvim-pack-lock.json disagree"; exit 1; }
+	@# The two readers of ~/.config/dotfiles/theme.conf. Both set XDG_CONFIG_HOME
+	@# to a scratch directory themselves, so neither sees this machine's picks.
+	@NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+		-c "luafile $(DOTFILES_DIR)/nvim/tests/theme_spec.lua" -c "qa!" 2>&1 \
+		| tee "$${TMPDIR:-/tmp}/dotfiles-theme-test.txt"
+	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-theme-test.txt" || { echo "nvim's theme.conf reader failed"; exit 1; }
+	@NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless \
+		-c "luafile $(DOTFILES_DIR)/wezterm/tests/theme_spec.lua" -c "qa!" 2>&1 \
+		| tee "$${TMPDIR:-/tmp}/dotfiles-wezterm-theme-test.txt"
+	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-wezterm-theme-test.txt" || { echo "wezterm's theme.conf reader failed"; exit 1; }
 	@# LSP servers: only meaningful once they're installed, so skip rather than fail
 	@if command -v bun >/dev/null 2>&1 && [ -d "$(DOTFILES_DIR)/nvim/lsp-servers/node_modules" ]; then \
 		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee "$${TMPDIR:-/tmp}/dotfiles-lsp.txt"; \

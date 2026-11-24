@@ -121,14 +121,17 @@ Two lanes, colored and typeset separately:
     editor          windows showing a file you write
 
 Colors come from ~/.config/dotfiles/theme.conf (per machine, optional):
-    nvim.ui                  = rose-pine-moon
+    nvim.ui.colors           = rose-pine-moon
     nvim.ui.transparent      = true
-    nvim.editor              = onedark
+    nvim.editor.colors       = onedark
     nvim.editor.transparent  = false
 No file means rose-pine-moon, transparent, in both. dracula and onedark are
-installed. Changes apply on the next start.
+installed. An editor key left out follows the ui lane.
 
-The editor lane's font is picked with `font` in a terminal. It only works
+Pick them with `font` in a terminal, on its Colors tab. A pick applies at
+once, in every nvim that is running.
+
+The editor lane's font is picked there too, on the Fonts tab. It only works
 inside WezTerm running this repo's config; |:AltFont| reports on it.
 
 ==============================================================================

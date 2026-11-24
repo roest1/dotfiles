@@ -11,7 +11,7 @@
 //!   sections   open, because a section is an ARGUMENT and not a target --
 //!              `make nvim` is a no-op stub, and running `make install nvim`
 //!              off one keystroke is more than the keystroke said
-//!   fonts      push font's own picker, the same type its binary runs
+//!   theme      push font's own screen, the same one its binary runs
 //!
 //! Sections are also the one place this screen WRITES. Space toggles whether
 //! this machine sweeps a section, into `~/.config/dotfiles/sections` -- see
@@ -335,7 +335,7 @@ impl Screen for Console {
         }
 
         rows.push(Row::spacer());
-        rows.push(Row::leaf("fonts").detail("pick the font for each wezterm lane"));
+        rows.push(Row::leaf("theme").detail("fonts and colors for each wezterm lane"));
 
         rows
     }
@@ -436,13 +436,13 @@ impl Screen for Console {
                 });
             }
             At::Fonts => {
-                lines.push("fonts".into());
+                lines.push("theme".into());
                 lines.push(String::new());
                 lines.push("The four wezterm lanes — shell, nvim.ui, nvim.editor".into());
-                lines.push("and claude — and which family each is set to.".into());
+                lines.push("and claude — and the font and colors each is set to.".into());
                 lines.push(String::new());
-                lines.push("This is `font`'s own picker, not a copy of it: the".into());
-                lines.push("same screen its binary runs, pushed here.".into());
+                lines.push("This is `font`'s own screen, not a copy of it: the".into());
+                lines.push("same two tabs its binary runs, pushed here.".into());
             }
             At::TargetsHeader => {
                 lines.push("Every target `make help` lists, with the comment".into());
@@ -524,7 +524,7 @@ impl Screen for Console {
                 self.open = (self.open != Some(i)).then_some(i).and(None);
                 Flow::Dirty
             }
-            (Action::Activate, At::Fonts) => Flow::Push(Box::new(font::FontScreen::new())),
+            (Action::Activate, At::Fonts) => Flow::Push(Box::new(font::screen())),
             // Space, not Enter: Enter on a section opens it, and the key that
             // reconfigures the machine should not be the key that expands a
             // tree. On a verb row it toggles the section that verb belongs to,
@@ -539,7 +539,7 @@ impl Screen for Console {
                 }
                 self.local = local::load(&self.local_path, &names);
                 // The row it was sitting on is gone now, and `app` clamps the
-                // cursor to the row count, so this lands on `fonts` rather than
+                // cursor to the row count, so this lands on `theme` rather than
                 // off the end.
                 Flow::Dirty
             }
@@ -584,7 +584,7 @@ impl Screen for Console {
             }
             At::Section(i) => format!("enter open · space {}", self.switch_verb(i)),
             At::Follow => "enter follow deps.conf again".into(),
-            At::Fonts => "enter the font picker".into(),
+            At::Fonts => "enter the font and color picker".into(),
             _ => "j/k move · h/l close/open · enter run".into(),
         }
     }
@@ -640,7 +640,7 @@ mod tests {
                     assert_eq!(label, &format!("make {v} {}", c.sections[s].name))
                 }
                 At::Follow => assert_eq!(label, "follow deps.conf"),
-                At::Fonts => assert_eq!(label, "fonts"),
+                At::Fonts => assert_eq!(label, "theme"),
                 At::Nothing => panic!("selectable row {i} ({label}) resolves to nothing"),
             }
         }

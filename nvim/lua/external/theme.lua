@@ -9,18 +9,22 @@
 -- overrides it in ~/.config/dotfiles/theme.conf -- NOT under ~/.config/nvim,
 -- which is a symlink into the work tree, so a pick saved there would become a
 -- diff. Outside the tree, git cannot see it and a pull cannot touch it: same
--- footing as ~/.config/dotfiles/sections, ~/.config/wezterm/fonts.conf and
--- ~/.bash_local.
+-- footing as ~/.config/dotfiles/sections and ~/.bash_local.
 --
---   nvim.ui                  = rose-pine-moon
+--   nvim.ui.colors           = rose-pine-moon
 --   nvim.ui.transparent      = true
---   nvim.editor              = onedark
+--   nvim.editor.colors       = onedark
 --   nvim.editor.transparent  = false
 --
 -- An editor key left out follows the ui lane, so one line moves both.
--- Same reader discipline as fonts.conf in wezterm/wezterm.lua: a mangled line
--- or unknown key is skipped rather than failing startup, because a theme TUI
--- will be writing this file and the two sides can be out of step.
+--
+-- The file is every lane's: `font` writes it, wezterm/wezterm.lua reads the
+-- fonts and the terminal's own colors from it, and this reads the four keys
+-- above. Same reader discipline as there: a mangled line is skipped and a key
+-- this does not know is ignored rather than failing startup, because the
+-- writer and the readers can be out of step.
+--
+-- A pick applies to every running nvim at once. See `watch` at the bottom.
 --
 -- ─── Why a namespace, and why the gutter is not the editor's ──────────────
 --
@@ -42,14 +46,12 @@ local M = {}
 local THEME_STATE = (vim.env.XDG_CONFIG_HOME or (vim.env.HOME .. '/.config')) .. '/dotfiles/theme.conf'
 
 local DEFAULT = 'rose-pine-moon'
-local KEYS = {
-  ['nvim.ui'] = true,
-  ['nvim.ui.transparent'] = true,
-  ['nvim.editor'] = true,
-  ['nvim.editor.transparent'] = true,
-}
 
-local EDITOR_NS = vim.api.nvim_create_namespace 'theme.editor'
+-- The editor lane's namespace. A new one for each time the lanes are applied:
+-- a group cannot be taken back out of a namespace, only emptied, and an empty
+-- group there still hides the ui scheme's.
+local EDITOR_NS = 0
+local applied = 0
 
 local CHROME = {}
 for _, g in ipairs {
@@ -85,21 +87,27 @@ local function is_chrome(name)
   return false
 end
 
-local function read()
+-- What the file asks for, with every gap filled in.
+--
+-- `nvim.ui = <scheme>` is how the two colors were spelled while this file was
+-- nvim's alone, before the fonts moved in and every key gained its attribute.
+-- It is still read, underneath `nvim.ui.colors`, so a file written by hand in
+-- that week keeps working; `font` rewrites it in the new spelling.
+function M.read(path)
   local set = {}
-  local fh = io.open(THEME_STATE, 'r')
+  local fh = io.open(path or THEME_STATE, 'r')
   if fh then
     for line in fh:lines() do
       local k, v = line:match '^%s*([%a_][%w_.]*)%s*=%s*(.-)%s*$'
-      if k and v and v ~= '' and KEYS[k] then
+      if k and v ~= '' then
         set[k] = v
       end
     end
     fh:close()
   end
-  local ui = set['nvim.ui'] or DEFAULT
+  local ui = set['nvim.ui.colors'] or set['nvim.ui'] or DEFAULT
   local ui_t = (set['nvim.ui.transparent'] or 'true') ~= 'false'
-  local ed = set['nvim.editor'] or ui
+  local ed = set['nvim.editor.colors'] or set['nvim.editor'] or ui
   local ed_t = set['nvim.editor.transparent']
   if ed_t == nil then
     ed_t = ui_t
@@ -115,10 +123,23 @@ end
 --
 -- A pick naming a scheme a later pull removed must not leave the editor
 -- unthemed: fall back to the repo default and say so. Returns what loaded.
-local function load(color, transparent)
+--
+-- Public because `font` draws its color preview by calling this in a headless
+-- nvim and reading the highlights back: the preview is then what the lane will
+-- draw, rose-pine's background option included, with nothing restated there.
+function M.load(color, transparent)
   local function apply(name)
     if name:match '^rose%-pine' then
-      require('rose-pine').setup { disable_background = transparent }
+      -- Asked for the background back by name on an opaque load, because the
+      -- option does not undo itself: `disable_background = true` leaves
+      -- `Normal = { bg = 'NONE' }` in rose-pine's own highlight overrides,
+      -- and a later `false` does not take it out. Opaque after transparent
+      -- stayed transparent, which is every toggle of this lane in a running
+      -- nvim and half the orders two lanes can load in.
+      require('rose-pine').setup {
+        disable_background = transparent,
+        highlight_groups = not transparent and { Normal = { bg = 'base' } } or nil,
+      }
     end
     return pcall(vim.cmd.colorscheme, name)
   end
@@ -146,12 +167,21 @@ local function load(color, transparent)
         end
       end
     end
-    vim.api.nvim_set_hl(0, 'Normal', { bg = 'none' })
-    vim.api.nvim_set_hl(0, 'NormalFloat', { bg = 'none' })
+    -- Normal again, and floats, whose background is usually a step off the
+    -- base and so not caught above. The background is taken OUT of what the
+    -- scheme set: nvim_set_hl replaces a group whole, and `{ bg = 'none' }`
+    -- alone threw the foreground away with it, so a transparent lane drew its
+    -- text in the terminal's color and not the scheme's.
+    for _, name in ipairs { 'Normal', 'NormalFloat' } do
+      local val = vim.api.nvim_get_hl(0, { name = name, link = false })
+      val.bg, val.ctermbg = nil, nil
+      vim.api.nvim_set_hl(0, name, val)
+    end
   end
   return color
 end
 
+local load = M.load
 local is_file_buf = require 'external.filebuf'
 local split = false
 
@@ -174,10 +204,13 @@ local function assign_buf(buf)
   end
 end
 
-function M.setup()
-  local t = read()
-
-  if t.editor ~= t.ui or t.editor_t ~= t.ui_t then
+-- Load both lanes and hand every window the namespace it belongs in.
+local function apply_lanes(t)
+  M.asked = vim.deepcopy(t)
+  split = t.editor ~= t.ui or t.editor_t ~= t.ui_t
+  if split then
+    applied = applied + 1
+    EDITOR_NS = vim.api.nvim_create_namespace('theme.editor.' .. applied)
     t.editor = load(t.editor, t.editor_t)
     for name in pairs(vim.api.nvim_get_hl(0, {})) do
       if not is_chrome(name) then
@@ -190,14 +223,54 @@ function M.setup()
         end
       end
     end
-    split = true
   end
   t.ui = load(t.ui, t.ui_t)
   M.state = t
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    assign(win)
+  end
+end
 
-  if not split then
+-- Read the file again and apply it, if what it asks of nvim has changed. Most
+-- rewrites do not: a font pick rewrites the same file.
+function M.reload()
+  local t = M.read()
+  if not vim.deep_equal(t, M.asked) then
+    apply_lanes(t)
+  end
+end
+
+-- A pick in `font` reaches a running nvim, with no restart and no command.
+--
+-- The DIRECTORY is watched, not the file: the file does not exist until the
+-- first pick, and that pick is the one most worth seeing. If the directory is
+-- not there either, this nvim applies the pick on its next start.
+--
+-- `font` truncates the file and writes it, which is two events and a moment in
+-- between where the file is empty. Reading at the first event would flash both
+-- lanes back to the default, so the read waits for the writes to stop.
+local function watch()
+  local dir, file = vim.fs.dirname(THEME_STATE), vim.fs.basename(THEME_STATE)
+  local watcher, timer = vim.uv.new_fs_event(), vim.uv.new_timer()
+  if not (watcher and timer) then
     return
   end
+  local started = watcher:start(dir, {}, function(err, name)
+    if err or name ~= file then
+      return
+    end
+    timer:stop()
+    timer:start(100, 0, vim.schedule_wrap(M.reload))
+  end)
+  if not started then
+    watcher:close()
+    timer:close()
+  end
+end
+
+function M.setup()
+  -- Registered whether or not the lanes differ today: a pick can split them
+  -- while this nvim is running.
   local group = vim.api.nvim_create_augroup('theme.lanes', { clear = true })
   vim.api.nvim_create_autocmd({ 'BufWinEnter', 'WinNew', 'BufFilePost' }, {
     group = group,
@@ -220,9 +293,8 @@ function M.setup()
       assign_buf(vim.api.nvim_get_current_buf())
     end,
   })
-  for _, win in ipairs(vim.api.nvim_list_wins()) do
-    assign(win)
-  end
+  apply_lanes(M.read())
+  watch()
 end
 
 -- A one-off try for the current session, ui lane only:
