@@ -4,8 +4,8 @@
 -- font but the UI's colors would be exactly the drift this file prevents.
 --
 -- "A file you write", which is the whole spec. buftype is what does the work:
--- oil is 'acwrite', terminals are 'terminal', telescope/trouble/undotree and
--- every other scratch UI are 'nofile', help is 'help', quickfix is 'quickfix'.
+-- oil is 'acwrite', terminals are 'terminal', telescope and every other
+-- scratch UI are 'nofile', help is 'help', quickfix is 'quickfix'.
 -- Only a real file-backed buffer is ''.
 --
 -- The scheme test is the belt to that braces. A plugin that presents a virtual

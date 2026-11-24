@@ -29,9 +29,9 @@
 --   :KeymapUsage reset   delete the file and start over
 --
 -- User commands are counted too, from CmdlineLeave: the first word of a
--- `:` line that names a command this config or a plugin defined. Trouble and
--- undotree have no mapping at all, so without this the two plugins most
--- likely to be pruned would read as unmeasured rather than as zeros.
+-- `:` line that names a command this config or a plugin defined. A plugin
+-- driven only by commands has no mapping at all, so without this it would
+-- read as unmeasured rather than as a zero.
 --
 -- The shell half is tools/usage.sh, which reads ~/.bash_history the same way.
 

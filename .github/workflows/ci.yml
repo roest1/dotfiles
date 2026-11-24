@@ -1033,10 +1033,10 @@ jobs:
           done
 
           # ...and the reverse, against the one file that claims to be complete.
-          in_keymaps=$(grep -hoE "$token" nvim/doc/dotfiles-keymaps.txt | sort -u)
+          in_keymaps=$(grep -hoE "$token" nvim/doc/dotfiles.txt | sort -u)
           for k in $defined; do
             echo "$in_keymaps" | grep -qxF -- "$k" \
-              || { echo "$k is defined but missing from nvim/doc/dotfiles-keymaps.txt"; bad=1; }
+              || { echo "$k is defined but missing from nvim/doc/dotfiles.txt"; bad=1; }
           done
 
           # Every user command has a help page.

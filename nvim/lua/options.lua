@@ -85,23 +85,9 @@ vim.o.signcolumn = 'yes'
 -- Decrease update time
 vim.o.updatetime = 250
 
--- Decrease mapped sequence wait time
-vim.o.timeoutlen = 300
-
 -- Configure how new splits should be opened
 vim.o.splitright = true
 vim.o.splitbelow = true
-
--- Sets how neovim will display certain whitespace characters in the editor.
---  See `:help 'list'`
---  and `:help 'listchars'`
---
---  Notice listchars is set using `vim.opt` instead of `vim.o`.
---  It is very similar to `vim.o` but offers an interface for conveniently interacting with tables.
---   See `:help lua-options`
---   and `:help lua-options-guide`
--- vim.o.list = true
--- vim.opt.listchars = { tab = '» ', trail = '·', nbsp = '␣' }
 
 -- Preview substitutions live, as you type!
 vim.o.inccommand = 'split'
@@ -118,7 +104,9 @@ function Statusline()
   local head = vim.b.gitsigns_head
   if not head or head == '' then
     head = vim.fn.system('git -C ' .. vim.fn.shellescape(vim.fn.expand '%:p:h') .. ' rev-parse --abbrev-ref HEAD 2>/dev/null'):gsub('\n', '')
-    if vim.v.shell_error ~= 0 then head = '' end
+    if vim.v.shell_error ~= 0 then
+      head = ''
+    end
   end
   if head ~= '' then
     table.insert(parts, '[' .. head .. ']')
@@ -131,7 +119,9 @@ function Statusline()
 
   -- flags
   local flags = vim.bo.modified and ' [+]' or ''
-  if vim.bo.readonly then flags = flags .. ' [RO]' end
+  if vim.bo.readonly then
+    flags = flags .. ' [RO]'
+  end
 
   return table.concat(parts, ' ') .. flags .. '%=%l,%c %P'
 end
@@ -238,11 +228,3 @@ vim.api.nvim_create_autocmd('BufReadCmd', {
     end)
   end,
 })
-
--- Tree-sitter folding (experiment)
--- vim.api.nvim_create_autocmd("FileType", {
---  callback = function()
---    vim.wo.foldmethod = "expr"
---    vim.wo.foldexpr = "v:lua.vim.treesitter.foldexpr()"
---  end,
--- })

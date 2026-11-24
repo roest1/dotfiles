@@ -197,13 +197,37 @@ install_roslyn() {
   dotnet tool install -g roslyn-language-server --prerelease \
     --source https://pkgs.dev.azure.com/azure-public/vside/_packaging/vs-impl/nuget/v3/index.json \
     >/dev/null \
-    || { echo "  ⚠️  roslyn-language-server install failed — :help dotfiles-plugins-roslyn has the command"; return 0; }
+    || { echo "  ⚠️  roslyn-language-server install failed — the command is in nvim/deps.sh (install_roslyn)"; return 0; }
   echo "  🔗 roslyn-language-server -> ~/.dotnet/tools"
 }
 
 echo ""
 echo "  roslyn-language-server (C#):"
 install_roslyn
+
+# ── rust-analyzer (Rust) ─────────────────────────────────────────────────────
+#
+# rust-analyzer's docs recommend the rustup component, which always matches the
+# toolchain. rustup puts a `rust-analyzer` proxy in ~/.cargo/bin whether or not
+# the component is installed, and the bare proxy exits with "Unknown binary", so
+# the test here is whether it runs, not whether it is on PATH. rust-src is what
+# lets it resolve the standard library. Without rustup this does nothing: deps.conf
+# has already taken the distro's package.
+install_rust_analyzer() {
+  if ! command -v rustup >/dev/null 2>&1; then
+    echo "  ↷  no rustup here — rust-analyzer is the distro's, if deps.conf found one"
+    return 0
+  fi
+  rust-analyzer --version >/dev/null 2>&1 && { echo "  ✅ rust-analyzer"; return 0; }
+  echo "  ➡️  rustup component add rust-analyzer rust-src"
+  rustup component add rust-analyzer rust-src >/dev/null 2>&1 \
+    || { echo "  ⚠️  rust-analyzer: rustup could not add the component"; return 0; }
+  echo "  🔗 rust-analyzer -> rustup component"
+}
+
+echo ""
+echo "  rust-analyzer (Rust):"
+install_rust_analyzer
 
 # ── Clipboard image paste (:PasteImage) ──────────────────────────────────────
 # Lets `:PasteImage` drop a screenshot from the OS clipboard into a directory

@@ -79,9 +79,20 @@ return {
       vim.health.warn "Missing: 'prettier' — run: bun install --cwd nvim/lsp-servers"
     end
 
-    check_tools('Linters (nvim-lint)', {
-      { name = 'ruff', desc = 'Python linter', required = true },
-    })
+    -- plugins/lsp.lua leaves a server off when its binary is missing, so this
+    -- is the one place a missing server is named.
+    vim.health.start 'Language servers'
+    local servers = vim.tbl_keys(require('external.lsp_servers').build())
+    table.sort(servers)
+    for _, name in ipairs(servers) do
+      local cmd = vim.lsp.config[name].cmd
+      local bin = type(cmd) == 'table' and cmd[1] or nil
+      if not bin or vim.fn.executable(bin) == 1 then
+        vim.health.ok(name)
+      else
+        vim.health.warn(('%s is off: `%s` is not installed (make install nvim)'):format(name, bin))
+      end
+    end
 
     check_tools('Productivity (bash_productivity)', {
       { name = 'zoxide', desc = 'Smart cd', required = false },

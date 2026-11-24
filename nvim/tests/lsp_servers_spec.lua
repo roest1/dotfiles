@@ -28,14 +28,14 @@ local linux = { sysname = 'Linux', machine = 'x86_64' }
 local defs = S.build('/fake/bin', '/fake/modules', linux)
 
 -- ── every server is defined ────────────────────────────────────────────────
-for _, name in ipairs { 'clangd', 'lua_ls', 'lemminx', 'tsc', 'cssls', 'html', 'jsonls', 'yamlls', 'bashls' } do
+for _, name in ipairs { 'clangd', 'lua_ls', 'lemminx', 'rust_analyzer', 'ruff', 'ty', 'sqruff', 'tsc', 'cssls', 'html', 'jsonls', 'yamlls', 'bashls' } do
   check('defines ' .. name, defs[name] ~= nil)
 end
 
 -- ── native servers must NOT get a cmd ──────────────────────────────────────
 -- They're real binaries on $PATH; nvim-lspconfig's default cmd is correct, and
 -- overriding it would hardcode a path that differs per platform.
-for _, name in ipairs { 'clangd', 'lua_ls', 'lemminx' } do
+for _, name in ipairs { 'clangd', 'lua_ls', 'lemminx', 'rust_analyzer', 'ruff', 'ty', 'sqruff' } do
   check(name .. ' has no cmd override (native binary)', defs[name].cmd == nil)
 end
 
@@ -73,16 +73,19 @@ check('linux arm64', exe('Linux', 'aarch64') == '/m/@typescript/typescript-linux
 check('windows x64 is tsc.exe', exe('Windows_NT', 'AMD64') == '/m/@typescript/typescript-win32-x64/lib/tsc.exe')
 check('unknown platform gives no path', exe('Plan9', 'mips') == nil)
 check('unknown platform drops tsc rather than guess', S.build('/fake/bin', '/m', { sysname = 'Plan9', machine = 'mips' }).tsc == nil)
-check('no JS server is left on --version', (function()
-  for name, _ in pairs(S.js_servers) do
-    for _, a in ipairs(defs[name].cmd) do
-      if a == '--version' then
-        return false
+check(
+  'no JS server is left on --version',
+  (function()
+    for name, _ in pairs(S.js_servers) do
+      for _, a in ipairs(defs[name].cmd) do
+        if a == '--version' then
+          return false
+        end
       end
     end
-  end
-  return true
-end)())
+    return true
+  end)()
+)
 
 -- ── settings survive the cmd injection ─────────────────────────────────────
 check('lemminx keeps its filetypes', vim.tbl_contains(defs.lemminx.filetypes, 'svg'))
