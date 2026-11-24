@@ -15,7 +15,11 @@
 # So the last claim is kept per session, in $XDG_RUNTIME_DIR (per user, in
 # memory, gone at logout).
 #
-# CLAUDE_TAB_TTY overrides /dev/tty, for tests.
+# Where it writes: Claude Code starts hooks in a new session with no
+# controlling terminal, so /dev/tty is "No such device or address" in here and
+# a write to it silently does nothing. Claude itself still has the pane's pty
+# as its stdout, so the first ancestor whose stdout is a pty is the tab.
+# CLAUDE_TAB_TTY overrides that, for tests.
 
 event="${1:-}"
 input=$(cat 2>/dev/null)
@@ -43,6 +47,16 @@ case "$event" in
 esac
 
 mkdir -p "$dir" 2>/dev/null && printf '%s' "$state" >"$last_file" 2>/dev/null
+tty=${CLAUDE_TAB_TTY:-}
+p=$PPID n=0
+while [ -z "$tty" ] && [ "${p:-0}" -gt 1 ] && [ $n -lt 4 ]; do
+  t=$(readlink "/proc/$p/fd/1" 2>/dev/null)
+  case "$t" in /dev/pts/*) tty=$t ;; esac
+  # Field 4 of /proc/<pid>/stat is the parent; cut after the ")" that ends
+  # the command name, which may itself hold spaces.
+  p=$(sed 's/.*) //' "/proc/$p/stat" 2>/dev/null | cut -d' ' -f2) n=$((n + 1))
+done
+[ -n "$tty" ] || exit 0
 printf '\033]1337;SetUserVar=claude_state=%s\007' "$(printf '%s' "$state" | base64 -w0)" \
-  >"${CLAUDE_TAB_TTY:-/dev/tty}" 2>/dev/null
+  >"$tty" 2>/dev/null
 exit 0

@@ -575,7 +575,7 @@ local function claude_tab_titles()
 		--
 		-- The writer is claude/tab-state.sh, called by the hooks in
 		-- claude/settings.json (linked by deps.conf's [claude] section), emitting
-		-- OSC 1337 SetUserVar straight to /dev/tty. Esc skips the Stop hook, so a
+		-- OSC 1337 SetUserVar to Claude's own pty. Esc skips the Stop hook, so a
 		-- new prompt clears the claim and Claude's idle notification retires a
 		-- stale "asking" or "waiting" (#110). That is the whole channel: no
 		-- polling, no file I/O per repaint, and nothing goes through `wezterm cli`. With [claude] unlinked this is simply nil and

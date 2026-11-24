@@ -646,6 +646,17 @@ jobs:
           [ $fail -eq 0 ] && echo "ok: claims are made, and stale ones retired"
           exit $fail
 
+      # Claude Code runs hooks with no controlling terminal, where /dev/tty
+      # fails, so the script finds the pane through its parent's stdout. setsid
+      # drops the controlling tty the way Claude Code does.
+      - name: claude/tab-state.sh reaches the pane without a controlling terminal
+        run: |
+          out=$(python3 -I -c 'import pty, sys; pty.spawn(sys.argv[1:])' setsid -w bash -c \
+            'echo "{\"session_id\":\"ci\"}" | XDG_RUNTIME_DIR=$(mktemp -d) claude/tab-state.sh asking; :' </dev/null)
+          grep -q "claude_state=$(printf asking | base64 -w0)" <<<"$out" \
+            || { echo "FAIL: no SetUserVar reached the pty"; exit 1; }
+          echo "ok: the claim reaches the pane through the parent's pty"
+
       # Under .claude/ this repo would also load it as project settings, and every hook would fire twice.
       - name: Claude settings are not also project-scoped
         run: |
