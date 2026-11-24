@@ -163,19 +163,21 @@ mise-lock: ## Regenerate mise.toml from deps.conf and refresh mise.lock
 
 test: ## Run the Lua unit tests (no plugins, no network)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not installed — skipping"; exit 0; }
-	@nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+	@# Logs go to $TMPDIR: inside Claude's sandbox /tmp and ~/.local/state are
+	@# read-only, and nvim would drop its log in the working tree instead.
+	@NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/lsp_servers_spec.lua" -c "qa!" 2>&1 \
-		| tee /tmp/dotfiles-test.txt
-	@grep -q "ALL PASS" /tmp/dotfiles-test.txt || { echo "tests failed"; exit 1; }
+		| tee "$${TMPDIR:-/tmp}/dotfiles-test.txt"
+	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-test.txt" || { echo "tests failed"; exit 1; }
 	@# The keymap counter writes keymap-usage.json: a fresh scratch state dir each run.
-	@XDG_STATE_HOME=$$(mktemp -d) nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+	@XDG_STATE_HOME=$$(mktemp -d) NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/usage_spec.lua" -c "qa!" 2>&1 \
-		| tee /tmp/dotfiles-usage-test.txt
-	@grep -q "ALL PASS" /tmp/dotfiles-usage-test.txt || { echo "usage tests failed"; exit 1; }
+		| tee "$${TMPDIR:-/tmp}/dotfiles-usage-test.txt"
+	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-usage-test.txt" || { echo "usage tests failed"; exit 1; }
 	@# LSP servers: only meaningful once they're installed, so skip rather than fail
 	@if command -v bun >/dev/null 2>&1 && [ -d "$(DOTFILES_DIR)/nvim/lsp-servers/node_modules" ]; then \
-		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee /tmp/dotfiles-lsp.txt; \
-		grep -q "ALL PASS" /tmp/dotfiles-lsp.txt || { echo "lsp handshake failed"; exit 1; }; \
+		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee "$${TMPDIR:-/tmp}/dotfiles-lsp.txt"; \
+		grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-lsp.txt" || { echo "lsp handshake failed"; exit 1; }; \
 	else \
 		echo "lsp servers not installed — skipping handshake test"; \
 	fi

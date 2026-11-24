@@ -626,6 +626,21 @@ jobs:
               || { echo "FAIL: $ev hook missing or no longer publishes claude_state"; exit 1; }
           done
 
+      # The sandbox enforces the Read denies at the OS level (#109). An excluded
+      # command or a writable cache would each be a quiet way out of it; the
+      # reasons are under [claude] in deps.conf.
+      - name: The sandbox is on, and the escape hatch is the only way out
+        run: |
+          f=claude/settings.json; fail=0
+          jq -e '.sandbox.enabled == true' "$f" >/dev/null \
+            || { echo "FAIL: sandbox.enabled is not true"; fail=1; }
+          jq -e '(.sandbox.excludedCommands // []) == []' "$f" >/dev/null \
+            || { echo "FAIL: sandbox.excludedCommands is set; git, make and gh each run arbitrary code"; fail=1; }
+          jq -e '(.sandbox.filesystem.allowWrite // []) == []' "$f" >/dev/null \
+            || { echo "FAIL: sandbox.filesystem.allowWrite is set; a writable cache is a way out"; fail=1; }
+          [ $fail -eq 0 ] && echo "ok: sandbox on, nothing excluded, nothing extra writable"
+          exit $fail
+
       # Under .claude/ this repo would also load it as project settings, and every hook would fire twice.
       - name: Claude settings are not also project-scoped
         run: |

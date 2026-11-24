@@ -34,3 +34,15 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "  ⚠️  jq is missing, so the filter passes through unchanged for now."
   echo "     Install it ('make install bash') and the churn stops."
 fi
+
+# The sandbox (see [claude] in deps.conf) needs unprivileged user namespaces as
+# well as the two packages. Where it cannot start, Claude Code runs every
+# command unsandboxed without saying so, so say it here.
+if command -v bwrap >/dev/null 2>&1; then
+  if bwrap --ro-bind / / --dev /dev --unshare-user --unshare-net true 2>/dev/null; then
+    echo "  ✅ the Claude Code sandbox can start here"
+  else
+    echo "  ⚠️  bubblewrap cannot start a sandbox here (user namespaces off?)."
+    echo "     Claude Code will run its commands unsandboxed on this machine."
+  fi
+fi
