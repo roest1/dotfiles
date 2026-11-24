@@ -1108,7 +1108,10 @@ jobs:
           sudo tar -xzf /tmp/nvim.tar.gz -C /opt
           echo "/opt/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
 
-      - name: Unit-test the language server definitions and the keymap counter
+      # Also the two readers of theme.conf, nvim's and wezterm's: no file, a
+      # valid one, a name that is gone, and the spelling from before the fonts
+      # moved in. wezterm's runs here because nvim is the Lua it is run with.
+      - name: Unit-test the language server definitions, the keymap counter and the theme.conf readers
         run: |
           nvim --version | head -1
           make test
@@ -1442,7 +1445,11 @@ jobs:
           # the fonts: font_dirs reads them, and lib/sgr.sh treats this link as "config is live"
           grep -qx 'wezterm/fonts' <<<"$links" || {
             echo "[wezterm] no longer links the fonts directory"; bad=1; }
-          [ $bad -eq 0 ] && echo "ok: [wezterm] links its config and fonts"
+          # the themes: wezterm.lua reads the picked one from beside itself, and
+          # `font` lists the linked directory for what there is to pick
+          grep -qx 'wezterm/themes' <<<"$links" || {
+            echo "[wezterm] no longer links the themes directory"; bad=1; }
+          [ $bad -eq 0 ] && echo "ok: [wezterm] links its config, fonts and themes"
           exit $bad
 
   # ── the Rust TUIs ──────────────────────────────────────────────────────────

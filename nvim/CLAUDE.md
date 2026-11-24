@@ -35,8 +35,36 @@ with a real LSP handshake.
 - `lua/external/altfont.lua` — renders file buffers in a different terminal font from oil and the rest of the UI. See below.
 - `lua/external/usage.lua` — `:KeymapUsage`, counts real presses of each mapping into `stdpath('state')`, outside the work tree. See "Pruning is measured" below.
 - `lua/external/oilgit.lua` — `:OilGit`, the diffstat column in oil; loaded from `plugins/oil.lua`, not `init.lua`.
-- `lua/external/theme.lua` — colorscheme lanes (`nvim.ui`, `nvim.editor`) read from machine-local `~/.config/dotfiles/theme.conf`; the editor lane is a per-window highlight namespace. Loaded from `plugins/theme.lua`'s `setup`, not `init.lua`.
+- `lua/external/theme.lua` — colorscheme lanes (`nvim.ui`, `nvim.editor`) read from machine-local `~/.config/dotfiles/theme.conf`; the editor lane is a per-window highlight namespace. Loaded from `plugins/theme.lua`'s `setup`, not `init.lua`. See "The color lanes" below.
 - `lua/external/filebuf.lua` — the one definition of "a file you write", shared by `altfont` and `theme` so the font lane and the color lane cannot disagree about which windows are the editor.
+
+## The color lanes (`theme.lua`)
+
+`~/.config/dotfiles/theme.conf` is every lane's file: `font` writes it, `wezterm.lua` reads
+the fonts and the terminal's colors, and `theme.lua` reads `nvim.ui.colors`,
+`nvim.ui.transparent`, `nvim.editor.colors` and `nvim.editor.transparent`. Things not to undo:
+
+- **A pick applies to a running nvim.** `theme.lua` watches the file's DIRECTORY (the file
+  does not exist until the first pick) and re-applies when what the file asks of nvim has
+  changed. It waits 100ms after the last event: `font` truncates and then writes, and reading
+  in between flashed both lanes to the default.
+- **The editor lane gets a new highlight namespace on every apply.** A group cannot be taken
+  out of a namespace, only emptied, and an empty group there still hides the ui scheme's.
+- **Transparent takes the background out of what the scheme set; it does not replace the
+  group.** `nvim_set_hl(0, 'Normal', { bg = 'none' })` replaces Normal whole, so the
+  foreground went with it and a transparent lane drew its text in the terminal's color. That
+  was invisible with rose-pine over a rose-pine terminal, and wrong for Dracula.
+- **rose-pine is asked for its base back by name on an opaque load.** Its
+  `disable_background = true` leaves `Normal = { bg = 'NONE' }` in its own overrides and a
+  later `false` does not remove it, so opaque after transparent stayed transparent.
+- **`M.load` is public for `font`.** Its color preview runs a headless nvim, loads each
+  scheme through `load` and reads the highlights back, so the preview is drawn by the code
+  that draws the lane.
+- **`nvim.ui = <scheme>` is still read**, underneath `nvim.ui.colors`. It was the spelling
+  for the week this file was nvim's alone. `font` rewrites it; take it out once no machine
+  has one.
+- **`nvim/tests/theme_spec.lua` (`make test`)** runs the reader on the files a machine can
+  have, with three stand-in schemes and no plugins, and checks the watcher end to end.
 
 ## The alternate-font carrier (`altfont.lua`)
 

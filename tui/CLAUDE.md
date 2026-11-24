@@ -16,8 +16,8 @@ what keeps each binary's startup honest.
 **Each crate is a library plus a thin binary**, which is what lets that hold
 while `make it` still reaches everything. `tui_core::app::run` and `Flow::Push`
 both take `Box<dyn Screen>` from anywhere, so a screen is reusable across
-binaries: `font` runs `FontScreen` as its root, and the console pushes the SAME
-type as a row in its tree. One implementation, two doors. The alternative was a
+binaries: `font` runs `font::screen()` (its Fonts and Colors tabs) as its root, and
+the console pushes the SAME thing as a row in its tree. One implementation, two doors. The alternative was a
 second font screen living inside the console, which is how the two drift.
 
 The binaries stay honest because a binary links what it uses: `font` still
@@ -53,7 +53,7 @@ before committing; CI's `--locked` build fails on a lock left that way. Never co
 `tui/font` (roest1/theme-tui) and `tui/github` (roest1/github-tui) are submodules, excluded
 from this workspace: each is its own package with its own `Cargo.lock`, and `tui/deps.sh`
 installs each from its path. Their notes are in their own `CLAUDE.md`. `dots` depends on
-`font` by path (`../font`), so it builds `FontScreen` against this workspace's single
+`font` by path (`../font`), so it builds that screen against this workspace's single
 tui-core; that is why `font` uses the same tui-core spec as here.
 
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
