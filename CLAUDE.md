@@ -137,7 +137,9 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
   it with a stock config. Debug wezterm by suspecting a stale process first
   ([`wezterm/CLAUDE.md`](wezterm/CLAUDE.md)).
 - **The fonts in `wezterm/fonts/` are read via `font_dirs`**, never installed system-wide.
-  They are the `roest1/fonts` submodule, which generates them and carries their OFL.
+  They are the `roest1/fonts` submodule, which generates them and carries their OFL. Every
+  other font is installed by that submodule's `install.sh` from its catalogue; don't add a
+  download to `wezterm/deps.sh` ([`wezterm/CLAUDE.md`](wezterm/CLAUDE.md)).
 - **`~/.gitconfig` is a symlink into the repo, so `git config --global` is a tracked edit.**
   So is `gh auth setup-git`: answer **no** to gh's *"Authenticate Git with your GitHub
   credentials?"*. GitHub auth is SSH. `git/gitconfig` declares no credential helper and

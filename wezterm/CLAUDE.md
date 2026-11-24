@@ -20,6 +20,13 @@ of the proportional Science Gothic at 0xProto's 0.62em advance, generated there 
 `mkmono.py` and committed, with its OFL and the CI that checks it. A fresh machine builds
 nothing. To change the font, change roest1/fonts, then bump the pin here, as with `ps1/`.
 
+The same submodule installs every other font. `deps.sh` hands a list of family names to
+`fonts/install.sh`, which looks each one up in the submodule's `catalog/` and downloads it
+into `~/.local/share/fonts`. This repo says which families; roest1/fonts says where they
+come from. A family `wezterm.lua` names has to be in `deps.sh`'s `FONTS` list and in the
+catalogue, and CI checks both. To add one, add its catalogue file there first, bump the
+pin, then name it here.
+
 **The fonts are read via `font_dirs`, never installed into the system font path.**
 `deps.conf` links `wezterm/fonts` → `~/.config/wezterm/fonts` and the config says
 `wezterm.config_dir .. "/fonts"`. No `fc-cache`, no system font directory, and — the real
