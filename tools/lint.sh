@@ -52,6 +52,7 @@ PATTERNS=(
   'git-autofetch/*.bash'
   .githooks/pre-commit
   .githooks/post-merge
+  claude/tab-state.sh
 )
 
 # Is this path one of ours? Used for the caller-supplied list, where the
