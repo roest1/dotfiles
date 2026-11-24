@@ -95,5 +95,16 @@
       "Read(**/.env*)",
       "Read(**/*password*)"
     ]
+  },
+  "sandbox": {
+    "allowUnsandboxedCommands": true,
+    "enabled": true,
+    "failIfUnavailable": false,
+    "network": {
+      "allowedDomains": [
+        "github.com",
+        "*.githubusercontent.com"
+      ]
+    }
   }
 }
