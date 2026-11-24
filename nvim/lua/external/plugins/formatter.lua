@@ -38,8 +38,12 @@ return {
         html = { 'prettier' },
         yaml = { 'prettier' },
         css = { 'prettier' },
-        -- ruff is significantly faster than black and handles both linting and formatting in one go
-        python = { 'ruff' },
+        -- ruff_format is ruff's black-compatible formatter. This entry said
+        -- `ruff` from 2026-10 to 2026-11, which conform treats as a deprecated
+        -- name for ruff_fix (`ruff check --fix`): lint autofixes ran on save
+        -- and nothing was ever formatted. Lint now shows as diagnostics from
+        -- ruff's language server; apply a fix with gra.
+        python = { 'ruff_format' },
       },
       -- Define the unknown formatter here
       formatters = {
