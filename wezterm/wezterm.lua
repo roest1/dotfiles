@@ -575,10 +575,10 @@ local function claude_tab_titles()
 		--
 		-- The writer is claude/tab-state.sh, called by the hooks in
 		-- claude/settings.json (linked by deps.conf's [claude] section), emitting
-		-- OSC 1337 SetUserVar to Claude's own pty. Esc skips the Stop hook, so a
-		-- new prompt clears the claim and Claude's idle notification retires a
-		-- stale "asking" or "waiting" (#110). That is the whole channel: no
-		-- polling, no file I/O per repaint, and nothing goes through `wezterm cli`. With [claude] unlinked this is simply nil and
+		-- OSC 1337 SetUserVar to Claude's own pty. Esc fires no hook, so the
+		-- script retires a stale "asking" or "waiting" itself, from the session
+		-- transcript (#110). That is the whole channel: no polling here, no file
+		-- I/O per repaint, and nothing goes through `wezterm cli`. With [claude] unlinked this is simply nil and
 		-- every stopped session reads ⚡: degraded, but stable and honest rather
 		-- than flickering and wrong.
 		local uvars = (pane and pane.user_vars) or {}

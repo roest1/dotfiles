@@ -646,6 +646,31 @@ jobs:
           [ $fail -eq 0 ] && echo "ok: claims are made, and stale ones retired"
           exit $fail
 
+      # Esc on a question or permission prompt fires no hook, but the transcript
+      # gets that tool call's result, as an error. The watcher started by
+      # asking/waiting turns that into complete, and nothing else.
+      - name: claude/tab-state.sh retires a claim when Esc rejects the tool call
+        run: |
+          t=$(mktemp -d); export XDG_RUNTIME_DIR=$t CLAUDE_TAB_TTY=$t/tty
+          tr=$t/transcript.jsonl; fail=0
+          rej='{"type":"user","message":{"content":[{"type":"tool_result","content":"rejected","is_error":true}]}}'
+          ok='{"type":"user","message":{"content":[{"type":"tool_result","content":"an answer"}]}}'
+          claim() { : >"$tr"; : >"$t/tty"; echo "{\"session_id\":\"ci\",\"transcript_path\":\"$tr\"}" | claude/tab-state.sh "$1"; : >"$t/tty"; }
+          sent() { sed -n 's/.*claude_state=\(.*\)\x07.*/\1/p' "$t/tty" | base64 -d; }
+          settle() { for _ in 1 2 3 4 5 6; do [ -s "$t/tty" ] && return; sleep 1; done; }
+
+          claim asking; echo "$rej" >>"$tr"; settle
+          [ "$(sent)" = complete ] || { echo "FAIL: Esc on a question left '$(sent)', want complete"; fail=1; }
+          claim waiting; echo "$rej" >>"$tr"; settle
+          [ "$(sent)" = complete ] || { echo "FAIL: Esc on a permission prompt left '$(sent)', want complete"; fail=1; }
+          claim asking; echo "$ok" >>"$tr"; sleep 3
+          [ -s "$t/tty" ] && { echo "FAIL: an answered question was marked complete"; fail=1; }
+          claim asking; echo '{"session_id":"ci"}' | claude/tab-state.sh prompt; : >"$t/tty"
+          echo "$rej" >>"$tr"; sleep 3
+          [ -s "$t/tty" ] && { echo "FAIL: the watcher wrote after a new prompt took over"; fail=1; }
+          [ $fail -eq 0 ] && echo "ok: Esc on a question or permission prompt retires its claim"
+          exit $fail
+
       # Claude Code runs hooks with no controlling terminal, where /dev/tty
       # fails, so the script finds the pane through its parent's stdout. setsid
       # drops the controlling tty the way Claude Code does.
