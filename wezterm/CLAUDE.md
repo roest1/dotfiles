@@ -67,8 +67,10 @@ colors. Both skip a line they cannot read and ignore a key they do not know.
 - **A theme is nine colors in `wezterm/themes/<name>.conf`**, linked to
   `~/.config/wezterm/themes`. `shell.colors` names one. It is the terminal's background and
   the tab bar and nothing else: the ANSI 16 are still left alone, for the reason given over
-  `config.colors`. So on a background other than rose-pine's, wezterm's default ANSI blue
-  may fall under the 3:1 contrast the default palette was chosen to keep.
+  `config.colors`. That has a cost on the two lighter backgrounds: wezterm's default ANSI
+  blue (`#5555cc`) is 2.99:1 on rose-pine's base, which is why that base was chosen, and
+  2.41:1 on Dracula's and 2.37:1 on One Dark's. Directory names and `gh`'s blue are harder to
+  read there. A theme file has no key to fix that with, on purpose, until someone wants one.
 - **A theme is whole or it is not applied.** A file missing a color, or holding something
   that is not `#rrggbb`, leaves the default palette. Half of one theme over half of another
   is worse than the default.
