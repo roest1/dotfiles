@@ -1,7 +1,7 @@
+-- Formatters, by filetype. Format on save itself is in lua/options.lua.
 return {
-  'stevearc/conform.nvim',
-  event = { 'BufReadPre', 'BufNewFile' },
-  config = function()
+  add = { 'https://github.com/stevearc/conform.nvim' },
+  setup = function()
     local conform = require 'conform'
     conform.setup {
       formatters_by_ft = {

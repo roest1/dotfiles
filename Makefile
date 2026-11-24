@@ -174,6 +174,10 @@ test: ## Run the Lua unit tests (no plugins, no network)
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/usage_spec.lua" -c "qa!" 2>&1 \
 		| tee "$${TMPDIR:-/tmp}/dotfiles-usage-test.txt"
 	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-usage-test.txt" || { echo "usage tests failed"; exit 1; }
+	@NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+		-c "luafile $(DOTFILES_DIR)/nvim/tests/plugins_spec.lua" -c "qa!" 2>&1 \
+		| tee "$${TMPDIR:-/tmp}/dotfiles-plugins-test.txt"
+	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-plugins-test.txt" || { echo "plugin list and nvim-pack-lock.json disagree"; exit 1; }
 	@# LSP servers: only meaningful once they're installed, so skip rather than fail
 	@if command -v bun >/dev/null 2>&1 && [ -d "$(DOTFILES_DIR)/nvim/lsp-servers/node_modules" ]; then \
 		bun "$(DOTFILES_DIR)/nvim/lsp-servers/verify.ts" | tee "$${TMPDIR:-/tmp}/dotfiles-lsp.txt"; \

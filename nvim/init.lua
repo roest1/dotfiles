@@ -11,11 +11,8 @@ require 'options'
 -- [[ Basic Keymaps ]]
 require 'keymaps'
 
--- [[ Install `lazy.nvim` plugin manager ]]
-require 'lazy-bootstrap'
-
--- [[ Configure and install plugins ]]
-require 'lazy-plugins'
+-- [[ Install and configure plugins ]] The list is lua/external/plugins/init.lua.
+require('external.plugins').setup()
 
 require('external.findreplace').setup()
 require('external.copy').setup()

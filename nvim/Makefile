@@ -6,7 +6,7 @@
 # Usage:
 #   make              Show help
 #   make deps         Install nvim + external deps (via ../deps.conf)
-#   make sync         Install/update plugins + compile TS parsers (headless)
+#   make sync         Put plugins on the commits in nvim-pack-lock.json + compile TS parsers
 #   make update       git pull + deps + sync
 #   make clean        Wipe plugin + cache state (plugins reinstall on next start)
 #   make all          deps + sync
@@ -56,11 +56,13 @@ deps: ## Install nvim + external deps (delegates to the repo manifest)
 	@# truth. deps.sh here is only platform fixups and runs as part of that.
 	@$(MAKE) --no-print-directory -C "$(NVIM_DIR)/.." install nvim
 
-sync: ## Install/update plugins + compile TS parsers (headless)
+sync: ## Put plugins on the commits in nvim-pack-lock.json + compile TS parsers (headless)
 	@command -v nvim >/dev/null 2>&1 || { echo "nvim not found — run 'make deps' first"; exit 1; }
 	@echo ""
-	@echo "Syncing lazy.nvim plugins..."
-	@nvim --headless "+Lazy! sync" +qa 2>&1 | tail -20
+	@echo "Syncing plugins to nvim-pack-lock.json..."
+	@# Never moves a plugin to something newer: that is `:lua vim.pack.update()`
+	@# inside nvim, followed by a commit of the lockfile.
+	@nvim --headless "+lua require('external.plugins').sync()" +qa 2>&1 | tr '\r' '\n' | tail -3
 	@echo ""
 	@echo "Updating tree-sitter parsers..."
 	@nvim --headless "+TSUpdate" +qa 2>&1 | tail -5

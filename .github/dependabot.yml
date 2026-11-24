@@ -72,9 +72,9 @@ version: 2
 # ── Still invisible, and worth remembering ──────────────────────────────────
 #
 # deps.conf (a custom format; ~17 tools from dnf/apt/mise/cargo) and
-# nvim/lazy-lock.json (26 neovim plugins — arbitrary Lua from 26 GitHub repos,
+# nvim/nvim-pack-lock.json (15 neovim plugins — arbitrary Lua from 15 GitHub repos,
 # realistically the largest attack surface here, with no advisory database that
-# covers it; pinned commits are the mitigation). Nothing here will warn that a
+# covers it; pinned commits are the mitigation, bumped by hand with vim.pack.update()). Nothing here will warn that a
 # CLI tool or a neovim plugin has a CVE. That's an accepted cost of the manifest
 # design, not an oversight.
 #

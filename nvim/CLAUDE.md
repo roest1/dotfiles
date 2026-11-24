@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-A modular Neovim configuration built on **lazy.nvim**, forked from kickstart-modular.nvim. Maintained by [@roest1](https://github.com/roest1). Requires Neovim 0.12+: `altfont.lua` needs 0.12's `blink` highlight attribute, and roslyn.nvim (off, see below) refuses to load below it.
+A modular Neovim configuration, forked from kickstart-modular.nvim. Plugins are managed by nvim's own **`vim.pack`**. Maintained by [@roest1](https://github.com/roest1). Requires Neovim 0.12+: `altfont.lua` needs 0.12's `blink` highlight attribute, `vim.pack` arrived in 0.12, and roslyn.nvim (off, see below) refuses to load below it.
 
 ## Bootstrap & Dependencies
 
@@ -24,18 +24,18 @@ with a real LSP handshake.
 
 ## Architecture
 
-**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `altfont`, `usage`). `oilgit` is the exception: oil's own `config` loads it, because it has nothing to do until oil does.
+**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `external.plugins` (`setup()`) → custom modules (`findreplace`, `copy`, `pasteimg`, `altfont`, `usage`). `oilgit` is the exception: `plugins/oil.lua`'s `setup` loads it, because it has nothing to do until oil does.
 
-**Plugin loading:** `lua/lazy-plugins.lua` calls `lua/external/plugins/init.lua`, which holds a hardcoded `plugin_modules` list. Each plugin is a separate file in `lua/external/plugins/` returning a lazy.nvim spec table. A plugin is turned off by commenting its line there; `roslyn` (C#) is off that way, with its spec file and its install step in `deps.sh` kept so one line brings it back.
+**Plugin loading:** `lua/external/plugins/init.lua` holds a hardcoded `modules` list. Each name is a file in `lua/external/plugins/` returning `{ add, setup, build }`: the repositories for `vim.pack.add`, a function that configures them, and optional build steps. `setup()` collects every `add` into one `vim.pack.add` call, then runs each `setup` in list order (theme first). A plugin is turned off by commenting its line; `roslyn` (C#) is off that way, with its file and its install step in `deps.sh` kept.
 
-**Custom modules** (not lazy.nvim plugins — loaded directly in `init.lua`):
+**Custom modules** (not plugins — loaded directly in `init.lua`):
 - `lua/external/copy.lua` — `:Copy` command, copies file contents to clipboard for LLM sharing
 - `lua/external/findreplace.lua` — `:Find` and `:FindReplace` using rg/fd
 - `lua/external/pasteimg.lua` — paste an image from the clipboard into a buffer
 - `lua/external/altfont.lua` — renders file buffers in a different terminal font from oil and the rest of the UI. See below.
 - `lua/external/usage.lua` — `:KeymapUsage`, counts real presses of each mapping into `stdpath('state')`, outside the work tree. See "Pruning is measured" below.
 - `lua/external/oilgit.lua` — `:OilGit`, the diffstat column in oil; loaded from `plugins/oil.lua`, not `init.lua`.
-- `lua/external/theme.lua` — colorscheme lanes (`nvim.ui`, `nvim.editor`) read from machine-local `~/.config/dotfiles/theme.conf`; the editor lane is a per-window highlight namespace. Loaded from `plugins/theme.lua`'s rose-pine `config`, not `init.lua`.
+- `lua/external/theme.lua` — colorscheme lanes (`nvim.ui`, `nvim.editor`) read from machine-local `~/.config/dotfiles/theme.conf`; the editor lane is a per-window highlight namespace. Loaded from `plugins/theme.lua`'s `setup`, not `init.lua`.
 - `lua/external/filebuf.lua` — the one definition of "a file you write", shared by `altfont` and `theme` so the font lane and the color lane cannot disagree about which windows are the editor.
 
 ## The alternate-font carrier (`altfont.lua`)
@@ -79,7 +79,7 @@ the session. `font` (in bash) picks which family the lane maps to.
 ## Key Conventions
 
 - Leader key MUST be set before any plugins load (done in `init.lua` before any `require`)
-- Plugin files return a table (or list of tables) consumable by lazy.nvim
+- Plugin files return `{ add, setup, build }`; the header of `plugins/init.lua` defines the three
 - LSP servers are defined in `lua/external/lsp_servers.lua` (a plain table, kept out of the plugin spec so `nvim/tests/lsp_servers_spec.lua` can assert on it under `--clean`) and wired up in `lua/external/plugins/lsp.lua`. There is no Mason: native servers are declared in `../deps.conf`, JS ones in `lsp-servers/package.json` and run as `bun <path>` via explicit `cmd` overrides. TypeScript's `tsc` (TS 7, native) also comes from `lsp-servers/package.json` but runs as the platform binary directly, with no runtime
 - Formatters are configured in `lua/external/plugins/formatter.lua` (conform.nvim) by filetype
 - There is no lint plugin. Lint is a language server's diagnostics (`ruff` for Python, `sqruff` for SQL, shellcheck through `bashls`); nvim-lint was removed in 2026-11 when its one linter, ruff, moved to `ruff server`
@@ -88,8 +88,22 @@ the session. `font` (in bash) picks which family the lane maps to.
 
 ## Adding a New Plugin
 
-1. Create `lua/external/plugins/<name>.lua` returning a lazy.nvim spec
-2. Add `'external/plugins/<name>'` to the `plugin_modules` list in `lua/external/plugins/init.lua`
+1. Create `lua/external/plugins/<name>.lua` returning `{ add = { <repository URLs> }, setup = function() ... end }`
+2. Add `'<name>'` to `modules` in `lua/external/plugins/init.lua`
+3. Start nvim, which installs it and adds its commit to `nvim-pack-lock.json`. Commit the lockfile with the other two files; `make test` fails while the list and the lockfile disagree
+
+## Plugins are pinned by `nvim-pack-lock.json`
+
+`vim.pack` records each plugin's commit in `nvim-pack-lock.json`, and the file is tracked, which is what nvim's docs recommend. Every machine runs the same plugin code, and an update is a diff in a PR.
+
+- **`make -C nvim sync` applies the lockfile and never updates.** It checks out the pinned commits and deletes plugins no longer listed (`sync()` in `plugins/init.lua`). `make install nvim` runs it.
+- **Updating is by hand:** `:lua vim.pack.update()`, read the changes, `:write`, commit the lockfile. Nothing proposes these bumps: no bot reads this file, and no advisory database covers Neovim plugins.
+- **Removing a plugin needs sync before the commit.** `vim.pack` installs whatever the lockfile names, listed or not, so a line deleted from `modules` comes back until `sync` drops it from the lockfile.
+- **Everything loads at startup.** `vim.pack` has no lazy loading; with 15 plugins there is nothing to defer. Don't rebuild lazy.nvim's `event`/`ft` triggers on top of it.
+- **`confirm = false` on `vim.pack.add`** departs from the default, which asks before a first install. The lockfile already says which commits will be fetched, and `make install` runs headless.
+- **Build steps** are the `build` field, run from one `PackChanged` autocmd registered before `vim.pack.add`: telescope-fzf-native's `make`, and `:TSUpdate` after a treesitter update.
+
+History: lazy.nvim was the manager until 2026-11. Its `lazy-lock.json` was gitignored and `Lazy! sync` moved every plugin to its newest commit on each install, so the "pinned commits" this repo's docs claimed did not exist. rocks.nvim was considered and passed over: no advisory database lists LuaRocks either, and its README asks new users to wait for a rewrite.
 
 ## Help Documentation
 
