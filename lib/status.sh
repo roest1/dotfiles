@@ -161,7 +161,7 @@ provider_satisfies() {
     # exactly what it was added for: declaring `manual` is what stops
     # `make status` flagging a correct state as drift.
     #
-    # Without this, [tui]'s `manual cargo` and `manual font` sat in the drift
+    # Without this, [tui]'s `manual cargo` and `manual theme` sat in the drift
     # count permanently. Both are built by tui/deps.sh with
     # `cargo install --path`, which lands them in ~/.cargo/bin, which
     # provider_of correctly reports as "cargo" -- a true answer the declaration
@@ -334,11 +334,11 @@ status_dnf() {
 #   provable    the font files exist where font_dirs points, and what wezterm
 #               actually resolved the family to. These count as drift.
 #   not         whether the binary APPLIES font_rules on the blink attribute at
-#               draw time. Nothing can read that but an eye, so `font show`
+#               draw time. Nothing can read that but an eye, so `theme show`
 #               prints the carrier and this counts nothing for it.
 #
 # Belongs to [wezterm] rather than [tui] because the subject is wezterm's font
-# lanes; `font` is only the implementation that answers, the same way bash calls
+# lanes; `theme` is only the implementation that answers, the same way bash calls
 # into the picker rather than carrying a second copy of "measure a font".
 status_fonts() {
   # Scope exactly as status_links does, by asking the manifest rather than
@@ -372,10 +372,10 @@ status_fonts() {
 
   status_fonts_resolution "$dir"
 
-  # `font` belongs to [tui], which is a section a machine may legitimately not
+  # `theme` belongs to [tui], which is a section a machine may legitimately not
   # have selected. Absent is reported, never counted: an opt-out is not drift.
-  if command -v font >/dev/null 2>&1; then
-    font show || _drift_font
+  if command -v theme >/dev/null 2>&1; then
+    theme show || _drift_font
   else
     printf "%s  $MARK_NA lanes not shown — the 'font' picker is not installed%s\n" "$SG" "$SG_OFF"
     echo "      It lives in [tui]. Add tui to ~/.config/dotfiles/sections, or"

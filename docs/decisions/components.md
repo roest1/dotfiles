@@ -1,7 +1,7 @@
 # Components and plugins
 
 **Status:** in force since 2026-11-23. Four components so far: `ps1/`, `wezterm/fonts/`,
-`tui/font/`, `tui/github/`.
+`tui/theme/`, `tui/github/`.
 **Applies to:** `.gitmodules`, `lib/submodules.sh`, `lib/plugins.sh`, Dependabot.
 
 Code that is not in this tree reaches a machine one of two ways. They are not

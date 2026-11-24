@@ -7,7 +7,7 @@
 -- schemes are stand-ins written into a scratch runtime directory, each just
 -- distinct enough to tell which one a lane ended up with.
 --
--- What this guards: theme.conf is written by `font` and by hand, and read at
+-- What this guards: theme.conf is written by `theme` and by hand, and read at
 -- every start. A reader that trips on it leaves the editor unthemed or, worse,
 -- stops startup. The cases are the files a machine can really have: none, a
 -- valid one, one naming a scheme that is gone, and the spelling from before
@@ -88,7 +88,7 @@ check('nothing was warned about', #warned == 0)
 
 print 'valid lanes'
 write {
-  '# Written by `font`.',
+  '# Written by `theme`.',
   'shell.font = 0xProto Nerd Font',
   'shell.colors = dracula',
   'nvim.ui.colors = dracula',
@@ -143,7 +143,7 @@ loads = {}
 write { 'nvim.ui.colors = onedark', 'shell.font = Fira Code' }
 T.reload()
 check('a rewrite that changes nothing here loads nothing', #loads == 0)
--- No T.reload() from here: the watcher has to do it. Written the way `font`
+-- No T.reload() from here: the watcher has to do it. Written the way `theme`
 -- writes, truncated first and filled in after.
 loads = {}
 write {}

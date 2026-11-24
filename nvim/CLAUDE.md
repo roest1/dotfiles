@@ -40,13 +40,13 @@ with a real LSP handshake.
 
 ## The color lanes (`theme.lua`)
 
-`~/.config/dotfiles/theme.conf` is every lane's file: `font` writes it, `wezterm.lua` reads
+`~/.config/dotfiles/theme.conf` is every lane's file: `theme` writes it, `wezterm.lua` reads
 the fonts and the terminal's colors, and `theme.lua` reads `nvim.ui.colors`,
 `nvim.ui.transparent`, `nvim.editor.colors` and `nvim.editor.transparent`. Things not to undo:
 
 - **A pick applies to a running nvim.** `theme.lua` watches the file's DIRECTORY (the file
   does not exist until the first pick) and re-applies when what the file asks of nvim has
-  changed. It waits 100ms after the last event: `font` truncates and then writes, and reading
+  changed. It waits 100ms after the last event: `theme` truncates and then writes, and reading
   in between flashed both lanes to the default.
 - **The editor lane gets a new highlight namespace on every apply.** A group cannot be taken
   out of a namespace, only emptied, and an empty group there still hides the ui scheme's.
@@ -57,11 +57,11 @@ the fonts and the terminal's colors, and `theme.lua` reads `nvim.ui.colors`,
 - **rose-pine is asked for its base back by name on an opaque load.** Its
   `disable_background = true` leaves `Normal = { bg = 'NONE' }` in its own overrides and a
   later `false` does not remove it, so opaque after transparent stayed transparent.
-- **`M.load` is public for `font`.** Its color preview runs a headless nvim, loads each
+- **`M.load` is public for `theme`.** Its color preview runs a headless nvim, loads each
   scheme through `load` and reads the highlights back, so the preview is drawn by the code
   that draws the lane.
 - **`nvim.ui = <scheme>` is still read**, underneath `nvim.ui.colors`. It was the spelling
-  for the week this file was nvim's alone. `font` rewrites it; take it out once no machine
+  for the week this file was nvim's alone. `theme` rewrites it; take it out once no machine
   has one.
 - **`nvim/tests/theme_spec.lua` (`make test`)** runs the reader on the files a machine can
   have, with three stand-in schemes and no plugins, and checks the watcher end to end.
@@ -102,7 +102,7 @@ Three things not to "tidy":
   buffer is `''`. The URL-scheme test next to it is the belt to that braces.
 
 `:AltFont` reports what it decided and why; `:AltFont toggle` turns it off for
-the session. `font` (in bash) picks which family the lane maps to.
+the session. `theme` (in bash) picks which family the lane maps to.
 
 ## Key Conventions
 

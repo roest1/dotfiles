@@ -91,7 +91,7 @@ help: ## Show this help
 	  echo ""; \
 	  printf "%s  To skip a single tool, comment it out in deps.conf.%s\n" "$$SG" "$$SG_OFF"; \
 	  echo ""; \
-	  printf "  %sdots%s  everything above, navigable — targets, sections, fonts\n" "$$SG_B" "$$SG_OFF" \
+	  printf "  %sdots%s  everything above, navigable — targets, sections, theme\n" "$$SG_B" "$$SG_OFF" \
 	); \
 	echo ""; \
 	tty_banner "$$SG_B" "$$SG_OFF" "dotfiles — $(UNAME)" "$$body"

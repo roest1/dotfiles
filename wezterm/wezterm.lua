@@ -36,7 +36,7 @@ local palette = {
 
 -- ─── What this machine picked ────────────────────────────────────────────────
 --
--- ~/.config/dotfiles/theme.conf, written by `font` and keyed by lane:
+-- ~/.config/dotfiles/theme.conf, written by `theme` and keyed by lane:
 --
 --   shell.font          = 0xProto Nerd Font
 --   shell.colors        = dracula
@@ -147,7 +147,7 @@ palette = themed(THEME["shell.colors"]) or palette
 -- The four names are `<lane>.font` in theme.conf, read above. Until 2026-11 they
 -- had a file of their own, ~/.config/wezterm/fonts.conf, keyed by the bare lane
 -- name. It is still read, underneath theme.conf, so a machine keeps its fonts
--- between pulling this and rebuilding `font`, which moves them on its next pick.
+-- between pulling this and rebuilding `theme`, which moves them on its next pick.
 local FONT_STATE = CONFIG_HOME .. "/wezterm/fonts.conf"
 
 -- Bracket syntax because the nvim lanes carry a dot. The prefix is doing real
@@ -176,7 +176,7 @@ end
 
 local FONTS = read_fontset()
 
--- Watched as well, for the `font` that still writes it.
+-- Watched as well, for the `theme` that still writes it.
 pcall(wezterm.add_to_config_reload_watch_list, FONT_STATE)
 
 -- Changes whenever any of the four picks change, which is how the override
@@ -942,7 +942,7 @@ local function apply_overrides(window, pane)
 	-- `claude` is in the value SEPARATELY from `want`, which looks redundant and
 	-- is not. `want` is only a proxy for the lane — it is FONTS.claude on a
 	-- Claude pane — and the proxy collapses the moment two lanes are assigned the
-	-- same font, which `font` lets you do and which costs nothing until now.
+	-- same font, which `theme` lets you do and which costs nothing until now.
 	-- With both lanes on one family, moving focus shell → Claude would leave
 	-- `want` unchanged, match the cache, and return: the font would be right
 	-- (it already was) and the gutters would silently never appear. The bug

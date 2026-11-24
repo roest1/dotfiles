@@ -8,5 +8,5 @@
 	path = tui/github
 	url = https://github.com/roest1/github-tui.git
 [submodule "tui/font"]
-	path = tui/font
+	path = tui/theme
 	url = https://github.com/roest1/theme-tui.git

@@ -24,7 +24,7 @@ ensure_local_bin_on_path
 #
 # Every family wezterm.lua names, plus IosevkaTerm: no lane defaults to it, but
 # it is the one family that draws Claude Code's glyphs at cell width, so it is
-# here for `font` to offer. CI holds this list to wezterm.lua.
+# here for `theme` to offer. CI holds this list to wezterm.lua.
 #
 # Where each one comes from is not this repo's to know. roest1/fonts, the
 # submodule at fonts/, keeps a catalogue with one file per font and installs
@@ -54,7 +54,7 @@ fi
 # failure it existed to catch survived inside its own green tick.
 #
 # `make status wezterm` asks the answerable half (files, link, ls-fonts
-# resolution) and `font` shows the carrier line for the half only an eye can
+# resolution) and `theme` shows the carrier line for the half only an eye can
 # read. See status_fonts in lib/status.sh.
 if command -v wezterm >/dev/null 2>&1; then
   echo "  ✅ wezterm ($(wezterm --version 2>/dev/null | head -1))"

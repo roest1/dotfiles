@@ -11,7 +11,7 @@
 //!   sections   open, because a section is an ARGUMENT and not a target --
 //!              `make nvim` is a no-op stub, and running `make install nvim`
 //!              off one keystroke is more than the keystroke said
-//!   theme      push font's own screen, the same one its binary runs
+//!   theme      push theme's own screen, the same one its binary runs
 //!
 //! Sections are also the one place this screen WRITES. Space toggles whether
 //! this machine sweeps a section, into `~/.config/dotfiles/sections` -- see
@@ -441,7 +441,7 @@ impl Screen for Console {
                 lines.push("The four wezterm lanes — shell, nvim.ui, nvim.editor".into());
                 lines.push("and claude — and the font and colors each is set to.".into());
                 lines.push(String::new());
-                lines.push("This is `font`'s own screen, not a copy of it: the".into());
+                lines.push("This is `theme`'s own screen, not a copy of it: the".into());
                 lines.push("same two tabs its binary runs, pushed here.".into());
             }
             At::TargetsHeader => {
@@ -524,7 +524,7 @@ impl Screen for Console {
                 self.open = (self.open != Some(i)).then_some(i).and(None);
                 Flow::Dirty
             }
-            (Action::Activate, At::Fonts) => Flow::Push(Box::new(font::screen())),
+            (Action::Activate, At::Fonts) => Flow::Push(Box::new(theme::screen())),
             // Space, not Enter: Enter on a section opens it, and the key that
             // reconfigures the machine should not be the key that expands a
             // tree. On a verb row it toggles the section that verb belongs to,

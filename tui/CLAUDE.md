@@ -3,24 +3,24 @@
 ## Overview
 
 The Rust terminal UIs. One crate per screen, **one binary per command** —
-`dots` here; `font` and `github` in their own repos,
-[roest1/theme-tui](https://github.com/roest1/theme-tui) at `tui/font` and
+`dots` here; `theme` and `github` in their own repos,
+[roest1/theme-tui](https://github.com/roest1/theme-tui) at `tui/theme` and
 [roest1/github-tui](https://github.com/roest1/github-tui) at `tui/github`, both pinned as submodules. They share
 [roest1/tui-core](https://github.com/roest1/tui-core) (the framework, `tui_core::…`) and nothing else, because a font picker and a CI dashboard have
 nothing else in common.
 
-They are *not* modes of one program. `font` opens the font picker; `github`
+They are *not* modes of one program. `theme` opens the font and color picker; `github`
 opens the GitHub screens. That is the shape Riley asked for and it is also
 what keeps each binary's startup honest.
 
 **Each crate is a library plus a thin binary**, which is what lets that hold
 while `make it` still reaches everything. `tui_core::app::run` and `Flow::Push`
 both take `Box<dyn Screen>` from anywhere, so a screen is reusable across
-binaries: `font` runs `font::screen()` (its Fonts and Colors tabs) as its root, and
+binaries: `theme` runs `theme::screen()` (its Fonts and Colors tabs) as its root, and
 the console pushes the SAME thing as a row in its tree. One implementation, two doors. The alternative was a
 second font screen living inside the console, which is how the two drift.
 
-The binaries stay honest because a binary links what it uses: `font` still
+The binaries stay honest because a binary links what it uses: `theme` still
 starts in ~1ms and pulls in a picker, not a CI dashboard. It is the console
 that depends on everything, which is correct — it is the thing that shows
 everything.
@@ -50,11 +50,11 @@ That build rewrites `Cargo.lock` to the unpinned path, so run `git checkout tui/
 before committing; CI's `--locked` build fails on a lock left that way. Never commit a
 `[patch]` or a path dependency on tui-core.
 
-`tui/font` (roest1/theme-tui) and `tui/github` (roest1/github-tui) are submodules, excluded
+`tui/theme` (roest1/theme-tui) and `tui/github` (roest1/github-tui) are submodules, excluded
 from this workspace: each is its own package with its own `Cargo.lock`, and `tui/deps.sh`
 installs each from its path. Their notes are in their own `CLAUDE.md`. `dots` depends on
-`font` by path (`../font`), so it builds that screen against this workspace's single
-tui-core; that is why `font` uses the same tui-core spec as here.
+`theme` by path (`../theme`), so it builds that screen against this workspace's single
+tui-core; that is why `theme` uses the same tui-core spec as here.
 
 - `dots/` — the console. `repo` (reads the Makefile and `deps.conf`; the only
   file that parses either), `sections` (the machine-local sections file — the
@@ -77,7 +77,7 @@ tui-core; that is why `font` uses the same tui-core spec as here.
   rust-version floor and distro rust lags it, so a too-old toolchain fails at
   the END of a long install rather than the start.
 - **`deps.conf` says `manual`, not `cargo`.** The cargo provider installs by
-  crate NAME from crates.io, and `font` is a name someone else owns there — it
+  crate NAME from crates.io, and `theme` is a name someone else owns there — it
   would install a stranger's crate and report success. The install is
   `cargo install --path` in `tui/deps.sh`. CI asserts both halves.
 - **No bash function may be named after a binary here.** A shell function wins
@@ -103,11 +103,11 @@ tui-core; that is why `font` uses the same tui-core spec as here.
   exists to differ per machine, and until now nothing wrote it but an editor.
   A second store lands the same way (`~/.gitconfig.local` is the obvious next
   one) — machine-local, outside the work tree, whole file rewritten, delete it
-  to get the default back. `font`'s `lanes.rs` was the first of these and this
+  to get the default back. `theme`'s `lanes.rs` was the first of these and this
   follows it deliberately.
 
   The rule that decides what may become a row: **a row under `dots` changes
-  THIS machine.** `font` qualifies and is already pushed as one. `github`
+  THIS machine.** `theme` qualifies and is already pushed as one. `github`
   changes a repo on a server, so it is a sibling binary and not a row —
   otherwise the console becomes a launcher again, one screen at a time.
 

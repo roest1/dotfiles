@@ -12,7 +12,7 @@ is what you need before editing the two escape files and the status font block.
 The font block is the one part that admits a limit rather than answering. It
 reports what a program can prove — the files are where `font_dirs` points, and
 what `wezterm ls-fonts` actually resolved the family to — and then runs
-`font show`, whose carrier prints real SGR 6 and SGR 5 text for the half only an
+`theme show`, whose carrier prints real SGR 6 and SGR 5 text for the half only an
 eye can read. **Only the provable half counts as drift**, because the carrier is
 unreadable over ssh, in a pipe and on any other terminal, and counting it would
 report red on machines that are fine. This replaced a `wezterm/MIN_VERSION`

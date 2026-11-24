@@ -16,5 +16,5 @@ path = "src/main.rs"
 
 [dependencies]
 tui-core.workspace = true
-font = { path = "../font" }
+theme = { path = "../theme" }
 libc = "0.2"

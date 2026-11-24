@@ -25,7 +25,7 @@ Each section of `deps.conf` is one pillar. Install them all, or name the ones yo
 | `[uv]` | Astral's uv, kept self-updating, for Python tools |
 | `[nvim]` | Neovim config with language servers and formatters ([nvim/README.md](nvim/README.md)) |
 | `[wezterm]` | The terminal config and the Science Gothic Mono font |
-| `[tui]` | Terminal apps: `github` (the current repo on GitHub, live; [roest1/github-tui](https://github.com/roest1/github-tui)), `dots` (this repo's console), `font` (pick fonts and colors per lane; [roest1/theme-tui](https://github.com/roest1/theme-tui)) |
+| `[tui]` | Terminal apps: `github` (the current repo on GitHub, live; [roest1/github-tui](https://github.com/roest1/github-tui)), `dots` (this repo's console), `theme` (pick fonts and colors per lane; [roest1/theme-tui](https://github.com/roest1/theme-tui)) |
 | `[claude]` | Claude Code settings: deny rules for secrets, terminal status hooks |
 | `[git-autofetch]` | Fetches this repo, its plugins and `~/github` every 20 minutes, never pulls, and tells each new shell when you are behind |
 
@@ -40,7 +40,7 @@ change there reaches your machines only through a PR here.
 | [roest1/PS1](https://github.com/roest1/PS1) | `ps1/` | The bash prompt: one file, a two-line install |
 | [roest1/fonts](https://github.com/roest1/fonts) | `wezterm/fonts/` | Science Gothic Mono, and the catalogue the other fonts install from |
 | [roest1/github-tui](https://github.com/roest1/github-tui) | `tui/github/` | `github`: the current repo on GitHub, live |
-| [roest1/theme-tui](https://github.com/roest1/theme-tui) | `tui/font/` | `font`: pick fonts and colors per lane |
+| [roest1/theme-tui](https://github.com/roest1/theme-tui) | `tui/theme/` | `theme`: pick fonts and colors per lane |
 
 The prompt's colors and icons are `PS1_COLOR_*` and `PS1_ICON_*` variables
 ([list](https://github.com/roest1/PS1#colors-and-icons)); here they go in
