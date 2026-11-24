@@ -12,9 +12,8 @@
 
 # Don't reach for the network to satisfy a Python that isn't here. `uv run` on a
 # script whose PEP 723 header names a version this machine lacks should say so,
-# not silently download a second interpreter — bash/tabular.py is run this way
-# by 2parquet/2feather/2pickle, and a several-hundred-MB surprise inside what
-# looks like a file conversion is the failure being avoided.
+# not silently download a second interpreter: a several-hundred-MB surprise
+# inside what looks like a quick script is the failure being avoided.
 #
 # Managed Pythons are still available; they just have to be asked for:
 #   uv python install 3.13

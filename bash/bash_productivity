@@ -51,16 +51,11 @@ fi
 # eza: modern ls replacement with git integration and icons.
 if command -v eza &>/dev/null; then
   alias ls='eza --icons --group-directories-first'
-  alias ll='eza -la --icons --group-directories-first --git'
-  alias lt='eza -la --icons --tree --level=2 --git-ignore'
-else
-  alias ll='ls -alFh'
 fi
 
 # bat: cat with syntax highlighting and line numbers.
 if command -v bat &>/dev/null; then
   alias cat='bat --plain --paging=never'
-  alias catn='bat'
 fi
 
 # clear: the screen, and only the screen.
@@ -142,32 +137,6 @@ fi
 
 # ─── Misc power tools ────────────────────────────────────────────────────────
 
-# serve: quick HTTP server in current directory
-# Depends on: python3 # Maybe change this to uv? # This doesn't ever come into my workflow though
-serve() {
-  local port="${1:-8000}"
-  echo "Serving on http://localhost:${port}"
-  python3 -m http.server "$port"
-}
-
-# loop: repeatedly run a command with a clear screen (like watch)
-# Usage: loop ls -la    (refreshes every 2s)
-#        LOOP_INTERVAL=5 loop df -h
-#        loop 'df -h | grep sda'
-loop() {
-  while true; do
-    clear
-    echo "─── $(date) ───"
-    # eval is deliberate and stays. Running "$@" directly would be safer, but
-    # it would also drop the third usage above: a pipeline passed as one
-    # string is the main reason to reach for a watch-alike, and `"$@"` would
-    # try to exec a command literally named `df -h | grep sda`.
-    # shellcheck disable=SC2294
-    eval "$@"
-    sleep "${LOOP_INTERVAL:-2}"
-  done
-}
-
 # findword: rg all occurences
 # I have used this a bit in the past and it was quite useful, but don't know if it should be replaced or 
 # consolidated by fzf -- rg is an optimization I should always be using over grep 
@@ -224,7 +193,7 @@ findword() {
 # The xz and zstd cases pipe through the decompressor rather than using tar's
 # own -J / --zstd. Both spellings are GNU-tar-isms that bsdtar either lacks or
 # spells differently; a decompressor writing to `tar xf -` works on every tar,
-# and the pipe is also the only spelling that threads (see compress).
+# and the pipe is also the only spelling that threads.
 extract() {
     if [ -f "$1" ]; then
         case "$1" in
@@ -252,362 +221,6 @@ extract() {
     fi
 }
 
-# ─── compress — the inverse of extract ──────────────────────────────────────
-#
-#   compress backup.tar.zst src/        compress -9 dist.tar.xz build/
-#   compress notes.gz notes.txt         compress out.zip a/ b/ c.txt
-#
-# extract's virtue is that the *input* name picks the format and there are no
-# flags to remember. This inverts that literally: the *output* name picks the
-# format. The only flags are a level and -f, and both are optional.
-#
-# Defaults are chosen from measurement, not convention (12M CSV, 128 cores):
-#
-#     gzip -6      342ms → 4.7M      zstd -3       54ms → 4.5M
-#     gzip -9      418ms → 4.7M      zstd -19    4374ms → 3.9M
-#     pigz -9       33ms → 4.7M      xz -9e -T0  5770ms → 3.7M
-#
-# Three things follow. `gzip -9` is a trap — 22% slower than -6 for a rounding
-# error in size, so gz defaults to 6, not 9. zstd -3 beats gzip -9 on *both*
-# axes, which is why .tar.zst is the format to reach for. And -19 costs 80x the
-# time for 13%, so a max level is strictly opt-in and never a default.
-#
-# Parallelism comes from `-T0` and from pigz/pbzip2 rather than from counting
-# cores here: every one of those spellings means "all of them" already, so
-# there is no core count to get wrong.
-#
-# The tar path pipes (`tar -cf - | filter`) instead of using tar's -z/-j/-J/
-# --zstd. Same reason as extract above: the pipe is the portable construct, and
-# it is also the only one that gets threading, since tar's built-in shorthands
-# invoke the single-threaded compressor.
-_compress_filter() {
-    local fmt="$1" lvl="$2"
-    COMPRESS_CMD=()
-    case "$fmt" in
-        gz)
-            if command -v pigz >/dev/null 2>&1; then COMPRESS_CMD=(pigz "-${lvl:-6}")
-            else COMPRESS_CMD=(gzip "-${lvl:-6}" -c); fi ;;
-        zst)
-            command -v zstd >/dev/null 2>&1 || return 1
-            COMPRESS_CMD=(zstd "-${lvl:-3}" -T0 -q -c) ;;
-        xz)
-            command -v xz >/dev/null 2>&1 || return 1
-            COMPRESS_CMD=(xz "-${lvl:-6}" -T0 -c) ;;
-        bz2)
-            if command -v pbzip2 >/dev/null 2>&1; then COMPRESS_CMD=(pbzip2 "-${lvl:-9}" -c)
-            elif command -v bzip2 >/dev/null 2>&1; then COMPRESS_CMD=(bzip2 "-${lvl:-9}" -c)
-            else return 1; fi ;;
-        *) return 1 ;;
-    esac
-    return 0
-}
-
-compress() {
-    local out="" force=0 level="" fmt="" tarred=0 rc=0
-    local -a inputs
-
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            -f)                 force=1; shift ;;
-            -[0-9]|-[0-9][0-9]) level="${1#-}"; shift ;;
-            -h|--help)          h compress; return 0 ;;
-            --)                 shift; break ;;
-            -*) echo "compress: unknown flag '$1'" >&2; return 2 ;;
-            *)  break ;;
-        esac
-    done
-
-    out="$1"; [ $# -gt 0 ] && shift
-    inputs=("$@")
-
-    if [ -z "$out" ] || [ ${#inputs[@]} -eq 0 ]; then
-        echo "usage: compress [-<level>] [-f] <archive> <path>..." >&2
-        echo "       format comes from the archive name (.tar.zst, .zip, .gz, ...)" >&2
-        return 2
-    fi
-    if [ -e "$out" ] && [ $force -eq 0 ]; then
-        echo "compress: $out exists (use -f to overwrite)" >&2; return 1
-    fi
-
-    local p
-    for p in "${inputs[@]}"; do
-        [ -e "$p" ] || { echo "compress: no such file or directory: $p" >&2; return 1; }
-    done
-
-    case "$out" in
-        *.tar.gz|*.tgz)   fmt=gz;  tarred=1 ;;
-        *.tar.bz2|*.tbz2) fmt=bz2; tarred=1 ;;
-        *.tar.xz|*.txz)   fmt=xz;  tarred=1 ;;
-        *.tar.zst|*.tzst) fmt=zst; tarred=1 ;;
-        *.tar)            fmt=tar; tarred=1 ;;
-        *.zip)            fmt=zip ;;
-        *.7z)             fmt=7z  ;;
-        *.gz)             fmt=gz  ;;
-        *.bz2)            fmt=bz2 ;;
-        *.xz)             fmt=xz  ;;
-        *.zst)            fmt=zst ;;
-        *) echo "compress: don't know how to build '$out'" >&2
-           echo "          known: .tar.gz .tar.bz2 .tar.xz .tar.zst .tar .zip .7z .gz .bz2 .xz .zst" >&2
-           return 2 ;;
-    esac
-
-    # A bare single-file format has nowhere to put a second member, and no
-    # directory structure to record. Say so rather than silently archiving
-    # only the first argument.
-    if [ $tarred -eq 0 ] && [ "$fmt" != zip ] && [ "$fmt" != 7z ]; then
-        if [ ${#inputs[@]} -ne 1 ] || [ -d "${inputs[0]}" ]; then
-            echo "compress: .$fmt takes exactly one file — use .tar.$fmt for directories or multiple inputs" >&2
-            return 2
-        fi
-    fi
-
-    case "$fmt" in
-        zip)
-            command -v zip >/dev/null 2>&1 || { echo "compress: zip not installed" >&2; return 1; }
-            zip -r -q "-${level:-6}" "$out" "${inputs[@]}" || rc=$?
-            ;;
-        7z)
-            command -v 7z >/dev/null 2>&1 || { echo "compress: 7z not installed" >&2; return 1; }
-            7z a -bso0 -bsp0 "$out" "${inputs[@]}" >/dev/null || rc=$?
-            ;;
-        tar)
-            COPYFILE_DISABLE=1 tar -cf "$out" -- "${inputs[@]}" || rc=$?
-            ;;
-        *)
-            _compress_filter "$fmt" "$level" || {
-                echo "compress: no compressor available for .$fmt" >&2; return 1; }
-            if [ $tarred -eq 1 ]; then
-                # COPYFILE_DISABLE is a no-op on GNU tar; it stops bsdtar
-                # emitting ._ AppleDouble sidecars, which matters when the
-                # archive is made on a Mac and unpacked here. Kept: it costs
-                # nothing and the archives still travel.
-                COPYFILE_DISABLE=1 tar -cf - -- "${inputs[@]}" | "${COMPRESS_CMD[@]}" > "$out"
-            else
-                "${COMPRESS_CMD[@]}" < "${inputs[0]}" > "$out"
-            fi
-            # bash 3.2 has no `set -o pipefail` worth toggling inside an
-            # interactive function — PIPESTATUS answers the same question
-            # without leaving the option set behind us.
-            for p in "${PIPESTATUS[@]}"; do [ "$p" -eq 0 ] || rc=$p; done
-            ;;
-    esac
-
-    if [ "$rc" -ne 0 ]; then
-        rm -f "$out"          # never leave a truncated archive that looks real
-        echo "compress: failed building $out" >&2
-        return "$rc"
-    fi
-
-    if command -v du >/dev/null 2>&1; then
-        echo "$out ($(du -h "$out" | cut -f1))"
-    else
-        echo "$out"
-    fi
-}
-
-# ─── 2csv / 2txt / 2xlsx — spreadsheet conversion ────────────────────────────
-#
-#   2csv  report.xlsx      2txt  report.xlsx      2xlsx  old.xls
-#
-# Reads xlsx, xlsm, xlsb, legacy BIFF .xls, ods, csv and tsv. One engine
-# handles all of it: qsv, which wraps the calamine parser. No Excel, no
-# LibreOffice, no Python. Declared in deps.conf's [bash] section.
-#
-# Legacy .xls needs no special case — calamine parses BIFF directly, and it
-# is the reason 2xlsx is rarely necessary. The usual motive for converting
-# .xls to .xlsx first is that openpyxl and pandas cannot read .xls at all;
-# that constraint simply isn't present here.
-#
-# Why not duckdb, which is the obvious alternative and measured *faster* here
-# (0.32s vs 0.47s on 200k rows, at a fifth of the RSS — qsv materialises the
-# sheet, duckdb streams it):
-#
-#   1. Its xlsx reader is zip-only. A legacy BIFF .xls fails outright with
-#      "Failed to open zip for reading", and the spatial/st_read fallback
-#      fails too — GDAL can't open it either. That's half the `xls*` this is
-#      for, and no flag fixes it.
-#   2. Its default typing renders an integer id column as 1.0, 2.0. Excel
-#      stores every number as a double and duckdb faithfully believes it;
-#      you need all_varchar=true to get the literal cell back.
-#
-# So duckdb needs a second engine bolted on for .xls and a flag to stop it
-# corrupting ids. One tool that's correct by default beats two that aren't.
-#
-# If you ever want to *filter or join* during conversion rather than dump a
-# sheet, that's duckdb's job and worth reaching for separately.
-#
-# 2parquet/2feather/2pickle were the obvious place to reach for it, and duckdb
-# lost there too — for a third reason, not the two above. It cannot write Arrow
-# IPC: v1.5.5 has no `arrow` COPY function, and the arrow extension is not
-# published for linux_amd64 (the registry offers avro, azure, parquet,
-# autocomplete, aws). It writes parquet perfectly, but a parquet-only engine
-# still leaves feather and pickle needing python, and two engines for three
-# formats is worse than one. Hence bash/tabular.py. Note this is not a reversal
-# of the paragraph above: filtering and joining are still duckdb's job.
-#
-# csv→txt goes through `qsv fmt`, not `tr ',' '\t'`, because a blind
-# translate corrupts any quoted field containing a comma. qsv re-quotes
-# correctly: "alpha, inc" loses its quotes in tab output, 'quote"d' keeps them.
-#
-# Depends on: qsv  (2xlsx additionally: ssconvert, commented in deps.conf)
-_sheet_convert() {
-    local target="$1"; shift
-    local cmd="2${target}" outdelim="" sheet="" force=0 f ext out rc=0
-    local columnar="" outext="$target" script="" codec=""
-    local files=() sheetarg=() uvargs=() codecarg=()
-
-    case "$target" in
-        csv)     outdelim=',' ;;
-        txt)     outdelim='\t' ;;
-        parquet) columnar=1 ;;
-        feather) columnar=1 ;;
-        # .pkl, not .pickle — the extension every pandas example uses.
-        pickle)  columnar=1; outext=pkl ;;
-    esac
-
-    if [[ "$target" == "xlsx" ]]; then
-        if ! command -v ssconvert &>/dev/null; then
-            echo "$cmd: needs ssconvert — uncomment the gnumeric line in" >&2
-            echo "      deps.conf [bash], then: make install bash" >&2
-            echo "      (qsv reads .xls directly, so $cmd is only for" >&2
-            echo "       producing a real workbook — 2csv/2txt don't need it)" >&2
-            return 127
-        fi
-    elif [[ -n "$columnar" ]]; then
-        if ! command -v uv &>/dev/null; then
-            echo "$cmd: needs uv — run: make install uv" >&2
-            echo "      (deps.conf [uv]; https://docs.astral.sh/uv/)" >&2
-            return 127
-        fi
-        script="$(_dotfiles_dir)/bash/tabular.py"
-        if [[ ! -f "$script" ]]; then
-            echo "$cmd: cannot find tabular.py (looked in $script)" >&2
-            return 127
-        fi
-        # tabular.py declares only polars (215M cached), which covers parquet
-        # and feather. pickle additionally needs pandas and pyarrow, taking the
-        # environment to 476M — layered on here rather than in the script's
-        # header so 2parquet and 2feather never pay for it.
-        [[ "$target" == "pickle" ]] && uvargs=(--with pandas --with pyarrow)
-    elif ! command -v qsv &>/dev/null; then
-        echo "$cmd: qsv not installed — run: make install bash" >&2
-        return 127
-    fi
-
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            -s|--sheet) sheet="$2"; shift 2 ;;
-            -f|--force) force=1; shift ;;
-            -c|--compression)
-                if [[ -z "$columnar" ]]; then
-                    echo "$cmd: -c only applies to 2parquet and 2feather" >&2; return 2
-                fi
-                codec="$2"; shift 2 ;;
-            -h|--help)  echo "usage: $cmd [-s <sheet>] [-f] <file>..." >&2; return 0 ;;
-            --)         shift; while [[ $# -gt 0 ]]; do files+=("$1"); shift; done ;;
-            -*)         echo "$cmd: unknown flag '$1'" >&2; return 2 ;;
-            *)          files+=("$1"); shift ;;
-        esac
-    done
-
-    if [[ ${#files[@]} -eq 0 ]]; then
-        echo "usage: $cmd [-s <sheet>] [-f] <file>..." >&2
-        return 2
-    fi
-
-    # -s selects one sheet to flatten into one delimited file. Converting a
-    # whole workbook to a workbook keeps every sheet, so the flag has nothing
-    # to mean here — say so instead of ignoring it.
-    if [[ "$target" == "xlsx" && -n "$sheet" ]]; then
-        echo "$cmd: -s doesn't apply — a workbook keeps all its sheets" >&2
-        return 2
-    fi
-    [[ -n "$sheet" ]] && sheetarg=(--sheet "$sheet")
-    [[ -n "$codec" ]] && codecarg=("$codec")
-
-    for f in "${files[@]}"; do
-        if [[ ! -f "$f" ]]; then
-            echo "$cmd: no such file: $f" >&2; rc=1; continue
-        fi
-
-        out="${f%.*}.${outext}"
-        if [[ "$out" == "$f" ]]; then
-            echo "$cmd: $f is already .${outext}" >&2; rc=1; continue
-        fi
-        if [[ -e "$out" && $force -eq 0 ]]; then
-            echo "$cmd: $out exists (use -f to overwrite)" >&2; rc=1; continue
-        fi
-
-        # bash 3.2 has no ${var,,}, so lowercase the extension with tr.
-        ext=$(printf '%s' "${f##*.}" | tr '[:upper:]' '[:lower:]')
-        case "$ext" in
-            xlsx|xlsm|xlsb|xls|ods|csv|tsv|tab|txt) ;;
-            parquet|feather|arrow|ipc)
-                # Columnar in, columnar out. Only the python engine reads
-                # these, so they are not valid input for 2csv/2txt/2xlsx.
-                if [[ -z "$columnar" ]]; then
-                    echo "$cmd: don't know how to read '$f'" >&2; rc=1; continue
-                fi
-                ;;
-            *) echo "$cmd: don't know how to read '$f'" >&2; rc=1; continue ;;
-        esac
-
-        if [[ "$target" == "xlsx" ]]; then
-            ssconvert "$f" "$out" >/dev/null 2>&1 \
-                || { echo "$cmd: ssconvert failed on $f" >&2; rc=1; continue; }
-        elif [[ -n "$columnar" ]]; then
-            # Excel never reaches tabular.py. qsv flattens it to a temp CSV
-            # first, because calamine reads legacy BIFF .xls that nothing
-            # else here will, and because Excel stores integers as doubles —
-            # a naive reader turns an id column into 1.0, 2.0.
-            case "$ext" in
-                xlsx|xlsm|xlsb|xls|ods)
-                    local tmp
-                    if ! command -v qsv &>/dev/null; then
-                        echo "$cmd: reading Excel needs qsv — run: make install bash" >&2
-                        rc=1; continue
-                    fi
-                    tmp="$(mktemp -t 2col.XXXXXX)" || { rc=1; continue; }
-                    mv "$tmp" "$tmp.csv"; tmp="$tmp.csv"
-                    if ! qsv excel --quiet "${sheetarg[@]}" --output "$tmp" "$f"; then
-                        rm -f "$tmp"; rc=1; continue
-                    fi
-                    uv run --quiet "${uvargs[@]}" "$script" "$tmp" "$out" "$target" "${codecarg[@]}" || rc=1
-                    rm -f "$tmp"
-                    [[ $rc -eq 0 ]] || continue
-                    ;;
-                *)
-                    uv run --quiet "${uvargs[@]}" "$script" "$f" "$out" "$target" "${codecarg[@]}" \
-                        || { rc=1; continue; }
-                    ;;
-            esac
-        else
-            case "$ext" in
-                xlsx|xlsm|xlsb|xls|ods)
-                    qsv excel --quiet "${sheetarg[@]}" --delimiter "$outdelim" \
-                        --output "$out" "$f" || { rc=1; continue; }
-                    ;;
-                *)
-                    qsv fmt --out-delimiter "$outdelim" --output "$out" "$f" \
-                        || { rc=1; continue; }
-                    ;;
-            esac
-        fi
-        echo "$out"
-    done
-    return $rc
-}
-
-# Function names may begin with a digit in bash.
-2csv()  { _sheet_convert csv  "$@"; }
-2txt()  { _sheet_convert txt  "$@"; }
-2xlsx() { _sheet_convert xlsx "$@"; }
-
-# Columnar targets. These go through bash/tabular.py rather than qsv — see
-# the comment block above _sheet_convert and `h 2parquet`.
-2parquet() { _sheet_convert parquet "$@"; }
-2feather() { _sheet_convert feather "$@"; }
-2pickle()  { _sheet_convert pickle  "$@"; }
 
 # Where this repo lives, resolved from the symlink bashrc was sourced through.
 # `readlink -f` first, plain `readlink` as the fallback -- the order is from
@@ -679,23 +292,6 @@ reload() {
 # why nothing here is called `font`, and why CI checks for it.
 
 
-# ─── .NET clean/build/test aliases ─────────────────────────────────────────────
-
-# dclean: dotnet clean alias
-dclean() {
-    dotnet clean
-}
-
-# dbuild: dotnet build -v:minimal /m:1 alias
-dbuild() {
-    dotnet build -v:minimal /m:1
-}
-
-# dtest: dotnet test alias (overrides dapl2-utils if installed)
-dtest() {
-    dotnet test
-}
-
 # ─── Help System ──────────────────────────────────────────────────────────────
 #
 # `h` shows a quick reference of all custom commands.
@@ -736,21 +332,11 @@ h() {
   File Search
     fzf                Fuzzy everything                   [fzf, fd]
     extract <file>     Auto-extract any archive format
-    compress <out> <path>...  Build one — format from the output name
     findword
-
-  Spreadsheets  ("2" + the format you want)                [qsv]
-    2csv <file>...     → .csv     reads xlsx/xlsm/xlsb/xls/ods/csv/tsv
-    2txt <file>...     → .txt     tab-delimited
-    2xlsx <file>...    → .xlsx    [ssconvert] rarely needed — see h 2*
-    2parquet <file>... → .parquet columnar, compressed        [uv]
-    2feather <file>... → .feather Arrow IPC, fastest to read  [uv]
-    2pickle <file>...  → .pkl     pandas — see h 2*            [uv]
 
   Git (aliases)
     gstashls           stash list
     gstash             stash
-    gstashpush         stash push -m
     gstashpop          stash pop
     gs                 status
     gcommit "msg"      commit -m
@@ -774,20 +360,10 @@ h() {
   Utilities
     port <num>         What's running on this port?
     killport <num>     Kill the process listening on this port
-    serve [port]       HTTP server in current dir (default: 8000)
-    loop <cmd>         Repeat command every 2s (like watch)
-
-  .NET
-    dclean             Remove bin/ and obj/ recursively
-    dbuild             dotnet build
-    dtest              dotnet test
 
   Better Defaults (aliased)
     ls                 eza with icons + dirs first          [eza]
-    ll                 eza -la with git status              [eza]
-    lt                 eza tree (2 levels, git-aware)       [eza]
     cat                bat with syntax highlighting         [bat]
-    catn               bat with line numbers + chrome       [bat]
     clear              Screen only — keeps your scrollback
 
   Keyboard Shortcuts                                       [fzf]
@@ -890,45 +466,6 @@ extract — universal archive extractor
   .gz, .bz2, .7z, .tgz, .tbz2, .Z
 
   No flags to remember — just `extract whatever.tar.gz`.
-
-  See `h compress` for the inverse.
-HELP
-      ;;
-    compress)
-      cat <<'HELP'
-compress — build an archive; the output name picks the format
-
-  compress <archive> <path>...
-  compress -<level> <archive> <path>...   Override compression level
-  compress -f <archive> <path>...         Overwrite an existing archive
-
-  Examples:
-    compress backup.tar.zst src/          tar + zstd (the good default)
-    compress -19 cold.tar.zst src/        maximum, when size is worth the wait
-    compress out.zip a/ b/ notes.txt      several inputs into one zip
-    compress notes.gz notes.txt           single file, no tar
-
-  Formats: .tar.gz .tar.bz2 .tar.xz .tar.zst .tar .zip .7z .gz .bz2 .xz .zst
-  (plus .tgz/.tbz2/.txz/.tzst). `extract` reads back every one of them.
-
-  Reach for .tar.zst. Measured on a 12M CSV, zstd -3 is both smaller and 8x
-  faster than gzip -9 — there is no axis on which gzip wins:
-
-    gzip -6   342ms → 4.7M       zstd -3      54ms → 4.5M
-    gzip -9   418ms → 4.7M       zstd -19   4374ms → 3.9M
-    pigz -9    33ms → 4.7M       xz -9e -T0 5770ms → 3.7M
-
-  Defaults follow from that: gz uses -6 (not -9, which costs 22% more time
-  for nothing), zstd uses -3, and the slow levels are opt-in. Threading is
-  automatic — pigz and pbzip2 replace gzip and bzip2 when installed, and
-  zstd/xz get -T0.
-
-  A bare .gz/.bz2/.xz/.zst takes exactly one file, since there is nowhere to
-  record a second name. Use .tar.<fmt> for directories or multiple inputs;
-  compress tells you so rather than quietly archiving only the first.
-
-  Depends on: tar, plus whichever compressor the extension names. All
-  optional — an unavailable format is reported, never silently substituted.
 HELP
       ;;
     findword)
@@ -950,124 +487,12 @@ findword — whole-word grep across project
   Depends on: rg (ripgrep)
 HELP
       ;;
-    2parquet|2feather|2pickle)
-      cat <<'HELP'
-2parquet / 2feather / 2pickle — columnar conversion
-
-  2parquet <file>...    → .parquet    columnar, compressed, portable
-  2feather <file>...    → .feather    Arrow IPC, fastest to read back
-  2pickle  <file>...    → .pkl        pandas DataFrame
-
-  Same flags as 2csv: -f to overwrite, -s <sheet> to pick one sheet out
-  of a workbook. Plus -c to choose a codec:
-
-    2parquet -c <zstd|snappy|gzip|lz4|brotli|uncompressed>   default zstd
-    2feather -c <uncompressed|lz4|zstd>                      default uncompressed
-
-  Measured on the 200k x 6 frame (12M as csv):
-
-    parquet  zstd 3.3M   gzip 3.3M   snappy 4.6M   uncompressed 8.0M
-    feather  zstd 5.8M   lz4  8.9M   uncompressed 18M
-
-  The defaults differ because the formats are for different jobs. Parquet
-  is what you store or hand to someone, so it defaults to zstd — the same
-  codec `compress` reaches for, and polars' own default. Feather is Arrow
-  IPC, whose point is being memory-mappable and read back at once;
-  compressing it trades away the property you chose it for. That is the
-  whole reason the same frame is 3.3M as parquet and 18M as feather. Pass
-  -c zstd if you want a feather file small enough to move around, but
-  consider whether you wanted parquet.
-
-  Reads everything 2csv reads — xlsx, xlsm, xlsb, legacy .xls, ods, csv,
-  tsv — plus .parquet, .feather, .arrow and .ipc, so these also convert
-  between each other:
-
-    2parquet report.xlsx        workbook  → columnar
-    2feather big.parquet        parquet   → Arrow IPC
-    2csv data.parquet           NOT supported — qsv can't read parquet
-
-  On a 200k x 6 frame: .csv 12M, .parquet 3.2M, .feather 17M. Feather is
-  larger because it is uncompressed and memory-mappable; that is the
-  trade it makes for read speed. Reach for parquet to store or share,
-  feather when the next step reads it back immediately.
-
-  A different engine from the rest of the family. 2csv/2txt are one qsv
-  call; these run bash/tabular.py through `uv run`, which builds a cached
-  Python environment from the script's own PEP 723 header. First run
-  downloads (a few seconds), then it is ~0.2s warm.
-
-  2parquet and 2feather need only polars — 215M cached. 2pickle also
-  needs pandas and pyarrow, which takes it to 476M; those are layered on
-  for that one command rather than declared in the header, so the other
-  two never pay for them.
-
-  Excel is still read by qsv, not by python. _sheet_convert flattens a
-  workbook to a temp CSV first, because calamine reads legacy BIFF .xls
-  that the alternatives refuse, and because Excel stores every number as
-  a double — a naive reader turns an id column into 1.0, 2.0.
-
-  On 2pickle, honestly: a .pkl is a Python-version and library-version
-  coupled artefact, not an interchange format. It stores a pandas frame,
-  so reading it needs pandas of a compatible version, and unpickling a
-  file you did not create executes arbitrary code in it. Use it as a
-  local cache for your own work. If you are handing the file to anyone —
-  including future you on another machine — use 2parquet.
-
-  Depends on: uv, plus qsv for Excel input. Both guarded; a missing one
-  is reported rather than silently skipped.
-HELP
-      ;;
-    2*|qsv)
-      cat <<'HELP'
-2csv / 2txt / 2xlsx — spreadsheet conversion
-
-  One thing to remember: "2" + the format you want. The input type is
-  detected, so you never say what you're converting from.
-
-  2csv report.xlsx             → report.csv
-  2txt report.xlsx             → report.txt (tab-delimited)
-  2csv legacy.xls old.xlsm     Batch: one output per input
-  2csv -s "Q2 Actuals" b.xlsx  Pick a sheet by name or 0-based index
-  2txt data.csv                Re-delimit an existing CSV to tabs
-  2csv -f report.xlsx          Overwrite an existing output
-
-  Reads: .xlsx .xlsm .xlsb .xls .ods .csv .tsv
-  Output is named after the input, so the source is never touched.
-  Refuses to clobber an existing output unless you pass -f.
-  Bad input doesn't stop a batch — the rest still convert, exit is 1.
-
-  Multi-sheet workbooks export the first sheet by default. To list them:
-    qsv excel --metadata c book.xlsx
-
-  Legacy .xls needs nothing special — calamine parses BIFF directly.
-
-  2xlsx is the odd one out and usually unnecessary. qsv reads .xls fine
-  but can't *write* xlsx, so it shells out to ssconvert, which is off by
-  default: uncomment the gnumeric line in deps.conf [bash]. Reach for it
-  only when you need to hand someone a real workbook — not to make a
-  .xls readable, which it already is. -s doesn't apply there, since a
-  workbook keeps all its sheets.
-
-  Why qsv and not duckdb: duckdb's xlsx reader is zip-only, so .xls
-  fails with "Failed to open zip for reading" — the spatial/st_read
-  path fails too. It also types Excel numbers as doubles, so an id
-  column comes out 1.0, 2.0 unless you pass all_varchar=true. duckdb is
-  genuinely faster and lighter, and worth reaching for directly if you
-  want to filter or join during conversion rather than dump a sheet.
-
-  Re-delimiting goes through `qsv fmt`, which is CSV-aware. Don't
-  replace it with tr ',' '\t' — that corrupts quoted fields.
-
-  Depends on: qsv   (make install bash)
-HELP
-      ;;
     gs*|gc*|gpush*|gb*|gfetch*|gpull*)
       cat <<'HELP'
 Git aliases — short forms for daily git commands
 
   gstashls              git stash list
   gstash                git stash
-  gstashpush            git stash push -m "msg"
   gstashpop             git stash pop
   gs                    git status
   gcommit "msg"         git commit -m "msg"
@@ -1271,28 +696,6 @@ killport - kill the process listening on a port
     sudo fuser -k -TERM -n tcp <num>
 
   Linux only (fuser is psmisc, which reads /proc).
-HELP
-      ;;
-    serve)
-      cat <<'HELP'
-serve — quick HTTP server
-
-  serve              Start on port 8000
-  serve 3000         Start on port 3000
-
-  Serves the current directory via python3 -m http.server.
-  Useful for quickly sharing files or testing static sites.
-HELP
-      ;;
-    loop)
-      cat <<'HELP'
-loop — repeat a command (like watch)
-
-  loop ls -la                     Refresh every 2s
-  LOOP_INTERVAL=5 loop df -h     Refresh every 5s
-
-  Clears the screen each iteration and shows a timestamp.
-  Ctrl+C to stop.
 HELP
       ;;
     dots)
