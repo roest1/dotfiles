@@ -134,10 +134,14 @@ inside WezTerm running this repo's config; |:AltFont| reports on it.
 ==============================================================================
 UPKEEP                                                        *dotfiles-upkeep*
 
-    :Lazy                   Plugins: status, update, clean
+    :lua vim.pack.update()  Plugins: fetch what is new and show it. :write
+                            accepts, :quit refuses. Then commit
+                            nvim-pack-lock.json, which is what puts every
+                            machine on the same plugin code.
     :checkhealth external   Are the tools this config needs installed, and
                             which language servers are off for lack of one
-    make -C nvim sync       Install or update plugins and parsers (terminal)
+    make -C nvim sync       Put plugins on the lockfile's commits and remove
+                            any no longer listed (terminal)
 
 Language servers are installed by the dotfiles repo, not from inside nvim:
 `make install nvim` in the repo root.

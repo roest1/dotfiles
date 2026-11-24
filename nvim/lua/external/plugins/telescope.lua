@@ -68,21 +68,23 @@ local function grep(opts)
 end
 
 return {
-  'nvim-telescope/telescope.nvim',
-  event = 'VimEnter',
-  dependencies = {
-    'nvim-lua/plenary.nvim',
-    {
-      'nvim-telescope/telescope-fzf-native.nvim',
-      build = 'make',
-      cond = function()
-        return vim.fn.executable 'make' == 1
-      end,
-    },
-    'nvim-telescope/telescope-ui-select.nvim',
-    'nvim-tree/nvim-web-devicons',
+  add = {
+    'https://github.com/nvim-telescope/telescope.nvim',
+    'https://github.com/nvim-lua/plenary.nvim',
+    'https://github.com/nvim-telescope/telescope-fzf-native.nvim',
+    'https://github.com/nvim-telescope/telescope-ui-select.nvim',
+    'https://github.com/nvim-tree/nvim-web-devicons',
   },
-  config = function()
+  build = {
+    -- The fzf sorter is C. Without the compiled library telescope falls back
+    -- to its Lua sorter (the pcall below), slower but working.
+    ['telescope-fzf-native.nvim'] = function(data)
+      if vim.fn.executable 'make' == 1 then
+        vim.system({ 'make' }, { cwd = data.path }):wait()
+      end
+    end,
+  },
+  setup = function()
     local telescope = require 'telescope'
     local vimgrep = vim.list_extend(vim.deepcopy(require('telescope.config').values.vimgrep_arguments), VISIBLE)
     telescope.setup {

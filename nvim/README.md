@@ -19,8 +19,8 @@ so the config is version-controlled in place — don't clone into it.
 `make install nvim` links the config and installs the `[nvim]` section of
 `../deps.conf`. From inside this directory, `make all` does the same thing by
 delegating upward: `make deps` (the manifest's `[nvim]` section, so there's one
-source of truth for the toolchain) then `make sync` (lazy.nvim plugins +
-tree-sitter parsers, headless). Both are idempotent. Verify with
+source of truth for the toolchain) then `make sync` (plugins at the commits in
+`nvim-pack-lock.json`, plus tree-sitter parsers, headless). Both are idempotent. Verify with
 `:checkhealth external` inside nvim.
 
 **Installs:** neovim, git, make, unzip, ripgrep, fd, stylua, tree-sitter, ruff, plus the language servers — clangd, lua-language-server and lemminx as native binaries, and six JavaScript-based servers from `lsp-servers/package.json` installed with `bun`. `prettier` comes from that same manifest and is run the same way.
@@ -41,8 +41,6 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 ├── lua/
 │   ├── options.lua          Editor settings (tabs, search, clipboard, etc.)
 │   ├── keymaps.lua          Core keybindings
-│   ├── lazy-bootstrap.lua   Plugin manager setup
-│   ├── lazy-plugins.lua     Plugin loader
 │   └── external/
 │       ├── reqs.lua         Tool dependency list (used by deps + health)
 │       ├── lsp_servers.lua  Language server definitions (cmd/args/settings)
@@ -89,7 +87,7 @@ in both directions. `:KeymapUsage` shows which of them you actually press.
 
 | Command        | What                                 |
 | -------------- | ------------------------------------ |
-| `:Lazy update`  | Update plugins                       |
+| `:lua vim.pack.update()` | Update plugins: read the changes, `:write` to accept, then commit `nvim-pack-lock.json` |
 | `:checkhealth`  | Verify tools + formatters            |
 | `:KeymapUsage`  | Which mappings you never press       |
 

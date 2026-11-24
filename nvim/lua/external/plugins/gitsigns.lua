@@ -1,23 +1,9 @@
--- Alternatively, use `config = function() ... end` for full control over the configuration.
--- If you prefer to call `setup` explicitly, use:
---    {
---        'lewis6991/gitsigns.nvim',
---        config = function()
---            require('gitsigns').setup({
---                -- Your gitsigns configuration here
---            })
---        end,
---    }
---
--- Here is a more advanced example where we pass configuration
--- options to `gitsigns.nvim`.
---
--- See `:help gitsigns` to understand what the configuration keys do
+-- Git change signs in the gutter, and ]c / [c to move between changes.
+-- `:help gitsigns` says what the keys below mean.
 return {
-  { -- Adds git related signs to the gutter, as well as utilities for managing changes
-    'lewis6991/gitsigns.nvim',
-    event = { 'BufReadPre', 'BufNewFile' },
-    opts = {
+  add = { 'https://github.com/lewis6991/gitsigns.nvim' },
+  setup = function()
+    require('gitsigns').setup {
       signs = {
         add = { text = '+' },
         change = { text = '~' },
@@ -34,7 +20,7 @@ return {
           vim.keymap.set(mode, l, r, opts)
         end
 
-        -- Navigation
+        -- In a diff window ]c and [c keep their built-in meaning.
         map('n', ']c', function()
           if vim.wo.diff then
             vim.cmd.normal { ']c', bang = true }
@@ -51,6 +37,6 @@ return {
           end
         end, { desc = 'Jump to previous git [c]hange' })
       end,
-    },
-  },
+    }
+  end,
 }

@@ -16,7 +16,7 @@
 ; linked to ~/.config/git/config, which git reads alongside this file.
 ;
 ; The owner is on both sides of each rule. insteadOf swaps only the matched
-; prefix, so a bare https://github.com/ rule would also send lazy.nvim's plugin
+; prefix, so a bare https://github.com/ rule would also send nvim's plugin
 ; clones over SSH and fail on a machine with no key.
 [url "git@github.com:roest1/"]
 	insteadOf = https://github.com/roest1/

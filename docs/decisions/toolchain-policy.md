@@ -91,7 +91,7 @@ What `make install` applies, by lane:
 | --- | --- |
 | mise tools | yes, as above |
 | `nvim/lsp-servers` (bun) | yes, `bun install --frozen-lockfile` on every run |
-| `nvim/lazy-lock.json` | yes, `make -C nvim sync` |
+| `nvim/nvim-pack-lock.json` | yes, `make -C nvim sync` checks out the pinned commits |
 | `tui/` crates | yes, `cargo install --locked --path` |
 | distro packages | no: tier 1, the distro's own upgrade (`dnf upgrade`) |
 | uv | no: `uv self update` |
@@ -159,7 +159,7 @@ rule makes on purpose: the distro's security stream is tier 1's screen.
 | GitHub Actions | Dependabot | working |
 | `mise.toml` / `mise.lock` | Renovate (`renovate.json`), version bumps only | configured; needs the Renovate GitHub app on the repo. No advisory database covers these as CLI tools |
 | distro packages | the distro | `dnf updateinfo --security` / `apt list --upgradable` |
-| `nvim/lazy-lock.json` | nothing | no advisory database exists; pinned commits are the mitigation |
+| `nvim/nvim-pack-lock.json` | nothing; `:lua vim.pack.update()` by hand | no advisory database exists; pinned commits are the mitigation. Real only since 2026-11: the lazy.nvim lockfile before it was untracked, and every install updated to the newest commits |
 
 Every version PR, from either bot, waits for a release to be 7 days old
 (`cooldown` in `dependabot.yml`, `minimumReleaseAge` in `renovate.json`, and

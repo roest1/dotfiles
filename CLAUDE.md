@@ -144,7 +144,7 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
   So is `gh auth setup-git`: answer **no** to gh's *"Authenticate Git with your GitHub
   credentials?"*. GitHub auth is SSH. `git/gitconfig` declares no credential helper and
   rewrites only this account's owners to `git@github.com:`; a bare `https://github.com/`
-  rewrite would break lazy.nvim's clones on a machine with no key. CI rejects both. (A
+  rewrite would break nvim's plugin clones on a machine with no key. CI rejects both. (A
   `helper = store` here once left a plaintext token on every machine.)
 - **After editing `claude/settings.json`, run `claude doctor </dev/null`** and read its
   `Invalid settings` block. Claude Code silently skips a malformed entry, so a typo in a
