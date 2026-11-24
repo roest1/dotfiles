@@ -121,6 +121,18 @@ function M.definitions()
       },
     },
 
+    -- Rust. A rustup component (nvim/deps.sh), so it matches the toolchain.
+    rust_analyzer = {},
+
+    -- Python, Astral's pair: ruff lints, ty navigates and type-checks. Both
+    -- come from uv. Formatting is conform's job (ruff_format), not ruff's
+    -- server, so there is one place that decides what runs on save.
+    ruff = {},
+    ty = {},
+
+    -- SQL lint. The dialect (postgres) is set per project in a `.sqruff` file.
+    sqruff = {},
+
     -- ── native binary from an npm package ────────────────────────────
     -- nvim-lspconfig's lsp/tsc.lua probes for a tsc >= 7 on $PATH or in the
     -- project's node_modules/.bin and refuses to attach without one. Ours is in

@@ -4,7 +4,7 @@ Guidance for Claude Code (claude.ai/code) when working in this repository.
 
 ## Overview
 
-A modular Neovim configuration built on **lazy.nvim**, forked from kickstart-modular.nvim. Maintained by [@roest1](https://github.com/roest1). Requires Neovim 0.12+ — set by roslyn.nvim, which refuses to load below it.
+A modular Neovim configuration built on **lazy.nvim**, forked from kickstart-modular.nvim. Maintained by [@roest1](https://github.com/roest1). Requires Neovim 0.12+: `altfont.lua` needs 0.12's `blink` highlight attribute, and roslyn.nvim (off, see below) refuses to load below it.
 
 ## Bootstrap & Dependencies
 
@@ -24,15 +24,14 @@ with a real LSP handshake.
 
 ## Architecture
 
-**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `reset`, `altfont`, `usage`). `oilgit` is the exception: oil's own `config` loads it, because it has nothing to do until oil does.
+**Entry point:** `init.lua` loads in order: leader key (`<space>`) → `options` → `keymaps` → `lazy-bootstrap` → `lazy-plugins` → custom modules (`findreplace`, `copy`, `pasteimg`, `altfont`, `usage`). `oilgit` is the exception: oil's own `config` loads it, because it has nothing to do until oil does.
 
-**Plugin loading:** `lua/lazy-plugins.lua` calls `lua/external/plugins/init.lua`, which holds a hardcoded `plugin_modules` list (currently 16 entries). Each plugin is a separate file in `lua/external/plugins/` returning a lazy.nvim spec table.
+**Plugin loading:** `lua/lazy-plugins.lua` calls `lua/external/plugins/init.lua`, which holds a hardcoded `plugin_modules` list. Each plugin is a separate file in `lua/external/plugins/` returning a lazy.nvim spec table. A plugin is turned off by commenting its line there; `roslyn` (C#) is off that way, with its spec file and its install step in `deps.sh` kept so one line brings it back.
 
 **Custom modules** (not lazy.nvim plugins — loaded directly in `init.lua`):
 - `lua/external/copy.lua` — `:Copy` command, copies file contents to clipboard for LLM sharing
 - `lua/external/findreplace.lua` — `:Find` and `:FindReplace` using rg/fd
 - `lua/external/pasteimg.lua` — paste an image from the clipboard into a buffer
-- `lua/external/reset.lua` — `:ResetNvim` nuclear plugin reset
 - `lua/external/altfont.lua` — renders file buffers in a different terminal font from oil and the rest of the UI. See below.
 - `lua/external/usage.lua` — `:KeymapUsage`, counts real presses of each mapping into `stdpath('state')`, outside the work tree. See "Pruning is measured" below.
 - `lua/external/oilgit.lua` — `:OilGit`, the diffstat column in oil; loaded from `plugins/oil.lua`, not `init.lua`.
@@ -71,7 +70,7 @@ Three things not to "tidy":
   `~/.config/wezterm/fonts` before emitting anything. Both directions are
   asserted in CI, because neither is visible to whoever writes the code.
 - **`buftype` is what excludes oil**, which is `acwrite`. Terminals, telescope,
-  trouble, help and quickfix are excluded the same way; only a file-backed
+  help and quickfix are excluded the same way; only a file-backed
   buffer is `''`. The URL-scheme test next to it is the belt to that braces.
 
 `:AltFont` reports what it decided and why; `:AltFont toggle` turns it off for
@@ -83,8 +82,9 @@ the session. `font` (in bash) picks which family the lane maps to.
 - Plugin files return a table (or list of tables) consumable by lazy.nvim
 - LSP servers are defined in `lua/external/lsp_servers.lua` (a plain table, kept out of the plugin spec so `nvim/tests/lsp_servers_spec.lua` can assert on it under `--clean`) and wired up in `lua/external/plugins/lsp.lua`. There is no Mason: native servers are declared in `../deps.conf`, JS ones in `lsp-servers/package.json` and run as `bun <path>` via explicit `cmd` overrides. TypeScript's `tsc` (TS 7, native) also comes from `lsp-servers/package.json` but runs as the platform binary directly, with no runtime
 - Formatters are configured in `lua/external/plugins/formatter.lua` (conform.nvim) by filetype
-- Linters are configured in `lua/external/plugins/lint.lua` (nvim-lint) by filetype
-- There is no completion plugin. `blink.cmp` sat in the list as `enabled = false` from 2026-06 to 2026-10 and was deleted rather than kept off; servers get `vim.lsp.protocol.make_client_capabilities()` and `lsp.lua` says where an engine would plug back in
+- There is no lint plugin. Lint is a language server's diagnostics (`ruff` for Python, `sqruff` for SQL, shellcheck through `bashls`); nvim-lint was removed in 2026-11 when its one linter, ruff, moved to `ruff server`
+- `plugins/lsp.lua` enables a server only if its binary is on PATH, so a machine that has not run `make install nvim` degrades instead of erroring; `:checkhealth external` names what is off
+- There is no completion plugin. Completion is nvim's own (`vim.lsp.completion.enable` with `autotrigger`, set up in `plugins/lsp.lua`), which opens on a server's trigger characters. `blink.cmp` sat in the list as `enabled = false` from 2026-06 to 2026-10 and was deleted rather than kept off
 
 ## Adding a New Plugin
 
@@ -93,16 +93,11 @@ the session. `font` (in bash) picks which family the lane maps to.
 
 ## Help Documentation
 
-Custom help files live in `doc/` (`:help dotfiles-*`): keymaps, plugins, workflows, options, commands, harpoon. After editing any doc file, regenerate tags with `:helptags ~/.config/nvim/doc`.
+`doc/dotfiles.txt` (`:help dotfiles`) is the whole of it: one page listing every key, command and automatic behavior this config adds. It replaced six pages (about 1,350 lines) in 2026-11 because nobody reread them; a page short enough to drill is the point, so resist growing it back into a reference. After editing it, regenerate tags with `:helptags ~/.config/nvim/doc`.
 
-**These docs cover this config only.** Two things they deliberately do not cover:
+**It covers this config only.** Vim itself (motions, operators, registers) is `:help motion.txt`, which always matches the installed version. The shell is `h` in a terminal. Don't reintroduce a doc that crosses those lines.
 
-- **Vim itself** — motions, operators, text objects, registers. `:help motion.txt` is authoritative and always matches the installed version; a local copy can only drift. `doc/dotfiles-motions.txt` was exactly that and was removed (258 lines, of which 10 mentioned this config at all).
-- **The shell** — that's `h` in a terminal. `doc/dotfiles-bash.txt` put bash docs in the editor's help and had already gone stale, still telling you to run `./bootstrap.sh` from the nvim config and `brew install` the tools that `deps.conf` now owns.
-
-The rule: the shell documents the shell, the editor documents the editor, and neither documents vim or git themselves. Don't reintroduce a doc that crosses those lines.
-
-The README is a short orientation page (install + keymap quick-reference + pointers into `:help`).
+The README is a short orientation page (install + keymap quick-reference + a pointer to `:help dotfiles`).
 
 ## Pruning is measured, and the docs are checked
 
@@ -118,99 +113,19 @@ exist so that does not repeat:
   accident. Do not move it under `~/.config/nvim`, which is a symlink into
   the repo. `tools/usage.sh` in the repo root prints it next to the shell's
   history counts. The next cleanup deletes zeros; it does not guess.
-  **Until 2026-11-23 it undercounted:** which-key's nowait per-buffer triggers
+  **Until 2026-11-23 it undercounted:** which-key's (since removed) nowait per-buffer triggers
   (`<Space>`, `g`, `[`, `]`, `z`, `<C-W>`, ...) were counted in place of the
   mapping behind them, so a zero under one of those prefixes means nothing
   before that date. `nvim/tests/usage_spec.lua` (`make test`) keeps it fixed.
 - **CI checks `doc/` against `lua/` in both directions** (the `nvim`
   job): every `<leader>` key named in `doc/*.txt` or `README.md` must be
   defined under `lua/`, every `<leader>` key defined under `lua/` must be
-  named in `doc/dotfiles-keymaps.txt`, and every `nvim_create_user_command`
-  must have a page in `doc/`. A mapping and its help line change in the same
+  named in `doc/dotfiles.txt`, and every `nvim_create_user_command`
+  must have a line there. A mapping and its help line change in the same
   commit.
 
-## Maintenance & Audit
+## Pruning
 
-As the config grows, unused components accumulate (plugins you disabled, keybinds for removed tools, settings that conflict). Start from `:KeymapUsage` and `tools/usage.sh`; the framework below is for what those cannot see:
+Start from `:KeymapUsage` and `tools/usage.sh`. What they cannot see is anything passive: gutter signs, the oil diffstat, the font and color lanes, format on save. A zero for those means nothing, so ask before cutting one.
 
-### Unused External Plugins
-
-**Discovery:** List `plugin_modules` in `lua/external/plugins/init.lua`, then check for actual use:
-
-```lua
--- For each plugin_module entry, answer: Is it used?
--- ✓ Has active keybinds (grep lua/keymaps.lua)
--- ✓ Referenced in help docs (grep doc/*.txt for [plugin-name])
--- ✓ Has custom setup/config that's irreplaceable
--- ✗ Keybinds removed in previous cleanups (grep git log -p for deletions)
--- ? Uncertain: check :help [plugin-name] to understand its default behavior
-```
-
-**Action:** Plugins with no keybinds, no references, and default config candidates for removal. Remove from `plugin_modules` list, delete the file from `lua/external/plugins/`, and remove any keybinds/help from `lua/keymaps.lua` and `doc/dotfiles-keymaps.txt`.
-
-### Unused Custom Modules
-
-**Discovery:** Check `init.lua` for loaded modules. Each should have a `:command` that appears in `doc/dotfiles-commands.txt` with actual usage notes.
-
-```lua
--- lua/external/findreplace.lua  → :Find, :FindReplace in dotfiles-commands.txt?
--- lua/external/copy.lua         → :Copy in dotfiles-commands.txt?
--- lua/external/reset.lua        → :ResetNvim in dotfiles-commands.txt?
--- lua/external/oilgit.lua       → :OilGit in dotfiles-plugins.txt (oil section)?
--- lua/external/pasteimg.lua     → :PasteImage in dotfiles-plugins.txt (oil section)?
-```
-
-**Action:** Remove from `init.lua` and delete the module file if undocumented or not referenced in help.
-
-### Unused Keybinds
-
-**Discovery:** `lua/keymaps.lua` is the source of truth. Cross-check against:
-- Plugins actually in `plugin_modules`
-- LSP servers in `lsp.lua`
-- Formatter/linter filetypes in `formatter.lua` / `lint.lua`
-- Help docs in `doc/dotfiles-keymaps.txt`
-
-```bash
-# Example: grep for removed plugin keybinds
-git log -p lua/keymaps.lua | grep -E '^\-.*keymap.set' | head -20
-```
-
-**Action:** Remove obsolete keybinds (e.g., `<leader>e` if its plugin was removed). Update `doc/dotfiles-keymaps.txt` to match.
-
-### Unused Settings & Options
-
-**Discovery:** `lua/options.lua` is small, but check for:
-- Autocmds that reference removed plugins
-- Highlight overrides for plugins no longer loaded
-- Vim settings configured for removed language servers
-
-```bash
-grep -n 'nvim_create_autocmd\|nvim_set_hl' lua/options.lua
-# For each autocmd/hl, verify the plugin/tool still exists
-```
-
-**Action:** Remove dead autocmds, highlight groups, and settings tied to removed tools.
-
-### Unused LSP Servers, Formatters, Linters
-
-**Discovery:** Each language server in `lsp.lua`, formatter in `formatter.lua`, and linter in `lint.lua` should be either:
-- Active for filetypes you actively edit (lua, typescript, python, etc.)
-- A well-understood fallback (e.g., lua_ls for all Lua)
-
-Check your actual file editing patterns:
-```bash
-# What filetypes do you edit?
-git log --name-only --pretty=format: | sort | uniq | grep -oE '\.\w+$' | sort | uniq -c | sort -rn
-```
-
-**Action:** Remove servers/formatters/linters for filetypes you don't edit. Keep LSP servers general (lua_ls, tsc) unless you have a specific reason (e.g., a project-specific configuration).
-
-### Doc Tag Regeneration
-
-After any of the above cleanup, regenerate doc tags:
-
-```vim
-:helptags ~/.config/nvim/doc
-```
-
-Verify no stale references remain in `doc/tags` (git diff should show only removals, not additions for deleted plugins).
+A cut is complete when the spec file or module, its `plugin_modules` or `init.lua` line, its lines in `doc/dotfiles.txt` and `README.md`, and any tool it alone needed in `../deps.conf` are all gone in the same commit. Language servers and formatters follow the filetypes actually edited by hand: bash, yaml, json, lua, python, rust, c, typescript, sql, plus xml, css and html.

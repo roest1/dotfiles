@@ -1,98 +1,146 @@
-*dotfiles.txt*    Neovim Configuration Documentation
+*dotfiles.txt*    Everything this nvim config adds, on one page
 
 ==============================================================================
-NEOVIM CONFIGURATION                                                 *dotfiles*
+THIS CONFIG                                                          *dotfiles*
 
-Welcome back! This is your Neovim setup.
+Leader is <Space>. This page lists only what this config adds or changes.
+Vim itself (motions, operators, registers) is in the built-in help:
+|motion.txt|, |operator|, |text-objects|. The shell is `h` in a terminal.
 
-If you're reading this after a long break, start here:
-    1. Run `:checkhealth` to verify everything works
-    2. Read |dotfiles-quickstart| for the essentials
-    3. Browse |dotfiles-keymaps| for every mapping -- it is short on purpose
-    4. Check |dotfiles-plugins| for what each plugin does
-
-==============================================================================
-QUICK START                                                   *dotfiles-quickstart*
-
-Your most important keymaps (leader is <Space>):
-
-    Finding things~
-    <leader>sf      Find files in project
-    <leader>sg      Search text (grep) across project
-
-    Navigation~
-    -             Open file browser (Oil)
-    <leader>-     File browser in floating window
-    <C-h/j/k/l>   Move between splits
-    L             End of line
-
-    Working with files~
-    <leader>a     Add file to Harpoon (your "tabs")
-    <C-n>/<C-p>   Next/prev Harpoon file
-    <C-e>         Show Harpoon quick menu
-
-    Code intelligence~
-    grd           Go to definition
-    grr           Find references
-    grn           Rename symbol
-    gra           Code action
-    <leader>l     Format code
-
-    Editing~
-    sa"           Surround with quotes (visual or motion)
-    sd"           Delete surrounding quotes
-    sr"'          Replace surrounding " with '
-
-There is no completion menu; see |dotfiles-plugins| for why.
+CI checks this page against the config in both directions: a mapping or
+command and its line here change in the same commit.
 
 ==============================================================================
-DOCUMENTATION INDEX                                              *dotfiles-index*
+KEYS                                                            *dotfiles-keys*
 
-|dotfiles-keymaps|     Every keymap, organized by category
-|dotfiles-plugins|     What each plugin does and how to use it
-|dotfiles-workflows|   "How do I..." recipes for common tasks
-|dotfiles-commands|    Custom commands you've created
-|dotfiles-harpoon|     Harpoon workflow
+Move around~
+    -               Open the file browser (oil) on the current directory
+    <leader>-       The same, in a floating window
+    <leader>sf      Search files by name
+    <leader>sg      Search text inside files, typed literally
+    <C-h/j/k/l>     Move to the split on that side
+    L               End of line
 
-These docs cover THIS config. For Vim itself -- motions, operators, text
-objects, registers -- use the built-in help, which is authoritative and never
-goes stale: |motion.txt|, |operator|, |text-objects|, |registers|.
+Both searches cover the repo that holds what you are looking at (the oil
+directory or the current file), hidden files included; the prompt title says
+where. Grep reads what you type as plain text, so `setup(` and `[nvim]` find
+exactly that. Inside the grep prompt, <C-e> switches to regex and back.
 
-For the shell, run `h` in a terminal (`h <command>` for detail). The shell
-documents the shell; this documents the editor.
+Inside oil~
+    <CR>            Open the file or directory
+    -               Up one directory
+    g?              Oil's own key list
+Edit the listing like text to rename, delete or create files; :w applies it.
+The +N -N at the right edge is each file's change since the last commit.
 
-CI checks |dotfiles-keymaps| against the config in both directions, and that
-every custom command has a page in |dotfiles-commands|. A mapping and its
-line of help change in the same commit, or the build says which one did not.
+Code~
+    grd             Go to definition
+    grr             List references
+    gri             List implementations
+    grt             Go to type definition
+    grD             Go to declaration
+    grn             Rename (nvim's own key)
+    gra             Code action, including a linter's suggested fix
+    K               Hover documentation (nvim's own key)
+    gO              Symbols in this file
+    gW              Symbols in the project
+    ]c  [c          Next / previous git change in the file
+    <leader>l       Format the file, or the selection in visual mode
+These need a language server attached; `:checkhealth vim.lsp` says which is.
+
+Completion~
+    The popup opens by itself after the characters a server asks for, such
+    as `.` or `::`.
+    <C-x><C-o>      Open it anywhere (insert mode)
+    <C-n>  <C-p>    Next / previous item
+    <C-y>           Accept
+    <C-e>           Dismiss
+
+Small things~
+    <Esc>           Clear search highlighting
+    :%y             Yank the whole buffer to the system clipboard
 
 ==============================================================================
-LEADER KEY                                                      *dotfiles-leader*
+COMMANDS                                                    *dotfiles-commands*
 
-Your leader key is <Space>. When you see `<leader>` in docs, press Space.
+                                                                        *:Copy*
+:Copy               Copy file contents to the clipboard, each wrapped in
+                    start/end markers, for pasting into a chat.
+    :Copy               every file in the current directory
+    :Copy -r            the same, with subdirectories
+    :Copy --ext=lua     only that extension; --ext={lua,py} for several
+    V then :Copy        in oil: the selected files
+                        in a file: the selected lines, with path and range
+Respects .gitignore and skips binary files.
 
-Example: `<leader>sf` means press Space, then s, then f.
+                                                           *:Find* *:FindReplace*
+:Find {word}        Load every file containing {word} into the argument
+                    list; :next and :prev walk it.
+:FindReplace {old} {new}
+                    Replace across those files, asking at each match
+                    (y yes, n no, a all in this file, q quit). No spaces in
+                    either argument; {old} is a Vim regex.
+
+                                                                  *:PasteImage*
+:PasteImage         Save the image on the clipboard as a PNG in the directory
+                    oil is showing (or next to the current file).
+                    `:PasteImage --rename name.png` names it.
+
+                                                                  *:YankBuffer*
+:YankBuffer         What :%y runs.
+
+                                                                      *:OilGit*
+:OilGit             Turn the +N -N column in oil off or on.
+
+                                                                     *:AltFont*
+:AltFont            Say whether files are being drawn in the editor font, and
+                    why not if not. `:AltFont toggle` turns it off until exit.
+
+                                                                 *:KeymapUsage*
+:KeymapUsage        Every mapping and command with how often you used it,
+                    never-used first. `:KeymapUsage reset` starts over.
 
 ==============================================================================
-FILE STRUCTURE                                               *dotfiles-structure*
+WHAT HAPPENS ON ITS OWN                                         *dotfiles-auto*
 
-The directory tree lives in nvim/README.md, and only there. It used to be
-duplicated here and had already drifted -- this copy still listed a
-bootstrap.sh that lives in the dotfiles root, not in nvim/, and predated
-lsp_servers.lua entirely. One tree, one place to update.
+    Saving          :w formats the file first (stylua, prettier, ruff, or the
+                    language server) and puts the cursor back.
+    Yanking         The text flashes and a message says how much was copied.
+                    Yanks go to the system clipboard.
+    Images, PDFs    Opening one launches the desktop viewer instead of
+                    loading bytes. `:noautocmd e file.pdf` loads it anyway.
+    Symbols         Resting the cursor on a name highlights its other uses.
+    Undo            History survives closing the file.
+    Quitting        :q with unsaved changes asks instead of failing.
 
 ==============================================================================
-GETTING HELP                                                    *dotfiles-help*
+LOOKS                                                          *dotfiles-looks*
 
-    :help dotfiles             This file
-    :help dotfiles-keymaps     All keybindings
-    :help dotfiles-plugins     Plugin reference
-    :help dotfiles-workflows   Common tasks
-    :help dotfiles-commands    Custom commands
+Two lanes, colored and typeset separately:
+    ui              oil, telescope, floats, the gutter and the statusline
+    editor          windows showing a file you write
 
-    :Telescope help_tags    Search all help
-    :Telescope keymaps      Search keymaps
-    :KeymapUsage            Which mappings you actually press
-    :checkhealth            Verify setup is working
+Colors come from ~/.config/dotfiles/theme.conf (per machine, optional):
+    nvim.ui                  = rose-pine-moon
+    nvim.ui.transparent      = true
+    nvim.editor              = onedark
+    nvim.editor.transparent  = false
+No file means rose-pine-moon, transparent, in both. dracula and onedark are
+installed. Changes apply on the next start.
+
+The editor lane's font is picked with `font` in a terminal. It only works
+inside WezTerm running this repo's config; |:AltFont| reports on it.
+
+==============================================================================
+UPKEEP                                                        *dotfiles-upkeep*
+
+    :Lazy                   Plugins: status, update, clean
+    :checkhealth external   Are the tools this config needs installed, and
+                            which language servers are off for lack of one
+    make -C nvim sync       Install or update plugins and parsers (terminal)
+
+Language servers are installed by the dotfiles repo, not from inside nvim:
+`make install nvim` in the repo root.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

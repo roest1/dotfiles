@@ -18,6 +18,8 @@ return {
       'tsx',
       'terraform',
       'python',
+      'rust',
+      'toml',
     }
   end,
 }

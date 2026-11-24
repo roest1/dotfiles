@@ -52,25 +52,16 @@ There is no Mason, and no node, npm or pip anywhere in the toolchain. Every serv
 │       ├── oilgit.lua       :OilGit diffstat column in Oil
 │       ├── altfont.lua      :AltFont, the alternate-font carrier
 │       ├── usage.lua        :KeymapUsage, counts real presses per mapping
-│       ├── reset.lua        :ResetNvim command
 │       ├── health.lua       :checkhealth integration
 │       └── plugins/         One file per plugin
 │           ├── formatter.lua       Formatter config (conform.nvim)
 │           ├── gitsigns.lua        Git gutter signs + staging
-│           ├── harpoon.lua         Working file set
-│           ├── lint.lua            Async linting (nvim-lint)
 │           ├── lsp.lua             Language server setup (no Mason)
-│           ├── mini.lua            Surround
-│           ├── render-markdown.lua In-buffer markdown rendering (:Render)
 │           ├── oil.lua             File browser
-│           ├── roslyn.lua          C# language server
+│           ├── roslyn.lua          C# language server (off; see plugins/init.lua)
 │           ├── telescope.lua       Fuzzy finder
 │           ├── theme.lua           Colorschemes on offer (default Rose Pine Moon)
-│           ├── todo-comments.lua   TODO/FIXME highlighting
-│           ├── treesitter.lua      Syntax highlighting
-│           ├── trouble.lua         Diagnostics panel
-│           ├── undotree.lua        Visual undo history
-│           └── which-key.lua       Keymap discovery popup
+│           └── treesitter.lua      Syntax highlighting
 └── doc/                     Help files (:help dotfiles)
 ```
 
@@ -84,28 +75,15 @@ docs are authoritative and always match your version.
 | Keys              | Action                    |
 | ----------------- | ------------------------- |
 | `<leader>sf`      | Find files                |
-| `<leader>sg`      | Grep across project       |
+| `<leader>sg`      | Search text, plain by default |
 | `-`               | File browser (Oil)        |
-| `<leader>a`       | Add file to Harpoon       |
-| `<C-n>` / `<C-p>` | Next/prev Harpoon file    |
 | `grd`             | Go to definition          |
 | `grr`             | Find references           |
 | `grn`             | Rename symbol             |
 | `<leader>l`       | Format file               |
 
-Full reference: `:help dotfiles-keymaps`. It is short on purpose, and CI
-checks it against the config in both directions. `:KeymapUsage` shows which of
-them you actually press.
-
-## Documentation
-
-| Command                 | What                       |
-| ----------------------- | -------------------------- |
-| `:help dotfiles`           | Start here                 |
-| `:help dotfiles-keymaps`   | All keybindings            |
-| `:help dotfiles-plugins`   | Plugin reference           |
-| `:help dotfiles-workflows` | "How do I..." recipes      |
-| `:help dotfiles-commands`  | Custom commands            |
+Full reference: `:help dotfiles`, one page, checked by CI against the config
+in both directions. `:KeymapUsage` shows which of them you actually press.
 
 ## Maintenance
 
@@ -114,7 +92,6 @@ them you actually press.
 | `:Lazy update`  | Update plugins                       |
 | `:checkhealth`  | Verify tools + formatters            |
 | `:KeymapUsage`  | Which mappings you never press       |
-| `:ResetNvim`    | Nuclear reset (reinstall everything) |
 
 Language servers aren't managed from inside the editor. Native ones are declared
 in `../deps.conf` (`make install nvim`); the JavaScript ones live in

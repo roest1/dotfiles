@@ -8,7 +8,7 @@
 #   make deps         Install nvim + external deps (via ../deps.conf)
 #   make sync         Install/update plugins + compile TS parsers (headless)
 #   make update       git pull + deps + sync
-#   make clean        Wipe plugin + cache state (matches :ResetNvim)
+#   make clean        Wipe plugin + cache state (plugins reinstall on next start)
 #   make all          deps + sync
 #
 # Verify install with :checkhealth external inside nvim.
@@ -22,7 +22,7 @@ UNAME := $(shell uname -s)
 # `make -C "<repo>/nvim"`, which sets CURDIR to exactly this directory.
 NVIM_DIR := $(CURDIR)
 
-# Paths wiped by `make clean` — matches lua/external/reset.lua
+# Paths wiped by `make clean`
 CLEAN_PATHS := $(HOME)/.local/share/nvim $(HOME)/.cache/nvim
 
 # --------------------------------------------------------------------------- #

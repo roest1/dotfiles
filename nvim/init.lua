@@ -1,35 +1,9 @@
--- ~/.config/nvim/init.lua
-
---[[
-
-Important Links / references:
------------------------------
-
-Inspiration from: https://github.com/dam9000/kickstart-modular.nvim.git
-
-
-How Neovim integrates Lua: `:help lua-guide` 
-- (or HTML version): https://neovim.io/doc/user/lua-guide.html
-
-Neovim Tutor: `:Tutor`
-
-Help: `:help dotfiles` for this config, `:help` for everything else
-- (or telescope version): `:Telescope help_tags`
-- several `:help X` options for relevant settings, plugins, or Neovim features
-
-Check Health: `:checkhealth` 
-- tells you what plugins are missing or misconfigured
-
---]]
-
--- Set <space> as the leader key
--- See `:help mapleader`
---  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
-vim.g.mapleader = ' ' -- global leader key
-vim.g.maplocalleader = ' ' -- used for mappings that only make sense in certain filetypes or buffers
-
--- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = true
+-- Entry point. `:help dotfiles` is the one page that says what this config adds.
+--
+-- Order matters once: the leader key must be set before any plugin loads, or
+-- their <leader> mappings bind to the wrong key.
+vim.g.mapleader = ' '
+vim.g.maplocalleader = ' '
 
 -- [[ Setting options ]]
 require 'options'
@@ -46,6 +20,5 @@ require 'lazy-plugins'
 require('external.findreplace').setup()
 require('external.copy').setup()
 require('external.pasteimg').setup()
-require('external.reset').setup()
 require('external.altfont').setup()
 require('external.usage').setup()

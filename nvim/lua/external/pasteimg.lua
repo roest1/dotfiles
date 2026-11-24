@@ -21,7 +21,7 @@
 --   • Linux / X11     → xclip      (package: xclip)
 --
 -- See lua/external/reqs.lua, deps.sh, and `:checkhealth external` for the
--- per-platform tool. Documented in `:help dotfiles-plugins-oil`.
+-- per-platform tool. Documented in `:help :PasteImage`.
 
 local M = {}
 

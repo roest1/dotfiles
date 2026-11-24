@@ -1,80 +1,100 @@
--- NOTE: Plugins can specify dependencies.
+-- Fuzzy finder: <leader>sf (files) and <leader>sg (text in files).
 --
--- The dependencies are proper plugin specifications as well - anything
--- you do for a plugin at the top level, you can do for a dependency.
+-- Three defaults differ from stock telescope, each because the stock one
+-- returned nothing without saying why:
 --
--- Use the `dependencies` key to specify the dependencies of a particular plugin
+--   * Grep is PLAIN TEXT. Stock live_grep reads the prompt as a regex, so
+--     `setup(` is a syntax error (an empty list) and `[nvim]` is a character
+--     class (every line with an n, v, i or m). <C-e> in the picker switches to
+--     regex and back, keeping what you typed. The prompt title says which.
+--   * Hidden files are searched, .git/ is not. Half of a dotfiles repo starts
+--     with a dot.
+--   * The search starts at the repo containing what you are looking at (the
+--     oil directory or the current file), not at wherever nvim was launched.
+--     Outside a repo it is that directory itself. The prompt title shows it.
+
+-- rg does both jobs so there is one set of rules for what is visible.
+local VISIBLE = { '--hidden', '--glob', '!**/.git/*' }
+
+local function search_root()
+  local dir
+  local ok, oil = pcall(require, 'oil')
+  if ok then
+    dir = oil.get_current_dir()
+  end
+  if not dir then
+    local name = vim.api.nvim_buf_get_name(0)
+    if vim.bo.buftype == '' and name ~= '' then
+      dir = vim.fs.dirname(name)
+    end
+  end
+  dir = dir or vim.uv.cwd()
+  return vim.fs.root(dir, '.git') or dir
+end
+
+local function title(what, root)
+  return ('%s in %s'):format(what, vim.fn.fnamemodify(root, ':~'))
+end
+
+local function find_files()
+  local root = search_root()
+  require('telescope.builtin').find_files {
+    cwd = root,
+    prompt_title = title('Files', root),
+    find_command = vim.list_extend({ 'rg', '--files', '--color', 'never' }, VISIBLE),
+  }
+end
+
+local function grep(opts)
+  opts = opts or {}
+  local root = opts.root or search_root()
+  local regex = opts.regex or false
+  require('telescope.builtin').live_grep {
+    cwd = root,
+    default_text = opts.text,
+    prompt_title = title(regex and 'Grep REGEX (<C-e>: plain text)' or 'Grep plain text (<C-e>: regex)', root),
+    additional_args = regex and {} or { '--fixed-strings' },
+    attach_mappings = function(prompt_bufnr, map)
+      map({ 'i', 'n' }, '<C-e>', function()
+        local text = require('telescope.actions.state').get_current_line()
+        require('telescope.actions').close(prompt_bufnr)
+        vim.schedule(function()
+          grep { root = root, regex = not regex, text = text }
+        end)
+      end)
+      return true
+    end,
+  }
+end
 
 return {
-  { -- Fuzzy Finder (files, lsp, etc)
-    'nvim-telescope/telescope.nvim',
-    event = 'VimEnter',
-    dependencies = {
-      'nvim-lua/plenary.nvim',
-      { -- If encountering errors, see telescope-fzf-native README for installation instructions
-        'nvim-telescope/telescope-fzf-native.nvim',
-
-        -- `build` is used to run some command when the plugin is installed/updated.
-        -- This is only run then, not every time Neovim starts up.
-        build = 'make',
-
-        -- `cond` is a condition used to determine whether this plugin should be
-        -- installed and loaded.
-        cond = function()
-          return vim.fn.executable 'make' == 1
-        end,
-      },
-      { 'nvim-telescope/telescope-ui-select.nvim' },
-
-      -- Useful for getting pretty icons, but requires a Nerd Font.
-      { 'nvim-tree/nvim-web-devicons',            enabled = vim.g.have_nerd_font },
+  'nvim-telescope/telescope.nvim',
+  event = 'VimEnter',
+  dependencies = {
+    'nvim-lua/plenary.nvim',
+    {
+      'nvim-telescope/telescope-fzf-native.nvim',
+      build = 'make',
+      cond = function()
+        return vim.fn.executable 'make' == 1
+      end,
     },
-    config = function()
-      -- Telescope is a fuzzy finder that comes with a lot of different things that
-      -- it can fuzzy find! It's more than just a "file finder", it can search
-      -- many different aspects of Neovim, your workspace, LSP, and more!
-      --
-      -- The easiest way to use Telescope, is to start by doing something like:
-      --  :Telescope help_tags
-      --
-      -- After running this command, a window will open up and you're able to
-      -- type in the prompt window. You'll see a list of `help_tags` options and
-      -- a corresponding preview of the help.
-      --
-      -- Two important keymaps to use while in Telescope are:
-      --  - Insert mode: <c-/>
-      --  - Normal mode: ?
-      --
-      -- This opens a window that shows you all of the keymaps for the current
-      -- Telescope picker. This is really useful to discover what Telescope can
-      -- do as well as how to actually do it!
-
-      -- [[ Configure Telescope ]]
-      -- See `:help telescope` and `:help telescope.setup()`
-      require('telescope').setup {
-        -- You can put your default mappings / updates / etc. in here
-        --  All the info you're looking for is in `:help telescope.setup()`
-        --
-        -- defaults = {
-          --   mappings = {
-            --     i = { ['<c-enter>'] = 'to_fuzzy_refine' },
-            --   },
-            -- },
-            -- pickers = {}
-            extensions = {
-              ['ui-select'] = {
-                require('telescope.themes').get_dropdown(),
-              },
-            },
-          }
-
-          -- Enable Telescope extensions if they are installed
-          pcall(require('telescope').load_extension, 'fzf')
-          pcall(require('telescope').load_extension, 'ui-select')
-
-          local builtin = require 'telescope.builtin'
-          vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
-          vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
-        end,
+    'nvim-telescope/telescope-ui-select.nvim',
+    'nvim-tree/nvim-web-devicons',
+  },
+  config = function()
+    local telescope = require 'telescope'
+    local vimgrep = vim.list_extend(vim.deepcopy(require('telescope.config').values.vimgrep_arguments), VISIBLE)
+    telescope.setup {
+      defaults = { vimgrep_arguments = vimgrep },
+      extensions = {
+        ['ui-select'] = { require('telescope.themes').get_dropdown() },
       },
     }
+    pcall(telescope.load_extension, 'fzf')
+    pcall(telescope.load_extension, 'ui-select')
+
+    vim.keymap.set('n', '<leader>sf', find_files, { desc = '[S]earch [F]iles' })
+    vim.keymap.set('n', '<leader>sg', grep, { desc = '[S]earch by [G]rep (plain text)' })
+  end,
+}

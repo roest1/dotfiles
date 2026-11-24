@@ -1,46 +1,25 @@
--- ~/.config/nvim/lua/external/copy.lua
+-- :Copy -- copy file contents to the clipboard, each file wrapped in
+-- "--- Start of <path> ---" / "--- End of <path> ---", for pasting into a chat.
 --
--- :Copy — copy file contents to clipboard for pasting into AI chats, docs, etc.
+-- Three ways in:
+--   :Copy                 every file in the current directory (oil-aware)
+--   V in oil, :Copy       the selected files
+--   V in a file, :Copy    the selected lines, with the path and line range
 --
--- Modes:
---   :Copy [options]           Copy files from current directory
---   :'<,'>Copy [options]      Copy selected files from Oil buffer
---                              (or selected lines from a normal buffer)
+-- Two flags, for the directory and oil-selection forms:
+--   -r, --recursive       include subdirectories
+--   --ext=lua             only that extension; --ext={lua,py} for several
 --
--- Smart defaults:
---   • In a git repo? Uses `git ls-files` (respects .gitignore automatically)
---   • Not in git? Uses `fd` (respects .gitignore by default too)
---   • Falls back to `find` with manual .gitignore parsing
---   • Always skips binary files
+-- Which files a directory holds comes from `git ls-files` (so .gitignore is
+-- respected), else `fd`, else `find` with the .gitignore read by hand. Binary
+-- files are skipped, and a directory copy stops at MAX_FILES.
 --
--- Usage:
---   :Copy                          Copy files in current dir (non-recursive)
---   :Copy -r                       Copy recursively
---   :Copy --match=controller       Only files whose path contains "controller"
---   :Copy --match={test,api}       Multiple match patterns (AND logic)
---   :Copy --dir_match=services     Only files inside directories matching "services"
---   :Copy --dir_match={src,lib}    Files inside dirs matching "src" OR "lib" (OR logic)
---   :Copy --exclude=migrations     Exclude paths containing pattern
---   :Copy --ext=lua                Only files with .lua extension
---   :Copy --ext={lua,py}           Multiple extensions
---   :Copy --max=50                 Limit number of files (default: 100)
---   :Copy --no-gitignore           Don't respect .gitignore
---
--- Visual selection in Oil:
---   1. Open Oil with `-`
---   2. Select files with V (visual line mode)
---   3. :'<,'>Copy
---   → Only the selected files are copied to clipboard
---
--- Visual selection in normal buffer:
---   1. Select lines with V
---   2. :'<,'>Copy
---   → Selected lines are copied in the --- Start/End --- format
---
--- All flags combine:
---   :Copy -r --dir_match=services --ext=py --exclude=test
+-- --match, --dir_match, --exclude, --max and --no-gitignore were removed in
+-- 2026-11 as never typed.
 
 local M = {}
+
+local MAX_FILES = 100
 
 -- ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -136,62 +115,20 @@ end
 -- ─── Argument Parser ──────────────────────────────────────────────────────────
 
 local function parse_args(fargs)
-  local opts = {
-    recursive = false,
-    matches = {},
-    dir_matches = {},
-    excludes = {},
-    extensions = {},
-    max_files = 100,
-    respect_gitignore = true,
-  }
-
-  local function expand_braces(value)
-    local brace = value:match '^%{(.+)%}$'
-    if brace then
-      return vim.split(brace, ',', { trimempty = true })
-    end
-    return { value }
-  end
+  local opts = { recursive = false, extensions = {} }
 
   for _, arg in ipairs(fargs) do
+    local ext = arg:match '^%-%-ext=(.+)$'
     if arg == '-r' or arg == '--recursive' then
       opts.recursive = true
-    elseif arg == '--no-gitignore' then
-      opts.respect_gitignore = false
-    else
-      local key, value = arg:match '^%-%-([%w_][%w_-]*)=(.+)$'
-      if key and value then
-        if key == 'match' then
-          for _, v in ipairs(expand_braces(value)) do
-            table.insert(opts.matches, vim.trim(v))
-          end
-        elseif key == 'dir_match' then
-          for _, v in ipairs(expand_braces(value)) do
-            table.insert(opts.dir_matches, vim.trim(v))
-          end
-        elseif key == 'exclude' then
-          for _, v in ipairs(expand_braces(value)) do
-            table.insert(opts.excludes, vim.trim(v))
-          end
-        elseif key == 'ext' then
-          for _, v in ipairs(expand_braces(value)) do
-            local ext = vim.trim(v):gsub('^%.', '')
-            table.insert(opts.extensions, ext)
-          end
-        elseif key == 'max' then
-          opts.max_files = tonumber(value) or 100
-        else
-          vim.notify('Copy: unknown option --' .. key, vim.log.levels.WARN)
-        end
-      elseif arg:match '^%-' then
-        vim.notify('Copy: unknown argument ' .. arg, vim.log.levels.WARN)
+    elseif ext then
+      -- --ext={lua,py} or --ext=lua, with or without the leading dot
+      for _, v in ipairs(vim.split(ext:match '^%{(.+)%}$' or ext, ',', { trimempty = true })) do
+        table.insert(opts.extensions, (vim.trim(v):gsub('^%.', '')))
       end
+    else
+      vim.notify('Copy: unknown argument ' .. arg, vim.log.levels.WARN)
     end
-  end
-
-  if #opts.dir_matches > 0 then
-    opts.recursive = true
   end
 
   return opts
@@ -230,7 +167,7 @@ local function discover_git(dir, recursive)
   return files
 end
 
-local function discover_fd(dir, recursive, respect_gitignore)
+local function discover_fd(dir, recursive)
   if vim.fn.executable 'fd' ~= 1 then
     return nil
   end
@@ -239,9 +176,6 @@ local function discover_fd(dir, recursive, respect_gitignore)
   if not recursive then
     table.insert(cmd, '--max-depth')
     table.insert(cmd, '1')
-  end
-  if not respect_gitignore then
-    table.insert(cmd, '--no-ignore')
   end
   table.insert(cmd, '.')
   table.insert(cmd, dir)
@@ -256,7 +190,7 @@ local function discover_fd(dir, recursive, respect_gitignore)
   end, output)
 end
 
-local function discover_find(dir, recursive, respect_gitignore)
+local function discover_find(dir, recursive)
   local cmd = { 'find', dir }
   if not recursive then
     table.insert(cmd, '-maxdepth')
@@ -274,109 +208,34 @@ local function discover_find(dir, recursive, respect_gitignore)
     return line ~= ''
   end, output)
 
-  if respect_gitignore then
-    local gitignore_path
-    local git_root = get_git_root(dir)
-    if git_root then
-      gitignore_path = git_root .. '/.gitignore'
-    else
-      gitignore_path = dir .. '/.gitignore'
-    end
-
-    local patterns = parse_gitignore(gitignore_path)
-    if #patterns > 0 then
-      files = vim.tbl_filter(function(filepath)
-        return not matches_gitignore(filepath, patterns)
-      end, files)
-    end
+  local git_root = get_git_root(dir)
+  local patterns = parse_gitignore((git_root or dir) .. '/.gitignore')
+  if #patterns > 0 then
+    files = vim.tbl_filter(function(filepath)
+      return not matches_gitignore(filepath, patterns)
+    end, files)
   end
 
   return files
 end
 
 local function discover_files(dir, opts)
-  local files
-
-  if opts.respect_gitignore then
-    files = discover_git(dir, opts.recursive)
-    if files then
-      return files
-    end
-  end
-
-  files = discover_fd(dir, opts.recursive, opts.respect_gitignore)
-  if files then
-    return files
-  end
-
-  return discover_find(dir, opts.recursive, opts.respect_gitignore)
+  return discover_git(dir, opts.recursive) or discover_fd(dir, opts.recursive) or discover_find(dir, opts.recursive)
 end
 
 -- ─── Filtering ────────────────────────────────────────────────────────────────
 
-local function get_path_dirs(filepath)
-  local dir_part = filepath:match '^(.+)/[^/]+$'
-  if not dir_part then
-    return {}
-  end
-  return vim.split(dir_part, '/', { trimempty = true })
-end
-
 local function apply_filters(files, opts)
+  if #opts.extensions == 0 then
+    return files
+  end
+  local allowed = {}
+  for _, ext in ipairs(opts.extensions) do
+    allowed[ext:lower()] = true
+  end
   return vim.tbl_filter(function(filepath)
-    local lower_path = filepath:lower()
-
-    for _, pattern in ipairs(opts.excludes) do
-      if lower_path:find(pattern:lower(), 1, true) then
-        return false
-      end
-    end
-
-    for _, pattern in ipairs(opts.matches) do
-      if not lower_path:find(pattern:lower(), 1, true) then
-        return false
-      end
-    end
-
-    if #opts.dir_matches > 0 then
-      local dirs = get_path_dirs(lower_path)
-      local any_dir_matched = false
-      for _, pattern in ipairs(opts.dir_matches) do
-        local p = pattern:lower()
-        for _, dir_name in ipairs(dirs) do
-          if dir_name:find(p, 1, true) then
-            any_dir_matched = true
-            break
-          end
-        end
-        if any_dir_matched then
-          break
-        end
-      end
-      if not any_dir_matched then
-        return false
-      end
-    end
-
-    if #opts.extensions > 0 then
-      local ext = filepath:match '%.([^%.]+)$'
-      if not ext then
-        return false
-      end
-      ext = ext:lower()
-      local found = false
-      for _, allowed in ipairs(opts.extensions) do
-        if ext == allowed:lower() then
-          found = true
-          break
-        end
-      end
-      if not found then
-        return false
-      end
-    end
-
-    return true
+    local ext = filepath:match '%.([^%.]+)$'
+    return ext ~= nil and allowed[ext:lower()] == true
   end, files)
 end
 
@@ -441,13 +300,9 @@ local function copy_directory_contents(opts)
 
   table.sort(files)
 
-  if #files > opts.max_files then
-    vim.notify(string.format('Found %d files, limiting to %d. Use --max=%d to increase.', #files, opts.max_files, #files), vim.log.levels.WARN)
-    local limited = {}
-    for i = 1, opts.max_files do
-      limited[i] = files[i]
-    end
-    files = limited
+  if #files > MAX_FILES then
+    vim.notify(string.format('Found %d files, copying the first %d.', #files, MAX_FILES), vim.log.levels.WARN)
+    files = vim.list_slice(files, 1, MAX_FILES)
   end
 
   if #files == 0 then
@@ -509,16 +364,7 @@ function M.setup()
     nargs = '*',
     range = true,
     complete = function(_, line)
-      local suggestions = {
-        '-r',
-        '--recursive',
-        '--match=',
-        '--dir_match=',
-        '--exclude=',
-        '--ext=',
-        '--max=',
-        '--no-gitignore',
-      }
+      local suggestions = { '-r', '--recursive', '--ext=' }
       local lead = line:match '%S+$' or ''
       return vim.tbl_filter(function(s)
         return s:find(lead, 1, true) == 1
