@@ -20,8 +20,7 @@ ensure_local_bin_on_path
 # [uv] section, because this section may not depend on a curl-piped installer
 # (see CONTRIBUTING.md) and uv can no longer come from `pkg` — the distro build
 # has `uv self update` compiled out. `make install` sweeps [uv] too, so a normal
-# machine is unaffected; a machine that opts out of [uv] loses exactly
-# 2parquet/2feather/2pickle, which guard on `command -v uv` and say so.
+# machine is unaffected, and nothing in [bash] needs uv.
 
 # dnf: one setting, max_parallel_downloads, through dnf's own setter. System
 # config, sudo only when the value is wrong, a no-op without dnf -- and here

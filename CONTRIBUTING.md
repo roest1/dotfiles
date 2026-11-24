@@ -135,7 +135,7 @@ or was skipped on a docs-only PR.
 | `engine` | deps.conf, make, linking, sections, plugins and `make status` behave |
 | `link only (…)` | The no-sudo, no-network path works and is idempotent, on Fedora 45, RHEL 9 and 10 |
 | `install (…)` | `make install bash` and `uv` complete on the same three |
-| `bash`, `2* conversions`, `uv` | The shell configs, `h`, and the converters |
+| `bash`, `uv` | The shell configs and `h`; uv's declaration |
 | `nvim (docs, servers under bun)` | The help matches the config; no node/npm/pip; every server completes an LSP handshake |
 | `neovim floor (…)` | Exactly one nvim, at or above 0.12, on RHEL 9 |
 | `bun audit (transitive advisories)` | No known advisories in the language-server tree |
@@ -155,9 +155,7 @@ Please don't break these. Each is load-bearing:
 - **`[bash]` stays installable without `mise`, `node`, or a curl-piped
   installer.** It's the section that has to work on a locked-down box. This is
   what moved `uv` out to `[uv]`: it stopped being a `pkg` line, and anything
-  needing curl cannot sit here. Don't move it back — `2parquet`, `2feather`
-  and `2pickle` guard on `command -v uv` precisely so `[bash]` doesn't have to
-  own it.
+  needing curl cannot sit here. Don't move it back.
 - **The bootstrap must work on a bare machine.** Nothing on the critical path may
   assume a runtime that `deps.conf` hasn't installed yet.
 - **The JS language servers must keep their `bun` cmd prefix.** Six servers are
