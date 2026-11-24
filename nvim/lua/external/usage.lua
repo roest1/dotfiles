@@ -110,7 +110,12 @@ local function refresh_maps()
         -- otherwise appear twice and split its own count.
         local lane = mode == 'x' and 'v' or mode
         local k = key_of(lane, m.lhs)
-        if not seen[k] and m.lhs ~= '' then
+        -- which-key's per-buffer triggers (`<Space>`, `g`, `[`, `]`, `z`,
+        -- `<C-W>`, ...) are nowait prefixes, not mappings anyone chose. Matched,
+        -- they counted the prefix and cleared `recent`, so every mapping behind
+        -- one read as a zero. Skipped, the full sequence matches.
+        local trigger = (m.desc or ''):find '^which%-key%-trigger' ~= nil
+        if not seen[k] and m.lhs ~= '' and not trigger then
           seen[k] = true
           local ok, raw = pcall(vim.api.nvim_replace_termcodes, m.lhs, true, true, true)
           if ok and raw ~= '' then
@@ -225,6 +230,7 @@ end
 -- Exposed so a scripted session (CI, a smoke test) can populate the mapping
 -- list without waiting for the scheduled BufEnter refresh.
 M.refresh = refresh_maps
+M.flush = flush
 
 function M.setup()
   local group = vim.api.nvim_create_augroup('dotfiles-usage', { clear = true })
