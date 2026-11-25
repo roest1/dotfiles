@@ -128,7 +128,10 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
 - **No node, npm or pip. Don't reintroduce them, and never add a `node` shim**: aliasing
   node to bun makes incompatibilities surface as errors blaming the wrong tool. JS tools run
   under bun ([`nvim/CLAUDE.md`](nvim/CLAUDE.md)). CI rejects node/npm/pip in the manifest and
-  any shim.
+  any shim. That is about this repo and nvim, not the machine: a project (Astro, Vite,
+  wrangler) runs on node, with bun as its package manager. Here it is `bun`, never `bunx`,
+  because what `bunx` fetches is in no lockfile
+  ([`docs/decisions/bun.md`](docs/decisions/bun.md)).
 - **Terminal escapes go through `lib/sgr.sh` or `lib/tty.sh`, never raw.** SGR 6 and SGR 5
   are font carriers only inside WezTerm running this config; everywhere else they blink.
   Both blink attributes are taken; there is no third carrier.
