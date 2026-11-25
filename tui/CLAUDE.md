@@ -16,7 +16,7 @@ what keeps each binary's startup honest.
 **Each crate is a library plus a thin binary**, which is what lets that hold
 while `make it` still reaches everything. `tui_core::app::run` and `Flow::Push`
 both take `Box<dyn Screen>` from anywhere, so a screen is reusable across
-binaries: `theme` runs `theme::screen()` (its Fonts and Colors tabs) as its root, and
+binaries: `theme` runs `theme::screen()` (its Themes, Fonts and Icons tabs) as its root, and
 the console pushes the SAME thing as a row in its tree. One implementation, two doors. The alternative was a
 second font screen living inside the console, which is how the two drift.
 

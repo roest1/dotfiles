@@ -1546,6 +1546,41 @@ jobs:
           [ $fail -eq 0 ] && echo "ok: nothing in bash/ is named after a [tui] binary"
           exit $fail
 
+      # `icons = material` in theme.conf is read by the shell for `ls`. The set
+      # is private-use characters, empty boxes wherever the font is not, so
+      # what is checked is mostly where the pick must NOT take.
+      - name: The icon pick reaches ls only where the font is
+        run: |
+          set -u
+          eval "$(sed -n '/^__eza_icons() {/,/^}/p' bash/bash_productivity)"
+          declare -F __eza_icons >/dev/null || { echo "__eza_icons is gone from bash/bash_productivity"; exit 1; }
+          X=$(mktemp -d); Y=$(mktemp -d)
+          mkdir -p "$X/dotfiles" "$X/wezterm/fonts/eza" "$Y/dotfiles"; : > "$X/wezterm/fonts/eza/theme.yml"
+          export XDG_CONFIG_HOME=$X TERM_PROGRAM=WezTerm
+          unset EZA_CONFIG_DIR EZA_ICON_SPACING
+          fail=0
+          want() { # <case> <dir, or - for unset> <spacing, or ->
+            local d="${EZA_CONFIG_DIR:--}" s="${EZA_ICON_SPACING:--}"
+            if [[ $d == "$2" && $s == "$3" ]]; then echo "ok: $1"; else echo "FAIL: $1 (dir=$d spacing=$s)"; fail=1; fi
+          }
+          T=$X/wezterm/fonts/eza
+          __eza_icons; want "no file: nothing set" - -
+          printf 'shell.font = Hack\nicons = material\n' > "$X/dotfiles/theme.conf"
+          __eza_icons; want "material points eza at the theme, with two spaces" "$T" 2
+          printf 'icons = material\n  icons =  nerd  \n' > "$X/dotfiles/theme.conf"
+          __eza_icons; want "the last line wins, and what this set is taken back" - -
+          printf 'icons = material' > "$X/dotfiles/theme.conf"
+          __eza_icons; want "a last line with no newline is still read" "$T" 2
+          TERM_PROGRAM=xterm __eza_icons; want "another terminal: taken back" - -
+          EZA_CONFIG_DIR=/mine EZA_ICON_SPACING=1
+          TERM_PROGRAM=xterm __eza_icons; want "someone else's EZA_CONFIG_DIR is left alone" /mine 1
+          unset EZA_CONFIG_DIR EZA_ICON_SPACING
+          printf 'icons = material\n' > "$Y/dotfiles/theme.conf"
+          XDG_CONFIG_HOME=$Y __eza_icons; want "no theme linked: nothing set" - -
+          printf '# icons = material\nicons.scale = material\nnoticons = material\nicons = Material\n' > "$X/dotfiles/theme.conf"
+          __eza_icons; want "a comment, another key and another case are not the pick" - -
+          exit $fail
+
       # `theme` on crates.io is someone else's crate, and cargo installs by name.
       - name: The tui section installs from a path, not from crates.io
         run: |

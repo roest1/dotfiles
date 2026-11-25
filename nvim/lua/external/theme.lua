@@ -20,7 +20,8 @@
 --
 -- The file is every lane's: `theme` writes it, wezterm/wezterm.lua reads the
 -- fonts and the terminal's own colors from it, and this reads the four keys
--- above. Same reader discipline as there: a mangled line is skipped and a key
+-- above, plus `icons`, which it hands to external/icons.lua. Same reader
+-- discipline as there: a mangled line is skipped and a key
 -- this does not know is ignored rather than failing startup, because the
 -- writer and the readers can be out of step.
 --
@@ -114,7 +115,8 @@ function M.read(path)
   else
     ed_t = ed_t ~= 'false'
   end
-  return { ui = ui, ui_t = ui_t, editor = ed, editor_t = ed_t }
+  -- The whole file second, for the keys that are not a lane's: `icons`.
+  return { ui = ui, ui_t = ui_t, editor = ed, editor_t = ed_t }, set
 end
 
 -- Load one scheme into the global namespace. rose-pine paints its own
@@ -234,10 +236,12 @@ end
 -- Read the file again and apply it, if what it asks of nvim has changed. Most
 -- rewrites do not: a font pick rewrites the same file.
 function M.reload()
-  local t = M.read()
+  local t, set = M.read()
   if not vim.deep_equal(t, M.asked) then
     apply_lanes(t)
   end
+  -- Not a lane, and not in `t`: an icon pick must not reload two colorschemes.
+  require('external.icons').apply(set.icons)
 end
 
 -- A pick in `theme` reaches a running nvim, with no restart and no command.
@@ -293,7 +297,9 @@ function M.setup()
       assign_buf(vim.api.nvim_get_current_buf())
     end,
   })
-  apply_lanes(M.read())
+  local t, set = M.read()
+  apply_lanes(t)
+  require('external.icons').apply(set.icons)
   watch()
 end
 

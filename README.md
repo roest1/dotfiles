@@ -40,7 +40,7 @@ change there reaches your machines only through a PR here.
 | [roest1/PS1](https://github.com/roest1/PS1) | `ps1/` | The bash prompt: one file, a two-line install |
 | [roest1/fonts](https://github.com/roest1/fonts) | `wezterm/fonts/` | Science Gothic Mono, and the catalogue the other fonts install from |
 | [roest1/github-tui](https://github.com/roest1/github-tui) | `tui/github/` | `github`: the current repo on GitHub, live |
-| [roest1/theme-tui](https://github.com/roest1/theme-tui) | `tui/theme/` | `theme`: pick fonts and colors per lane |
+| [roest1/theme-tui](https://github.com/roest1/theme-tui) | `tui/theme/` | `theme`: pick themes, fonts and icons |
 
 The prompt's colors and icons are `PS1_COLOR_*` and `PS1_ICON_*` variables
 ([list](https://github.com/roest1/PS1#colors-and-icons)); here they go in
@@ -172,7 +172,7 @@ git/             gitconfig, plus GitHub setup notes
 uv/              [uv]
 nvim/            [nvim] — its own Makefile and README
 wezterm/         [wezterm] — config; fonts/ is roest1/fonts
-tui/             [tui] — dots; font/ and github/ are roest1/theme-tui, roest1/github-tui
+tui/             [tui] — dots; theme/ and github/ are roest1/theme-tui, roest1/github-tui
 claude/          [claude]
 git-autofetch/   [git-autofetch] — the script, its systemd units, the shell notice
 docs/decisions/  why things are the way they are

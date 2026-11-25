@@ -8,7 +8,9 @@ return {
   },
   setup = function()
     require('oil').setup {
-      columns = { 'icon' },
+      -- The icon set is a pick (`theme`, external/icons.lua); a folder's icon
+      -- is the one part of it oil takes from here and not from devicons.
+      columns = require('external.icons').oil_columns(),
       view_options = {
         show_hidden = true,
       },

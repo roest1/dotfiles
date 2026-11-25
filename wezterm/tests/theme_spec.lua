@@ -38,7 +38,10 @@ end
 
 -- Evaluate the config with `files` in a scratch XDG_CONFIG_HOME. `config_dir`
 -- is where the themes directory is looked for; the repo's own by default.
-local function load(files, config_dir)
+-- `global` stands in for wezterm.GLOBAL, which outlives a reload: hand two
+-- loads the same table and the second is a reload of the first. The fourth
+-- thing returned is the event handlers the config registered, by name.
+local function load(files, config_dir, global)
   local home = vim.fn.tempname()
   vim.fn.mkdir(home .. '/dotfiles', 'p')
   vim.fn.mkdir(home .. '/wezterm', 'p')
@@ -47,7 +50,7 @@ local function load(files, config_dir)
   end
   vim.env.XDG_CONFIG_HOME = home
 
-  local watched = {}
+  local watched, events = {}, {}
   package.loaded.wezterm = nil
   package.preload.wezterm = function()
     return {
@@ -61,12 +64,14 @@ local function load(files, config_dir)
       add_to_config_reload_watch_list = function(path)
         watched[#watched + 1] = path
       end,
-      on = function() end,
+      on = function(name, handler)
+        events[name] = handler
+      end,
       action = blank(),
       action_callback = function()
         return blank()
       end,
-      GLOBAL = {},
+      GLOBAL = global or {},
       color = blank(),
       truncate_right = function(s)
         return s
@@ -74,7 +79,7 @@ local function load(files, config_dir)
     }
   end
   local config = dofile(config_lua)
-  return config, watched, home
+  return config, watched, home, events
 end
 
 -- A face is the chain handed to font_with_fallback; its head is the family,
@@ -176,6 +181,78 @@ local half = load({ ['dotfiles/theme.conf'] = { 'shell.colors = half' } }, scrat
 check('a theme missing colors is not half applied', half.colors.background == '#191724' and half.colors.foreground == '#e0def4')
 local named = load({ ['dotfiles/theme.conf'] = { 'shell.colors = named' } }, scratch)
 check('a color that is not #rrggbb refuses the whole theme', named.colors.foreground == '#e0def4')
+
+print 'the icon font'
+-- Its entry in a chain, if it has one.
+local function icon_font(face)
+  for _, entry in ipairs(face) do
+    if type(entry) == 'table' and entry.family == 'Material Icon Theme' then
+      return entry
+    end
+  end
+end
+local function editor_face(config)
+  for _, rule in ipairs(config.font_rules) do
+    if rule.blink == 'Slow' then
+      return rule.font
+    end
+  end
+end
+local has_font = vim.fn.tempname()
+vim.fn.mkdir(has_font .. '/fonts', 'p')
+vim.fn.writefile({}, has_font .. '/fonts/MaterialIconTheme.ttf')
+local with_font = load({}, has_font)
+check('it is in the base chain when its file is there', icon_font(with_font.font) ~= nil)
+check('and in the editor lane, which replaces the base chain', icon_font(editor_face(with_font)) ~= nil)
+-- Left to its default, wezterm keeps a color font for emoji and never draws a
+-- private-use character from it.
+check('it is told it is not an emoji font', (icon_font(with_font.font) or {}).assume_emoji_presentation == false)
+-- Two cells is as far as wezterm lets a glyph run, and two cells of a 0.6em
+-- face are 1.2em: past that it is shrunk to fit, and drawn smaller.
+local scale = (icon_font(with_font.font) or {}).scale
+check('it is scaled up, and by no more than two cells hold', scale ~= nil and scale > 1 and scale <= 1.2)
+check('the base font is still the head of the chain', family(with_font.font) == '0xProto Nerd Font')
+local no_font = vim.fn.tempname()
+vim.fn.mkdir(no_font, 'p')
+check('with no file it is not named: a missing family is a warning on every reload', icon_font(load({}, no_font).font) == nil)
+local asked = load({ ['dotfiles/theme.conf'] = { 'icons = material' } }, no_font)
+check('and the pick does not name it either', icon_font(asked.font) == nil)
+local _, icon_watch = load({}, no_font)
+check('where the file will be is watched, so its arrival is a reload', vim.tbl_contains(icon_watch, no_font .. '/fonts/MaterialIconTheme.ttf'))
+
+-- A window holds its font as an override, set by the update-status handler
+-- and cached in wezterm.GLOBAL so that it is set once and not every second.
+-- One tick of that handler, for a shell pane in window 1: what it set, or nil.
+local function tick(config_dir, global)
+  local _, _, _, events = load({}, config_dir, global)
+  local set
+  local window = {
+    window_id = function()
+      return 1
+    end,
+    set_config_overrides = function(_, overrides)
+      set = overrides
+    end,
+  }
+  local pane = {
+    get_title = function()
+      return 'bash'
+    end,
+    get_foreground_process_name = function()
+      return '/usr/bin/bash'
+    end,
+  }
+  events['update-status'](window, pane)
+  return set
+end
+local survives = {}
+local first = tick(no_font, survives)
+check('a window is given its font as an override', first ~= nil and family(first.font) == '0xProto Nerd Font')
+check('once, and not again on the next tick', tick(no_font, survives) == nil)
+-- The reload after the font arrived. The window has an override already, and
+-- it is the override that draws: left alone, every icon is an empty box.
+local arrived = tick(has_font, survives)
+check('the font arriving rebuilds the override of a window that had one', arrived ~= nil and icon_font(arrived.font) ~= nil)
 
 print 'the themes that ship'
 local KEYS = { 'base', 'tab_active', 'accent', 'surface', 'overlay', 'highlight_med', 'text', 'muted', 'subtle' }
