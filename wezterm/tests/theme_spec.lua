@@ -115,7 +115,7 @@ check('theme.conf is watched, so the first pick repaints', vim.tbl_contains(watc
 print 'a file the picker wrote'
 local picked = load {
   ['dotfiles/theme.conf'] = {
-    '# Written by `font`.',
+    '# Written by `theme`.',
     'shell.font = Fira Code',
     'shell.colors = dracula',
     'shell.opacity = 0.9',

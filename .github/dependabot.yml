@@ -145,7 +145,7 @@ updates:
           - "patch"
 
   # Our submodules: roest1/PS1 at ps1/, roest1/fonts at wezterm/fonts/,
-  # roest1/theme-tui at tui/font/ and roest1/github-tui at tui/github/.
+  # roest1/theme-tui at tui/theme/ and roest1/github-tui at tui/github/.
   # This is what moves their pins: a push there reaches machines only after a
   # PR here bumps the commit and CI has run against it. Weekly with no
   # cooldown, unlike the rest: the cooldown waits out a stranger's hijacked

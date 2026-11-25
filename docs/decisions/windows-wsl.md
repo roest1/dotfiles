@@ -21,7 +21,7 @@ macOS left the same way on 2026-10-26 ([`macos.md`](macos.md)).
 - **WSL:** `is_wsl`, `ensure_wsl_interop` and the `/etc/binfmt.d/WSLInterop.conf`
   rule. Also `make status`'s `[windows] host clone` and `[wsl] interop` blocks,
   the `/mnt/` wrong-clone guard in the Makefile, the wezterm-in-the-guest skip
-  (`tool_applies_here wezterm`, `wezterm/deps.sh`), `font show`'s `host` state,
+  (`tool_applies_here wezterm`, `wezterm/deps.sh`), `theme show`'s `host` state,
   nvim's `explorer.exe` opener and PowerShell `:PasteImage` backend, the WSL
   OSC52 branch (SSH keeps it), and `downloads`.
 - **apt / Ubuntu:** `apt_pkg_name`, the `apt-cache` pre-check, `ensure_symlink`

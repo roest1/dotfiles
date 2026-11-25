@@ -20,7 +20,7 @@ installs. Docs for a pillar live next to its code; this file holds only what cro
 | `[uv]` | Astral's self-updating uv and its config | "Providers" below |
 | `[nvim]` | the editor, its plugins and language servers | [`nvim/CLAUDE.md`](nvim/CLAUDE.md) |
 | `[wezterm]` | the terminal, Science Gothic Mono, the `mux` domain | [`wezterm/CLAUDE.md`](wezterm/CLAUDE.md) |
-| `[tui]` | Rust TUIs: `dots`, plus `font` (roest1/theme-tui at `tui/font`) and `github` (roest1/github-tui at `tui/github`) | [`tui/CLAUDE.md`](tui/CLAUDE.md) |
+| `[tui]` | Rust TUIs: `dots`, plus `theme` (roest1/theme-tui at `tui/theme`) and `github` (roest1/github-tui at `tui/github`) | [`tui/CLAUDE.md`](tui/CLAUDE.md) |
 | `[claude]` | Claude Code settings and hooks | the `[claude]` comment block in `deps.conf` |
 | `[git-autofetch]` | a timer that fetches (never pulls) this clone, its plugins and `~/github`, and says when a machine is behind | the `[git-autofetch]` comment block in `deps.conf` |
 
@@ -57,8 +57,8 @@ enumerates them; the `Makefile` reads sections from the manifest and does not kn
   ([`docs/decisions/components.md`](docs/decisions/components.md); to extract one, the
   `extract-component` skill). The prompt
   is `roest1/PS1` at `ps1/`, linked to `~/.bash_prompt`; Science Gothic Mono is
-  `roest1/fonts` at `wezterm/fonts/`; the TUIs `font` and `github` are
-  `roest1/theme-tui` at `tui/font` and `roest1/github-tui` at `tui/github`. A submodule pins a commit, so a push
+  `roest1/fonts` at `wezterm/fonts/`; the TUIs `theme` and `github` are
+  `roest1/theme-tui` at `tui/theme` and `roest1/github-tui` at `tui/github`. A submodule pins a commit, so a push
   there reaches machines only through a bump PR here (Dependabot `gitsubmodule`), after CI;
   a plugin is never pinned. `make install` checks out a submodule that is not checked out
   and never touches one that is; `install.sh` sets `submodule.recurse` so `git pull` follows
@@ -109,7 +109,7 @@ tools safe. `mise_install` is the exception: it reinstalls when the global mise 
   is not in `[bash]` (which may not depend on a curl-piped installer) and why `uv/uv.toml`
   is tracked (its settings came from an RPM-owned `/etc/uv/uv.toml`).
 - **`[tui]` declares its binaries `manual`, never `cargo`.** The cargo provider installs by
-  crate NAME from crates.io, and `font` belongs to someone else there. `tui/deps.sh` runs
+  crate NAME from crates.io, and `theme` belongs to someone else there. `tui/deps.sh` runs
   `cargo install --path` and fails loudly without a toolchain; opting out of the section is
   the escape hatch. A bash function may never share a name with one of these binaries.
 - **`mise.toml` and `mise.lock` are generated** by `tools/gen-mise.sh` from `deps.conf`. Run

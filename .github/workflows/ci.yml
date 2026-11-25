@@ -1446,7 +1446,7 @@ jobs:
           grep -qx 'wezterm/fonts' <<<"$links" || {
             echo "[wezterm] no longer links the fonts directory"; bad=1; }
           # the themes: wezterm.lua reads the picked one from beside itself, and
-          # `font` lists the linked directory for what there is to pick
+          # `theme` lists the linked directory for what there is to pick
           grep -qx 'wezterm/themes' <<<"$links" || {
             echo "[wezterm] no longer links the themes directory"; bad=1; }
           [ $bad -eq 0 ] && echo "ok: [wezterm] links its config, fonts and themes"
@@ -1479,9 +1479,9 @@ jobs:
         run: cargo build --release --locked
       # The submodules run their own fmt and clippy; these prove each pinned
       # commit builds and passes its tests here, which is what a bump changes.
-      # font's prompt-specimen test reads the ps1 submodule two levels up.
-      - name: font builds and passes its tests at the pinned commit
-        working-directory: tui/font
+      # theme's prompt-specimen test reads the ps1 submodule two levels up.
+      - name: theme builds and passes its tests at the pinned commit
+        working-directory: tui/theme
         run: cargo test --locked && cargo build --release --locked
       - name: github builds and passes its tests at the pinned commit
         working-directory: tui/github
@@ -1489,17 +1489,17 @@ jobs:
 
       # The same three-condition guard as lib/sgr.sh: off a linked wezterm tty,
       # SGR 6 and SGR 5 blink, and in a pipe they are garbage.
-      - name: font show carries escapes only on a linked wezterm tty
+      - name: theme show carries escapes only on a linked wezterm tty
         run: |
           fail=0
           esc=$'\033['
           carrier=$'\033[6'   # SGR 6, the `make` output lane
           slow=$'\033[5m'     # SGR 5, the nvim editor lane
-          F=tui/font/target/release/font
+          F=tui/theme/target/release/theme
 
           # A pipe is the case CI itself creates.
           if "$F" show | grep -qF "$esc"; then
-            echo "font show leaked escapes into a pipe"; fail=1
+            echo "theme show leaked escapes into a pipe"; fail=1
           fi
 
           if ! command -v script >/dev/null 2>&1; then
@@ -1531,7 +1531,22 @@ jobs:
           fi
           exit $fail
 
-      # `font` on crates.io is someone else's crate, and cargo installs by name.
+      # A shell function wins over PATH, so one named after a [tui] binary
+      # would quietly take its place. The fzf pickers these replaced were
+      # functions of the same names.
+      - name: No bash function is named after a tui binary
+        run: |
+          source lib/manifest.sh
+          fail=0
+          while IFS=$'\t' read -r _section _provider cmd _; do
+            if grep -nE "^[[:space:]]*(function[[:space:]]+)?${cmd}[[:space:]]*\(\)" bash/*; then
+              echo "a bash function named '$cmd' would shadow the binary"; fail=1
+            fi
+          done < <(manifest_lines tool tui)
+          [ $fail -eq 0 ] && echo "ok: nothing in bash/ is named after a [tui] binary"
+          exit $fail
+
+      # `theme` on crates.io is someone else's crate, and cargo installs by name.
       - name: The tui section installs from a path, not from crates.io
         run: |
           source lib/manifest.sh

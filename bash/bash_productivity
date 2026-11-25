@@ -272,10 +272,10 @@ reload() {
 
 # ─── fonts ───────────────────────────────────────────────────────────────────
 #
-# Nothing here any more, and that is the point. Both halves are `font`, the Rust
-# binary built from tui/font and declared in deps.conf's [tui]:
+# Nothing here any more, and that is the point. Both halves are `theme`, the Rust
+# binary built from tui/theme and declared in deps.conf's [tui]:
 #
-#   font            the lane picker, fonts on one tab and colors on the other,
+#   theme           the lane picker, fonts on one tab and colors on the other,
 #                   replacing an fzf picker that re-spawned a
 #                   previewer on every cursor move — ~300ms a keystroke, most of
 #                   it uv startup and re-parsing fonts that had not changed.
@@ -284,13 +284,13 @@ reload() {
 #                   prefetches the rows AROUND the cursor, so the one you are
 #                   about to reach has already arrived; a shell function
 #                   re-execing curl per preview could not do that.
-#   font show       what is set, and whether wezterm is honoring it. The picker
+#   theme show      what is set, and whether wezterm is honoring it. The picker
 #                   rasterizes its own previews, so it looks right whether or
 #                   not the lanes are live; `show` prints real SGR 6 and SGR 5
 #                   text instead, which is a picture of what wezterm DID.
 #
 # A bash function would SHADOW that binary — functions win over PATH — which is
-# why nothing here is called `font`, and why CI checks for it.
+# why nothing here is called `theme`, and why CI checks for it.
 
 
 # ─── Help System ──────────────────────────────────────────────────────────────
@@ -373,9 +373,9 @@ h() {
     Alt+C              Fuzzy cd into subdirectory
 
   Terminal                                                    [wezterm]
-    font               Pick the font and colors for each lane      [tui]
+    theme              Pick the font and colors for each lane      [tui]
                        shell · nvim.ui · nvim.editor · claude
-                       (font show — also checks the lanes are live)
+                       (theme show — also checks the lanes are live)
 
   Dotfiles
     dots               The console: every target and section, navigable  [tui]
@@ -611,7 +611,7 @@ GitHub — one TUI, plus one one-shot
 
   Depends on: gh. Not fzf, and not jq: github is a Rust binary now
   (tui/github, installed by `make install tui`, the same way `dots` and
-  `font` are), and the 2500-line fzf implementation it replaced is gone.
+  `theme` are), and the 2500-line fzf implementation it replaced is gone.
   gha is still shell and still needs jq.
 HELP
       ;;
@@ -723,7 +723,7 @@ dots — the dotfiles console
                 writing ~/.config/dotfiles/sections. Not deps.conf,
                 which every machine reads — the skip stays outside the
                 work tree, so it never becomes a diff you carry.
-    theme       Opens `font`'s own picker, fonts and colors. Not a copy
+    theme       Opens `theme`'s own picker, fonts and colors. Not a copy
                 of it: the same screen its binary runs, pushed onto
                 this one.
 
@@ -757,15 +757,15 @@ dots — the dotfiles console
                   a section on this machine · q quit
 HELP
       ;;
-    font)
+    theme)
       cat <<'HELP'
-font — pick the font and the colors for each of wezterm's lanes
+theme — pick the font and the colors for each of wezterm's lanes
 
-  font              Open the picker: a Fonts tab and a Colors tab
-  font show         What is set, and whether wezterm is honoring it
-  font reset        Back to the defaults wezterm.lua and nvim ship
+  theme             Open the picker: a Fonts tab and a Colors tab
+  theme show        What is set, and whether wezterm is honoring it
+  theme reset       Back to the defaults wezterm.lua and nvim ship
 
-  `font show` ends with the CARRIER — real SGR 6 and SGR 5 text next to
+  `theme show` ends with the CARRIER — real SGR 6 and SGR 5 text next to
   plain. Three different faces means the lanes are live; one face means
   wezterm is not matching font_rules on the blink attribute and every
   lane is silently rendering in the base font. `make status wezterm`

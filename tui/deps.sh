@@ -2,7 +2,7 @@
 # ─── [tui] — build the Rust terminal UIs ─────────────────────────────────────
 #
 # `cargo install --path`, which the manifest's `cargo` provider cannot express:
-# it installs by crate NAME from crates.io, and `font` is a name someone else
+# it installs by crate NAME from crates.io, and `theme` is a name someone else
 # owns there. Hence `manual` in deps.conf and the real install here.
 #
 # ─── cargo is REQUIRED, and this section does not apologise for it ──────────
@@ -42,10 +42,18 @@ cargo_can_link || exit 1
 
 # An array rather than a literal list: `github` and the make-it console are
 # the next two, and this is the line they get added to.
-crates=(font dots github)
+crates=(theme dots github)
 failed=0
+
+# `theme` was `font` until 2026-11. Left behind, the old binary still opens and
+# still writes picks, under a name nothing here mentions any more. cargo
+# knows what it installed and from where, so only a `font` that came from this
+# tree is removed: the crate of that name on crates.io is someone else's.
+if cargo install --list 2>/dev/null | grep -qE '^font v[^ ]+ \(.*/tui/font\):$'; then
+  cargo uninstall font >/dev/null 2>&1 && echo "  ✅ removed \`font\`, which is \`theme\` now"
+fi
 for crate in "${crates[@]}"; do
-  # tui/font and tui/github are submodules: empty until checked out.
+  # tui/theme and tui/github are submodules: empty until checked out.
   if [[ ! -f "$HERE/$crate/Cargo.toml" ]]; then
     echo "  ⚠️  tui/$crate is not checked out — run \`make install\` (needs network)"
     failed=1

@@ -1,7 +1,7 @@
 //! A make target, streamed into the pane.
 //!
 //! Two reader threads and a channel, ticked by `tui_core::Tick` — the same shape
-//! `font`'s prefetching cache already uses, so this adds no new concurrency
+//! `theme`'s prefetching cache already uses, so this adds no new concurrency
 //! idea to the workspace.
 //!
 //! WHAT IS NOT HERE IS THE POINT: no sudo priming, no credential keepalive, no

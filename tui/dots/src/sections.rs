@@ -8,7 +8,7 @@
 //! `deps.conf` would be a tracked edit, so a machine-local preference would
 //! become a diff you carry forever or commit by accident.
 //!
-//! `font`'s `lanes.rs` is the same shape for the same reason, and this follows
+//! `theme`'s `lanes.rs` is the same shape for the same reason, and this follows
 //! it deliberately: read-with-defaults, write-the-whole-file, no format anyone
 //! has to learn.
 //!
@@ -95,7 +95,7 @@ pub fn state_path() -> PathBuf {
 
 /// The precedence, split out from reading the environment so it can be tested.
 ///
-/// Same reason `theme::parse_ps1` is split from the file read in `font`: the
+/// Same reason `theme::parse_ps1` is split from the file read in `theme`: the
 /// alternative is a test that sets a process-global env var while other tests
 /// are threads in the same process.
 fn resolve_path(over: Option<&str>, xdg: Option<&str>, home: &str) -> PathBuf {

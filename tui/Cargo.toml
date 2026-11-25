@@ -2,8 +2,8 @@
 resolver = "2"
 members = ["dots"]
 # Submodules, each its own package pinned by its own Cargo.lock: roest1/theme-tui
-# (font, which dots also uses by path) and roest1/github-tui.
-exclude = ["font", "github"]
+# (theme, which dots also uses by path) and roest1/github-tui.
+exclude = ["theme", "github"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,6 @@ license = "MIT"
 
 [workspace.dependencies]
 # The framework, roest1/tui-core. Cargo.lock pins the commit; every crate here uses
-# this one spec, so they share one copy (dots pushes font's screen onto its stack).
+# this one spec, so they share one copy (dots pushes theme's screen onto its stack).
 tui-core = { git = "https://github.com/roest1/tui-core", branch = "main" }
 crossterm = "0.29"

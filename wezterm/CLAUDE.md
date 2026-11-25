@@ -52,14 +52,14 @@ config both are blinking text.
 The four lanes are `shell`, `nvim.ui`, `nvim.editor` and `claude`. `nvim.ui` is NOT "oil" —
 oil is the most visible thing it draws, but the lane is the window's base font while nvim
 holds focus, so it is also telescope, the statusline, the gutter and every float. Which
-font each lane gets is picked by `font` (`tui/font`, roest1/theme-tui) and written to
+font each lane gets is picked by `theme` (`tui/theme`, roest1/theme-tui) and written to
 `~/.config/dotfiles/theme.conf` — machine-local, not linked, not in `deps.conf`, same footing
 as `~/.bash_local`. Details: `wezterm.lua` for the lanes, `nvim/CLAUDE.md` for the writer,
 `tui/CLAUDE.md` for the picker.
 
 ## theme.conf: one file, two readers
 
-`font` writes every pick to `~/.config/dotfiles/theme.conf`, keyed by lane and then by what
+`theme` writes every pick to `~/.config/dotfiles/theme.conf`, keyed by lane and then by what
 is set: `shell.font`, `shell.colors`, `shell.opacity`, `nvim.editor.colors`. `wezterm.lua`
 reads the fonts and the three `shell` keys; `nvim/lua/external/theme.lua` reads the nvim
 colors. Both skip a line they cannot read and ignore a key they do not know.
@@ -75,11 +75,11 @@ colors. Both skip a line they cannot read and ignore a key they do not know.
   that is not `#rrggbb`, leaves the default palette. Half of one theme over half of another
   is worse than the default.
 - **The default palette is a table in `wezterm.lua`, not `themes/rose-pine.conf`**, so the
-  terminal has its colors before the directory is linked. The file exists for `font` to list
+  terminal has its colors before the directory is linked. The file exists for `theme` to list
   and preview. `wezterm/tests/theme_spec.lua` holds the two to each other.
 - **`~/.config/wezterm/fonts.conf` is still read**, underneath `theme.conf`. It is where the
   fonts lived, keyed by bare lane name, until 2026-11. A machine keeps its fonts between
-  pulling and rebuilding `font`; the first pick with the new `font` moves them and removes
+  pulling and rebuilding `theme`; the first pick with the new `theme` moves them and removes
   the file. Take the fallback out once no machine has one.
 - **`make test` runs the reader** against a stand-in for the `wezterm` module, because
   wezterm cannot be asked what a config evaluated to. The cases are the files a machine can

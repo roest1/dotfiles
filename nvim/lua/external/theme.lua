@@ -1,4 +1,4 @@
--- Colorscheme lanes, the same two nvim lanes `font` has:
+-- Colorscheme lanes, the same two nvim lanes `theme` has:
 --
 --   nvim.ui      everything that is not a file: oil, telescope, floats, the
 --                gutter and statusline -- the global highlight namespace
@@ -18,7 +18,7 @@
 --
 -- An editor key left out follows the ui lane, so one line moves both.
 --
--- The file is every lane's: `font` writes it, wezterm/wezterm.lua reads the
+-- The file is every lane's: `theme` writes it, wezterm/wezterm.lua reads the
 -- fonts and the terminal's own colors from it, and this reads the four keys
 -- above. Same reader discipline as there: a mangled line is skipped and a key
 -- this does not know is ignored rather than failing startup, because the
@@ -92,7 +92,7 @@ end
 -- `nvim.ui = <scheme>` is how the two colors were spelled while this file was
 -- nvim's alone, before the fonts moved in and every key gained its attribute.
 -- It is still read, underneath `nvim.ui.colors`, so a file written by hand in
--- that week keeps working; `font` rewrites it in the new spelling.
+-- that week keeps working; `theme` rewrites it in the new spelling.
 function M.read(path)
   local set = {}
   local fh = io.open(path or THEME_STATE, 'r')
@@ -124,7 +124,7 @@ end
 -- A pick naming a scheme a later pull removed must not leave the editor
 -- unthemed: fall back to the repo default and say so. Returns what loaded.
 --
--- Public because `font` draws its color preview by calling this in a headless
+-- Public because `theme` draws its color preview by calling this in a headless
 -- nvim and reading the highlights back: the preview is then what the lane will
 -- draw, rose-pine's background option included, with nothing restated there.
 function M.load(color, transparent)
@@ -240,13 +240,13 @@ function M.reload()
   end
 end
 
--- A pick in `font` reaches a running nvim, with no restart and no command.
+-- A pick in `theme` reaches a running nvim, with no restart and no command.
 --
 -- The DIRECTORY is watched, not the file: the file does not exist until the
 -- first pick, and that pick is the one most worth seeing. If the directory is
 -- not there either, this nvim applies the pick on its next start.
 --
--- `font` truncates the file and writes it, which is two events and a moment in
+-- `theme` truncates the file and writes it, which is two events and a moment in
 -- between where the file is empty. Reading at the first event would flash both
 -- lanes back to the default, so the read waits for the writes to stop.
 local function watch()
