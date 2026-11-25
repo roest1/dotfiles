@@ -64,6 +64,21 @@ package.preload['nvim-web-devicons'] = function()
     end,
   }
 end
+-- oil's own choice of where icons come from: a file's name is handed on (to
+-- the stand-in above, as the real one hands it to nvim-web-devicons), and
+-- every folder gets one glyph out of the column's options.
+package.preload['oil.util'] = function()
+  return {
+    get_icon_provider = function()
+      return function(kind, name, conf)
+        if kind == 'directory' then
+          return conf and conf.directory or 'D', 'OilDirIcon'
+        end
+        return require('nvim-web-devicons').get_icon(name)
+      end
+    end,
+  }
+end
 local columns
 package.loaded['oil'] = {
   set_columns = function(cols)
@@ -124,6 +139,18 @@ check('and not to pad it again', columns ~= nil and columns[1].add_padding == fa
 asked = {}
 check('a name that is not a string goes to the plugin', devicons.get_icon(nil) == 'N' and #asked == 1)
 
+print 'a folder in oil'
+check('oil is wrapped before it loads', I.wrap_oil() == true)
+local provider = require('oil.util').get_icon_provider()
+local dir, dir_hl = provider('directory', 'src', { directory = 'X' })
+check('a folder gets the icon its name has', dir == at(2) .. ' ' and dir_hl == 'MaterialIcon')
+check('in any case', provider('directory', 'SRC', {}) == at(2) .. ' ')
+check('a folder with no icon of its own gets the plain one', provider('directory', 'elsewhere', {}) == at(1) .. ' ')
+check('a file still goes the way oil sends it', provider('file', 'main.rs', {}) == at(4) .. ' ')
+package.loaded['oil.columns'] = {}
+check('after oil has loaded it is too late, and says so', I.wrap_oil() == false)
+package.loaded['oil.columns'] = nil
+
 print 'the default again'
 I.apply(nil)
 asked = {}
@@ -131,6 +158,8 @@ local back, back_hl = devicons.get_icon('main.rs', 'rs', { default = false })
 check('the plugin answers, with everything it was asked', back == 'N' and back_hl == 'DevIconNerd' and asked[1][2] == 'rs' and asked[1][3].default == false)
 check('for a name it had no icon for as well', devicons.get_icon 'notes' == 'N')
 check('oil has its plain column back', vim.deep_equal(columns, { 'icon' }))
+local plain, plain_hl = provider('directory', 'src', { directory = 'X' })
+check('and a folder is oil\'s own again', plain == 'X' and plain_hl == 'OilDirIcon')
 I.apply 'nerd'
 I.apply 'something-later'
 check('a value this does not know is the default', I.set == 'nerd')

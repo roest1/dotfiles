@@ -90,8 +90,14 @@ the file and hands it to `external/icons.lua`, at start and on every rewrite, so
   where an icon covers its own cell and most of the next. The wrapper returns the icon with
   one space, and oil's column is set not to pad it again (oil's padding plus its column gap
   would make three).
-- **Every folder in oil gets one icon.** oil takes a folder's icon from its column's options
-  and has no hook for a folder's name. Files get their own.
+- **oil's icon provider is wrapped too, for folders.** oil hands a file's name to
+  nvim-web-devicons and gives every folder one glyph from its column's options, so a
+  folder's name never reaches anything that could look it up: `ls` showed `docs` and `src`
+  with their own icons and oil showed one plain folder all the way down.
+  `icons.wrap_oil()` wraps `oil.util.get_icon_provider`, which oil calls once as its columns
+  load, so it runs before `require('oil')` in `plugins/oil.lua`. That function is oil's own
+  seam and not a documented setting. If an update moves it, `wrap_oil` returns false and
+  every folder gets Material's plain one, from the column's options.
 - **An icon pick does not reload a colorscheme.** `theme.read` returns the lanes and, second,
   the whole file; `icons` is not in the lanes table that `reload` compares.
 

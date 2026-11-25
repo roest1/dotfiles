@@ -138,9 +138,53 @@ local function wrap()
   return true
 end
 
--- oil's icon column. It asks nvim-web-devicons about files and takes a
--- folder's icon from the column's own options, so that half is set here.
--- One icon for every folder: oil has no hook for a folder's name.
+-- oil asks ONE function for every icon it draws, a file's or a folder's, and
+-- picks that function once, when its columns module first loads. Out of the
+-- box it hands a file's name to nvim-web-devicons and gives every folder the
+-- same glyph, taken from the column's options: a folder's NAME never reaches
+-- anything that could look it up. Material has an icon for `docs`, `src`,
+-- `.github` and a thousand more, and `ls` was showing them where oil showed
+-- one plain folder all the way down.
+--
+-- So the function oil picks is wrapped as well, and a folder is answered here
+-- while the pick says Material. Everything else, and everything when it does
+-- not, goes to the provider oil chose.
+--
+-- `oil.util.get_icon_provider` is oil's own seam (its `oil.IconProvider`
+-- type), not a documented setting, so this checks that it is there and
+-- says false when it is not; `oil_columns` below then still gives every
+-- folder Material's plain one. Call it BEFORE `require('oil')`: after oil's
+-- columns have loaded, the provider is already chosen.
+function M.wrap_oil()
+  if package.loaded['oil.columns'] then
+    return false
+  end
+  local ok, util = pcall(require, 'oil.util')
+  if not ok or type(util.get_icon_provider) ~= 'function' then
+    return false
+  end
+  local get_provider = util.get_icon_provider
+  util.get_icon_provider = function()
+    local provider = get_provider()
+    if not provider then
+      return nil
+    end
+    return function(kind, name, conf)
+      if kind == 'directory' and M.set == 'material' and material and type(name) == 'string' then
+        local glyph = M.icon_for(material, name, true)
+        if glyph then
+          return glyph .. GAP, HL
+        end
+      end
+      return provider(kind, name, conf)
+    end
+  end
+  return true
+end
+
+-- oil's icon column. The folder icon here is what a folder gets where the
+-- wrap above could not be made: one icon for every folder, Material's plain
+-- one.
 --
 -- add_padding off, because oil's own space and the one between two columns
 -- already make two after a Nerd Font glyph. With GAP on top that would be
