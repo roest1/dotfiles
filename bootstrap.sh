@@ -7,8 +7,13 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh | bash
 #
 # Solves the chicken-and-egg: you need the repo before you can run
-# anything in it. Installs git if missing, clones over HTTPS (a fresh
-# machine has no SSH key yet), then hands off to make.
+# anything in it. Installs git if missing, clones over HTTPS (the repo is
+# public, so the core needs no key and no login), then hands off to make.
+#
+# If ~/.config/dotfiles/plugins lists a plugin on GitHub over SSH and GitHub
+# does not accept a key from this machine yet, it runs `gh auth login` first:
+# that one login generates the key and uploads it, so the plugin clones in the
+# same `make install`. Without such a line, no login is asked for.
 #
 # Pick a scope with DOTFILES_TARGET:
 #   DOTFILES_TARGET=install ... | bash   # default — everything in deps.conf
@@ -68,6 +73,70 @@ if ! command -v make >/dev/null 2>&1; then
 fi
 
 cd "$DOTFILES_DIR"
+
+# --- a login, only for a machine that asked for a private plugin ---------
+#
+# The one sign-in this script can need, and only when the machine asked for it:
+# a line in the plugins file naming a GitHub repo over SSH, and GitHub not yet
+# accepting a key from here. `gh auth login -p ssh` makes the key and uploads
+# it, so the plugin clones in the `make install` below and not in a second run.
+
+PLUGINS_FILE="${DOTFILES_PLUGINS_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/plugins}"
+
+# GitHub answers `ssh -T` with exit status 1 even when it accepts the key, so
+# the ANSWER is read and the status is not. Not `ssh | grep -q`: under
+# `set -o pipefail` ssh's 1 is the pipeline's status whatever grep found, which
+# asked a machine with a working key to log in again on every run.
+#
+# accept-new records GitHub's host key on first contact. That is what lets the
+# plugin clone, which has no terminal to ask "are you sure" on, go through.
+github_accepts_key() {
+  command -v ssh >/dev/null 2>&1 || return 1
+  local said
+  said=$(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 \
+    -T git@github.com 2>&1) || true
+  [[ $said == *"successfully authenticated"* ]]
+}
+
+# Under `curl | bash` stdin is the script, so gh has to be given the terminal.
+# Opened, not tested with -r: /dev/tty is readable by its permissions on a
+# machine with no terminal at all, and fails only when opened.
+has_terminal() { { : </dev/tty; } 2>/dev/null; }
+
+if [[ "$TARGET" == install && -f "$PLUGINS_FILE" ]] &&
+  grep -qE '^[^#]*git@github\.com' "$PLUGINS_FILE" && ! github_accepts_key; then
+  echo ""
+  echo "A plugin in ${PLUGINS_FILE/#$HOME/\~} is on GitHub over SSH, and GitHub"
+  echo "does not accept a key from this machine yet."
+  # gh is in [bash]. The section is installed again by `make install` below,
+  # which finds everything there and is quick.
+  make install bash || echo "  the bash section did not install cleanly"
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "  gh is not installed — the plugin will be skipped. Afterwards:"
+    echo "    gh auth login -h github.com -p ssh && make install"
+  elif ! has_terminal; then
+    echo "  no terminal to log in on — the plugin will be skipped. Afterwards:"
+    echo "    gh auth login -h github.com -p ssh && make install"
+  else
+    echo ""
+    echo "Logging in with gh. Say YES to generating an SSH key: gh uploads it."
+    echo "If it asks to authenticate Git with your GitHub credentials, say NO."
+    if gh auth login -h github.com -p ssh </dev/tty && github_accepts_key; then
+      echo "  GitHub accepts this machine's key."
+      # gh took the admin:public_key scope to upload the key and keeps it. A
+      # token that can add keys to the account is not one to leave lying in a
+      # keyring, so it is handed back (git/GITHUB_SETUP.md does the same).
+      if gh auth status -h github.com 2>&1 | grep -q 'admin:public_key'; then
+        echo "  One more confirmation, to take back the scope that upload needed."
+        gh auth refresh -h github.com -r admin:public_key </dev/tty ||
+          echo "  not taken back. By hand: gh auth refresh -h github.com -r admin:public_key"
+      fi
+    else
+      echo "  GitHub still does not accept a key from this machine — the plugin"
+      echo "  will be skipped. Afterwards: gh auth login -h github.com -p ssh && make install"
+    fi
+  fi
+fi
 
 # Now that deps.conf exists, TARGET can be validated. It's either a make target
 # we know, or the name of a section in the manifest.

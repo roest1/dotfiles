@@ -393,6 +393,10 @@ meaningless. Enable it on application repos; skip it elsewhere.
 One key per machine. Git authenticates to GitHub with it, so no token is stored
 for git. `gh` keeps its own login, separate from git's.
 
+On a new machine `bootstrap.sh` does this itself when `~/.config/dotfiles/plugins`
+names a GitHub repo over SSH: `gh auth login -h github.com -p ssh` generates the key and
+uploads it, and the scope it needed is handed back afterwards. By hand it is:
+
 ```bash
 ssh-keygen -t ed25519 -C "<user>@<machine>"
 gh auth refresh -h github.com -s admin:public_key     # temporary scope, to upload the key
