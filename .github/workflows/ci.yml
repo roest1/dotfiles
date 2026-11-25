@@ -645,7 +645,8 @@ jobs:
           run "$SSH_PLUGIN" tty
           check "with a terminal it logs in over ssh, before the install" \
             test "$(sed -n 1,2p "$LOG")" = "$(printf 'make install bash\ngh auth login -h github.com -p ssh')"
-          check "and hands back the scope the key upload needed" grep -qx "gh auth refresh -h github.com -r admin:public_key" "$LOG"
+          # The token keeps the scope the key upload took (git/GITHUB_SETUP.md).
+          check "and asks for nothing after the login" bash -c '! grep -q "gh auth refresh" "$LOG"'
           check "and then installs, once" test "$(tail -n1 "$LOG")" = "make install"
           check "and says GitHub accepts the key" grep -q "GitHub accepts this machine's key" <<<"$out"
           exit $fail
