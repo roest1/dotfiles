@@ -1,10 +1,8 @@
 # Bun manages packages; Node runs the tools
 
 **Status:** adopted 2026-11-16 as "remove node", revised 2026-11-17 after it broke
-a project. Node is installed per machine through mise; nvim still needs none.
-Merged 2026-11-25, after apt support was dropped (2026-11-21,
-[`windows-wsl.md`](windows-wsl.md)): how node is installed is open again, see the
-note under *Installing node*.
+a project, and again 2026-11-25 when apt was gone: node is installed per machine
+from the distro's packages; nvim still needs none.
 **Applies to:** every JS project on these machines, `nvim/lsp-servers/`, `bunfig.toml`.
 
 ## The split
@@ -42,44 +40,47 @@ compatibility is good but incomplete, and when it falls short the failure blames
 wrong tool. That is the same argument as the shim rule below. **Bun's speed is in
 installs, and installs are where it is used.**
 
-## Installing node: mise, pinned to the active LTS
+## Installing node: the distro's package
 
-> **Open since apt was dropped.** This section was decided on the Ubuntu box, where
-> apt's node was 18 against a ≥22 floor. Fedora 44 packages node 22 and 24
-> (`nodejs22`, `nodejs24`), and the Fedora machine this was checked on (2026-11-25)
-> runs those, with no node in mise. Whether the distro's copy is tier 1 on Fedora
-> and RHEL now, or mise stays the rule, has not been decided. What follows is the
-> 2026-11-17 decision as it was made, apt and all.
+Revised 2026-11-25. The 2026-11-17 version of this section said mise, never the
+distro, and its case was one number: Ubuntu 24.04's apt carried node 18 against a ≥22
+floor, which is how a tool reaches tier 2 in `toolchain-policy.md` ("not reliably
+carried"). apt support was dropped on 2026-11-21 ([`windows-wsl.md`](windows-wsl.md)),
+and the number went with it. Fedora 44 packages node 22 and 24 (`nodejs22`,
+`nodejs24`). So node is tier 1, like everything else the distro carries, and the
+Fedora machine was already running it that way with no node in mise.
 
-Not apt, nvm, fnm, Docker or Vite+:
-
-- **apt** is tier 1 of `toolchain-policy.md`, but Ubuntu 24.04 ships 18 against a ≥22
-  floor, which is the definition of "not reliably carried." So node goes to tier 2.
-- **nvm, fnm, Vite+** are each a second version manager beside mise, which recreates the
-  problem `tool-duplication.md` documents. mise already manages node.
+- **dnf**, with the cost tier 1 always has: the version is the distro's. On
+  2026-11-25 Fedora's `nodejs22` was 22.23.1, a patch release under the 22.23.4 that
+  Astro 7 asks for. `nodejs24` clears it, and is what `node` means on that machine.
+- **A project that needs a version the distro does not carry** pins node in its own
+  `mise.toml` (`mise use node@<x>` in that directory), and mise switches when you `cd`
+  into it. That is tier 2 doing its job for one project, not a second global node.
+- **nvm, fnm, Vite+** are each a second version manager beside mise, which recreates
+  the problem `tool-duplication.md` documents.
 - **Docker** fits a deployed service, not a dev server you edit live.
 
-Pin the active LTS line (26 as of 2026-11). A project whose `engines` needs something
-different pins node in its own `mise.toml` (`mise use node@<x>` in that directory), and
-mise switches automatically when you `cd` into it.
+RHEL has not been checked against the ≥22 floor. The second bullet is the answer if
+its package falls short.
 
 Node ships npm. It stays installed and unused, and nothing calls it.
 
-Then remove apt's copy so nothing on PATH shadows mise's:
+**Node is machine state, not a dotfiles dependency, and that is deliberate.** nvim must
+not need node, and CI's "deps.conf declares no node, npm or pip" guard keeps it that way.
+So node is installed by hand on a machine that runs JS projects
+(`sudo dnf install nodejs24`) and is not declared in `deps.conf`. The cost: a new
+machine has no node until you run that line, and the version can differ between
+machines.
+
+### History: the Ubuntu box, 2026-11-17
+
+Before apt was dropped, node went onto the Alienware WSL box through mise
+(`mise use -g node@26`), and apt's copy came out so that nothing on PATH shadowed it:
 
 ```bash
 sudo apt remove nodejs npm && sudo apt autoremove
 type -a node   # expect only the mise path
 ```
-
-**Node is machine state, not a dotfiles dependency, and that is deliberate.** nvim must
-not need node, and CI's "deps.conf declares no node, npm or pip" guard keeps it that way.
-So node is installed per machine with `mise use -g node@26` (done on the Alienware WSL
-box 2026-11-17) rather than declared in `deps.conf`. Because `mise_install` only manages
-global entries the repo pins, it leaves this one alone. The cost: a new machine has no
-node until you run that line, and the version can drift between machines.
-
-### What the apt removal took with it (Alienware WSL box, 2026-11-17)
 
 `apt remove nodejs npm && apt autoremove` removed 425 packages. Most were Debian's
 node module packages (`node-*`, `libjs-*`) and apt's own node 18, npm 9, eslint 6, webpack,
