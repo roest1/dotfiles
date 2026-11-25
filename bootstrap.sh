@@ -123,14 +123,10 @@ if [[ "$TARGET" == install && -f "$PLUGINS_FILE" ]] &&
     echo "If it asks to authenticate Git with your GitHub credentials, say NO."
     if gh auth login -h github.com -p ssh </dev/tty && github_accepts_key; then
       echo "  GitHub accepts this machine's key."
-      # gh took the admin:public_key scope to upload the key and keeps it. A
-      # token that can add keys to the account is not one to leave lying in a
-      # keyring, so it is handed back (git/GITHUB_SETUP.md does the same).
-      if gh auth status -h github.com 2>&1 | grep -q 'admin:public_key'; then
-        echo "  One more confirmation, to take back the scope that upload needed."
-        gh auth refresh -h github.com -r admin:public_key </dev/tty ||
-          echo "  not taken back. By hand: gh auth refresh -h github.com -r admin:public_key"
-      fi
+      # gh took the admin:public_key scope to upload the key, and the token
+      # KEEPS it. Decided 2026-11-25: `github` is to manage the account's keys
+      # and would otherwise have to ask for the scope each time. What that
+      # costs, and how to hand it back, is in git/GITHUB_SETUP.md.
     else
       echo "  GitHub still does not accept a key from this machine — the plugin"
       echo "  will be skipped. Afterwards: gh auth login -h github.com -p ssh && make install"

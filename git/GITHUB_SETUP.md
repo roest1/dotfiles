@@ -395,16 +395,22 @@ for git. `gh` keeps its own login, separate from git's.
 
 On a new machine `bootstrap.sh` does this itself when `~/.config/dotfiles/plugins`
 names a GitHub repo over SSH: `gh auth login -h github.com -p ssh` generates the key and
-uploads it, and the scope it needed is handed back afterwards. By hand it is:
+uploads it. By hand it is:
 
 ```bash
 ssh-keygen -t ed25519 -C "<user>@<machine>"
-gh auth refresh -h github.com -s admin:public_key     # temporary scope, to upload the key
+gh auth refresh -h github.com -s admin:public_key     # the scope that lets gh upload a key
 gh ssh-key add ~/.ssh/id_ed25519.pub --title "<machine>"
 ssh -T git@github.com                                 # expect: Hi <user>!
 gh config set -h github.com git_protocol ssh
-gh auth refresh -h github.com -r admin:public_key     # drop the scope again
 ```
+
+- **gh's token keeps `admin:public_key`**, on purpose since 2026-11-25. `github`
+  ([roest1/github-tui](https://github.com/roest1/github-tui)) is to manage the account's
+  SSH keys, and without the scope it would have to send you to a browser each time. The
+  cost is what the scope is: a token that can add a login key to the account, sitting in
+  this machine's keyring. To hand it back:
+  `gh auth refresh -h github.com -r admin:public_key`.
 
 - **Answer No when gh asks "Authenticate Git with your GitHub credentials?"**
   `gh auth login` and `gh auth refresh` both ask. Yes runs `gh auth setup-git`,
