@@ -7,9 +7,11 @@ return {
     'https://github.com/nvim-tree/nvim-web-devicons',
   },
   setup = function()
+    -- Before oil loads: it chooses where icons come from once, on the way in.
+    require('external.icons').wrap_oil()
     require('oil').setup {
-      -- The icon set is a pick (`theme`, external/icons.lua); a folder's icon
-      -- is the one part of it oil takes from here and not from devicons.
+      -- The icon set is a pick (`theme`, external/icons.lua), and the column's
+      -- options are where its spacing and its fallback folder icon are set.
       columns = require('external.icons').oil_columns(),
       view_options = {
         show_hidden = true,
