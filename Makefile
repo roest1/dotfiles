@@ -184,6 +184,10 @@ test: ## Run the Lua unit tests (no plugins, no network)
 		-c "luafile $(DOTFILES_DIR)/nvim/tests/theme_spec.lua" -c "qa!" 2>&1 \
 		| tee "$${TMPDIR:-/tmp}/dotfiles-theme-test.txt"
 	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-theme-test.txt" || { echo "nvim's theme.conf reader failed"; exit 1; }
+	@NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless --cmd "set runtimepath+=$(DOTFILES_DIR)/nvim" \
+		-c "luafile $(DOTFILES_DIR)/nvim/tests/icons_spec.lua" -c "qa!" 2>&1 \
+		| tee "$${TMPDIR:-/tmp}/dotfiles-icons-test.txt"
+	@grep -q "ALL PASS" "$${TMPDIR:-/tmp}/dotfiles-icons-test.txt" || { echo "nvim's icon set reader failed"; exit 1; }
 	@NVIM_LOG_FILE="$${TMPDIR:-/tmp}/dotfiles-nvim.log" nvim --clean --headless \
 		-c "luafile $(DOTFILES_DIR)/wezterm/tests/theme_spec.lua" -c "qa!" 2>&1 \
 		| tee "$${TMPDIR:-/tmp}/dotfiles-wezterm-theme-test.txt"

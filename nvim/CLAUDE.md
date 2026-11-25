@@ -36,6 +36,7 @@ with a real LSP handshake.
 - `lua/external/usage.lua` — `:KeymapUsage`, counts real presses of each mapping into `stdpath('state')`, outside the work tree. See "Pruning is measured" below.
 - `lua/external/oilgit.lua` — `:OilGit`, the diffstat column in oil; loaded from `plugins/oil.lua`, not `init.lua`.
 - `lua/external/theme.lua` — colorscheme lanes (`nvim.ui`, `nvim.editor`) read from machine-local `~/.config/dotfiles/theme.conf`; the editor lane is a per-window highlight namespace. Loaded from `plugins/theme.lua`'s `setup`, not `init.lua`. See "The color lanes" below.
+- `lua/external/icons.lua` — which set draws a file's icon in oil and telescope: `icons = material` in `theme.conf`. Called from `theme.lua`, not `init.lua`. See "The icon set" below.
 - `lua/external/filebuf.lua` — the one definition of "a file you write", shared by `altfont` and `theme` so the font lane and the color lane cannot disagree about which windows are the editor.
 
 ## The color lanes (`theme.lua`)
@@ -65,6 +66,37 @@ the fonts and the terminal's colors, and `theme.lua` reads `nvim.ui.colors`,
   has one.
 - **`nvim/tests/theme_spec.lua` (`make test`)** runs the reader on the files a machine can
   have, with three stand-in schemes and no plugins, and checks the watcher end to end.
+
+## The icon set (`icons.lua`)
+
+`icons = material` in `~/.config/dotfiles/theme.conf` swaps the Nerd Font glyphs oil and
+telescope draw for Material Icon Theme, in color. `theme.lua` reads the key with the rest of
+the file and hands it to `external/icons.lua`, at start and on every rewrite, so a pick on
+`theme`'s Icons tab reaches a running nvim.
+
+- **Nothing about the set is in this repo.** Which code point is which icon, and which file
+  gets which, is read from `material-icons.tsv`, which roest1/fonts builds beside the font
+  (`~/.config/wezterm/fonts`). A code point holds for one upstream release.
+- **`get_icon` is wrapped; the plugin's override API is not used.** `override_by_filename`
+  and `set_icon` are what nvim-web-devicons documents for this, and they only go one way: an
+  override is merged into a table the plugin keeps and re-applies, and nothing takes one
+  out. Picking the default again would leave Material on every name the plugin has no icon
+  for. The wrapper asks the table only while the pick says so, and the plugin's tables are
+  never touched.
+- **The same guard as `altfont.lua`.** The icons are private-use characters in a font the
+  terminal has. Outside WezTerm, or without the font linked, the pick is left alone;
+  `require('external.icons').why` says which.
+- **Two spaces after an icon.** `wezterm.lua` draws the font at 1.2 times the text's size,
+  where an icon covers its own cell and most of the next. The wrapper returns the icon with
+  one space, and oil's column is set not to pad it again (oil's padding plus its column gap
+  would make three).
+- **Every folder in oil gets one icon.** oil takes a folder's icon from its column's options
+  and has no hook for a folder's name. Files get their own.
+- **An icon pick does not reload a colorscheme.** `theme.read` returns the lanes and, second,
+  the whole file; `icons` is not in the lanes table that `reload` compares.
+
+`nvim/tests/icons_spec.lua` (`make test`) covers where the pick must not take, and that the
+default comes back whole.
 
 ## The alternate-font carrier (`altfont.lua`)
 

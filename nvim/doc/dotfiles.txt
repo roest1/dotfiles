@@ -128,8 +128,12 @@ Colors come from ~/.config/dotfiles/theme.conf (per machine, optional):
 No file means rose-pine-moon, transparent, in both. dracula and onedark are
 installed. An editor key left out follows the ui lane.
 
-Pick them with `theme` in a terminal, on its Colors tab. A pick applies at
+Pick them with `theme` in a terminal, on its Themes tab. A pick applies at
 once, in every nvim that is running.
+
+File icons are picked there too, on the Icons tab: `icons = material` in the
+same file swaps the Nerd Font glyphs in oil and telescope for Material Icon
+Theme, in color. Inside WezTerm with this repo's config only.
 
 The editor lane's font is picked there too, on the Fonts tab. It only works
 inside WezTerm running this repo's config; |:AltFont| reports on it.

@@ -183,6 +183,61 @@ pcall(wezterm.add_to_config_reload_watch_list, FONT_STATE)
 -- cache at the bottom knows a reload actually meant something. See apply_font.
 local FONTS_SIG = table.concat({ FONTS.shell, FONTS["nvim.ui"], FONTS["nvim.editor"], FONTS.claude }, "|")
 
+-- Material Icon Theme (roest1/fonts, mkicons.py): file icons in color, at
+-- U+100000 and up, where no other font has anything. Named in every chain
+-- whenever its file is there, and NOT only when theme.conf says
+-- `icons = material`. That key decides who prints those characters; the picker
+-- has to be able to show the set before it is picked, and a font that answers
+-- for nothing else costs a chain nothing.
+--
+-- assume_emoji_presentation = false is the whole trick. wezterm takes any font
+-- with color tables for an emoji font, and draws from one only for a character
+-- with emoji presentation, which a private-use code point never has. Without
+-- it the font is found, loaded and never used: "No fonts contain glyphs", with
+-- the font right there in the chain.
+--
+-- Only when the file exists, because a family wezterm cannot find is a warning
+-- window on every reload.
+--
+-- ICON_SCALE is wezterm's own knob for a fallback font that reads small beside
+-- the text, and an icon does: its square is one em, 16px beside a 25px line.
+-- The icons already fill their square (the median one spans 89% of it), so
+-- there is nothing to gain by redrawing the font; the square has to grow.
+--
+-- 1.2 is also where it stops. wezterm lets a square glyph run over the cell
+-- beside it when that cell is a space, and no further: two cells. A monospace
+-- face advances 0.6em (JetBrains Mono) to 0.62em (0xProto), so two cells are
+-- 1.2em. Past that wezterm shrinks the glyph back to fit, and a bigger number
+-- here draws a smaller icon.
+--
+-- Scaled, an icon covers the one space eza puts after it, so whoever prints
+-- these characters puts TWO spaces before the name.
+local ICON_SCALE = 1.2
+local ICON_FONT_FILE = wezterm.config_dir .. "/fonts/MaterialIconTheme.ttf"
+local ICON_FONT = (function()
+	local f = io.open(ICON_FONT_FILE, "rb")
+	if not f then
+		return nil
+	end
+	f:close()
+	return { family = "Material Icon Theme", scale = ICON_SCALE, assume_emoji_presentation = false }
+end)()
+
+-- The file arriving has to reach a window that is already open, and that takes
+-- two things, both of which were missing the first time the font was tried.
+--
+-- A reload: the font comes with a pull of the fonts submodule, which touches
+-- nothing wezterm was watching.
+--
+-- And the signature: every window holds its font as an OVERRIDE (apply_overrides,
+-- at the bottom), built from with_fallback and cached against FONTS_SIG. With the
+-- font not in the signature, a reload that added it matched the cache and left
+-- the window on the chain it had: every icon an empty box, until focus happened
+-- to cross into another lane and rebuild it. The scale is in it for the same
+-- reason: it is part of the chain a window is holding.
+pcall(wezterm.add_to_config_reload_watch_list, ICON_FONT_FILE)
+FONTS_SIG = FONTS_SIG .. "|" .. (ICON_FONT and ("icons@" .. ICON_SCALE) or "")
+
 -- The tail of every chain, and the reason "keeping nerd icons" survives a pick
 -- of a font that has none: Symbols Nerd Font Mono is bundled with wezterm, so
 -- the glyphs resolve even when the chosen family is a bare monospace face.
@@ -195,6 +250,9 @@ local function with_fallback(head)
 	end
 	chain[#chain + 1] = "Noto Color Emoji"
 	chain[#chain + 1] = "Symbols Nerd Font Mono"
+	if ICON_FONT then
+		chain[#chain + 1] = ICON_FONT
+	end
 	return wezterm.font_with_fallback(chain)
 end
 

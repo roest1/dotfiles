@@ -85,6 +85,34 @@ colors. Both skip a line they cannot read and ignore a key they do not know.
   wezterm cannot be asked what a config evaluated to. The cases are the files a machine can
   really have. A new key read from `theme.conf` gets a case there.
 
+## The icon font is a fallback, and a window holds its font as an override
+
+Material Icon Theme (`fonts/MaterialIconTheme.ttf`, built in roest1/fonts) is named at the
+end of every fallback chain whenever the file is there. `icons = material` in `theme.conf`
+is NOT what puts it there: that key decides who prints the characters (`ls`, nvim), and
+`theme` has to be able to show the set before it is picked.
+
+- **`assume_emoji_presentation = false`, or it is never drawn from.** wezterm takes a color
+  font for an emoji font and uses one only for a character with emoji presentation, which a
+  private-use code point never has. `wezterm ls-fonts` lists the font as found and `--text`
+  on an icon still says no font has the glyph.
+- **`scale = 1.2`, and no more.** The icons already fill their square (the median one spans
+  89% of it), so a small icon is not the font's to fix: the square is one em beside a
+  25px line. wezterm lets a glyph run over one neighboring cell when that cell is a space, and
+  two cells of a monospace face are about 1.2em. Past that it shrinks the glyph to fit, and a
+  bigger number draws a smaller icon. Scaled, an icon covers the space after it, so whoever
+  prints one puts two spaces before the name.
+- **It is in `FONTS_SIG`, with its scale.** Every window holds its font as an override
+  (`apply_overrides`), built from `with_fallback` and cached against that signature. The
+  first time the font was tried it was not in the signature: the reload that added it
+  matched the cache, the window kept the chain it had, and every icon was an empty box until
+  focus happened to cross into another lane. Anything `with_fallback` adds goes in the
+  signature.
+- **The file's path is watched**, so the font arriving with a pull of the submodule is a
+  reload. Nothing else wezterm watches changes then.
+
+`wezterm/tests/theme_spec.lua` covers all four, the override through a stand-in window.
+
 ## A symptom is a stale-process question first
 
 `wezterm --config <name>=<value> start` opens a window with that value forced, independent
