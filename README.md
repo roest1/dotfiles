@@ -14,6 +14,17 @@ curl -fsSL https://raw.githubusercontent.com/roest1/dotfiles/main/bootstrap.sh |
 
 Already cloned? `cd ~/dotfiles && make install`, then `exec bash`.
 
+That needs no login: the repo is public and clones over HTTPS, and a clone that follows
+this config pushes over SSH. Two things stay manual, because they are sign-ins:
+
+- **Claude Code**: `make install` installs it; run `claude` once and sign in. To keep it
+  off a machine, leave `claude` out of `~/.config/dotfiles/sections` first (below).
+- **Private plugins** (optional): put the plugin's line in
+  `~/.config/dotfiles/plugins` *before* the one-liner. If it names a GitHub repo over SSH
+  and GitHub does not accept a key from this machine, the bootstrap runs `gh auth login`
+  (say yes to generating a key) and the plugin clones in the same run. See
+  `lib/plugins.sh` for the format.
+
 ## What you get
 
 Each section of `deps.conf` is one pillar. Install them all, or name the ones you want
@@ -26,7 +37,7 @@ Each section of `deps.conf` is one pillar. Install them all, or name the ones yo
 | `[nvim]` | Neovim config with language servers and formatters ([nvim/README.md](nvim/README.md)) |
 | `[wezterm]` | The terminal config and the Science Gothic Mono font |
 | `[tui]` | Terminal apps: `github` (the current repo on GitHub, live; [roest1/github-tui](https://github.com/roest1/github-tui)), `dots` (this repo's console), `theme` (pick fonts and colors per lane; [roest1/theme-tui](https://github.com/roest1/theme-tui)) |
-| `[claude]` | Claude Code settings: deny rules for secrets, terminal status hooks |
+| `[claude]` | Claude Code (official installer) and its settings: deny rules for secrets, terminal status hooks |
 | `[git-autofetch]` | Fetches this repo, its plugins and `~/github` every 20 minutes, never pulls, and tells each new shell when you are behind |
 
 ### Use a piece on its own

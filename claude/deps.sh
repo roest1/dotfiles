@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ─── [claude] platform fixups ────────────────────────────────────────────────
+# ─── [claude] Claude Code itself, then platform fixups ───────────────────────
 #
-# Registers the git clean filter that .gitattributes names for
+# Claude Code: Anthropic's own installer, the way its docs say to install it;
+# no distro packages it. It checks the download against a published SHA-256,
+# puts the launcher in ~/.local/bin, and from then on Claude Code updates
+# itself, so nothing here pins a version. Signing in is the one thing this
+# cannot do: run `claude` once.
+#
+# Skipped when a `claude` is already on PATH, wherever it came from. A second
+# copy over the first is the mess docs/decisions/tool-duplication.md describes.
+#
+# Then the fixups. Registers the git clean filter that .gitattributes names for
 # claude/settings.json. It has to happen here rather than in the manifest
 # because `filter.*` settings live in .git/config, which is per-clone and by
 # design not committable -- .gitattributes can say WHICH filter applies, but
@@ -13,6 +22,25 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
+
+# ~/.local/bin on PATH before the installer runs, and not only to find the
+# result. With that directory off PATH the installer ends by telling you to
+# append an export line to ~/.bashrc, which on these machines is a symlink into
+# this repo. It edits no profile itself either way (run into an empty home,
+# 2.1.332); on PATH it has nothing to say, and bash/bashrc already puts it there.
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v claude >/dev/null 2>&1; then
+  echo "  ➡️  Installing Claude Code (official installer)..."
+  # Judged by whether claude runs afterwards, not by the pipeline's status:
+  # offline, curl fails and bash is handed nothing, which exits 0.
+  curl -fsSL https://claude.ai/install.sh | bash || true
+fi
+if command -v claude >/dev/null 2>&1; then
+  echo "  ✅ claude $(claude --version 2>/dev/null | head -n1) — sign in once by hand: run 'claude'"
+else
+  echo "  ❌ Claude Code could not be installed (offline?). By hand:"
+  echo "       curl -fsSL https://claude.ai/install.sh | bash"
+fi
 
 if ! command -v git >/dev/null 2>&1; then
   echo "  ⚠️  git not found — skipping the settings.json clean filter"

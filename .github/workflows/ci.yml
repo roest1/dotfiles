@@ -564,6 +564,92 @@ jobs:
           rm -rf "$t"
           exit $fail
 
+      # bootstrap.sh is what a new machine runs first, and nothing else here runs
+      # it. The one thing it decides is whether to stop and ask for a login, so
+      # that is what is checked: with stand-ins for git, make, ssh and gh, and
+      # `script` for the run that has a terminal.
+      - name: The bootstrap asks for a login only when a private plugin needs one
+        run: |
+          set -euo pipefail
+          stub=$(mktemp -d)
+          export LOG="$stub/log" KEY="$stub/key-accepted"
+          # git and make do nothing but say they were called; ssh is GitHub, accepting
+          # the key or not; gh "logs in" by making GitHub accept it.
+          printf '#!/bin/sh\nexit 0\n' > "$stub/git"
+          printf '#!/bin/sh\necho "make $*" >> "$LOG"\n' > "$stub/make"
+          cat > "$stub/ssh" <<'SH'
+          #!/bin/sh
+          # GitHub's real answers, and its real exit status: 1 when it accepts the key.
+          if [ -e "$KEY" ]; then
+            echo "Hi someone! You've successfully authenticated, but GitHub does not provide shell access."
+            exit 1
+          fi
+          echo "git@github.com: Permission denied (publickey)."
+          exit 255
+          SH
+          cat > "$stub/gh" <<'SH'
+          #!/bin/sh
+          echo "gh $*" >> "$LOG"
+          case "$1 $2" in
+            "auth login") : > "$KEY" ;;
+            "auth status") echo "  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'repo'" ;;
+          esac
+          SH
+          chmod +x "$stub"/*
+          fail=0
+          check() { if "${@:2}"; then echo "ok: $1"; else echo "FAIL: $1"; echo "--- log"; cat "$LOG"; echo "--- out"; echo "$out"; fail=1; fi; }
+
+          # One run of the bootstrap against a clone that is already there.
+          # $1: the plugins file's one line, or "" for no file. $2: "tty" to give it a
+          # terminal. Anything after is extra environment.
+          run() {
+            local home; home=$(mktemp -d)
+            mkdir -p "$home/dotfiles/.git" "$home/.config/dotfiles"
+            [ -z "$1" ] || echo "$1" > "$home/.config/dotfiles/plugins"
+            : > "$LOG"
+            local cmd="env ${*:3} HOME=$home XDG_CONFIG_HOME=$home/.config PATH=$stub:$PATH bash $PWD/bootstrap.sh"
+            if [ "$2" = tty ]; then
+              out=$(script -qec "$cmd" /dev/null 2>&1)
+            else
+              out=$(setsid -w $cmd 2>&1 </dev/null)
+            fi
+          }
+          SSH_PLUGIN='mine  git@github.com:someone/private.git  ~/mine'
+          only_install() { [ "$(cat "$LOG")" = "make install" ]; }
+
+          rm -f "$KEY"
+          run "" none
+          check "no plugins file: no login, just the install" only_install
+          run 'pub  https://github.com/someone/public.git  ~/pub' none
+          check "a plugin over https: no login" only_install
+          run 'other  git@gitlab.com:someone/private.git  ~/other' none
+          check "a plugin on another host: a GitHub login would not help, so none" only_install
+          run "# $SSH_PLUGIN" none
+          check "a commented-out line: no login" only_install
+
+          : > "$KEY"
+          run "$SSH_PLUGIN" none
+          check "a machine whose key GitHub accepts is not asked to log in" only_install
+
+          rm -f "$KEY"
+          run "$SSH_PLUGIN" none
+          check "no terminal: gh is brought in, and the install goes on without the login" \
+            test "$(cat "$LOG")" = "$(printf 'make install bash\nmake install')"
+          check "and it says what to run afterwards" grep -q "no terminal to log in on" <<<"$out"
+
+          rm -f "$KEY"
+          run "$SSH_PLUGIN" none DOTFILES_TARGET=link
+          check "a link-only run never logs in" test "$(cat "$LOG")" = "make link"
+
+          rm -f "$KEY"
+          run "$SSH_PLUGIN" tty
+          check "with a terminal it logs in over ssh, before the install" \
+            test "$(sed -n 1,2p "$LOG")" = "$(printf 'make install bash\ngh auth login -h github.com -p ssh')"
+          check "and hands back the scope the key upload needed" grep -qx "gh auth refresh -h github.com -r admin:public_key" "$LOG"
+          check "and then installs, once" test "$(tail -n1 "$LOG")" = "make install"
+          check "and says GitHub accepts the key" grep -q "GitHub accepts this machine's key" <<<"$out"
+          exit $fail
+
   # ── Links only: the locked-down-machine path ───────────────────────────────
   # No sudo, no network, nothing installed. Must work everywhere.
   link-only:
@@ -1714,6 +1800,50 @@ jobs:
               || { echo "FAIL: $ev no longer calls tools/refresh-claude-settings.sh"; exit 1; }
           done
           echo "ok: SessionStart and SessionEnd both refresh the stat"
+
+      # The section's deps.sh runs Anthropic's installer. A stand-in for curl
+      # plays the installer, so this is about when it is asked, not what it does.
+      # Last in the job: deps.sh registers the settings filter, and the steps
+      # above start from a clone that has none.
+      - name: The claude section installs Claude Code when it is missing, and only then
+        run: |
+          set -euo pipefail
+          stub=$(mktemp -d)
+          export CALLS="$stub/calls"
+          : > "$CALLS"
+          # A curl that hands back an "installer", and counts how often it is asked.
+          cat > "$stub/curl" <<'SH'
+          #!/usr/bin/env bash
+          echo asked >> "$CALLS"
+          [ -z "${CURL_FAILS:-}" ] || exit 22
+          cat <<'INSTALLER'
+          mkdir -p "$HOME/.local/bin"
+          printf '#!/bin/sh\necho "9.9.9 (Claude Code)"\n' > "$HOME/.local/bin/claude"
+          chmod +x "$HOME/.local/bin/claude"
+          INSTALLER
+          SH
+          chmod +x "$stub/curl"
+          # The system directories and nothing of the runner's own: a claude already on
+          # PATH is exactly the case that skips the installer.
+          path="$stub:/usr/bin:/bin"
+          fail=0
+          check() { if "${@:2}"; then echo "ok: $1"; else echo "FAIL: $1"; fail=1; fi; }
+
+          home=$(mktemp -d)
+          out=$(HOME="$home" PATH="$path" bash claude/deps.sh 2>&1) || { echo "$out"; echo "FAIL: deps.sh exited non-zero"; exit 1; }
+          check "a machine without claude gets it from the installer" test -x "$home/.local/bin/claude"
+          check "and is told to sign in" grep -q "claude 9.9.9.*sign in" <<<"$out"
+          check "the installer was asked once" test "$(wc -l < "$CALLS")" -eq 1
+          check "the settings filter is still registered after it" grep -q "git clean filter registered" <<<"$out"
+
+          out=$(HOME="$home" PATH="$path" bash claude/deps.sh 2>&1)
+          check "a machine that has claude is not handed the installer again" test "$(wc -l < "$CALLS")" -eq 1
+
+          offline=$(mktemp -d)
+          out=$(CURL_FAILS=1 HOME="$offline" PATH="$path" bash claude/deps.sh 2>&1) || { echo "$out"; echo "FAIL: deps.sh exited non-zero offline"; exit 1; }
+          check "offline, it says so and how to do it by hand" grep -q "could not be installed" <<<"$out"
+          check "and still does the rest of the section" grep -q "git clean filter registered" <<<"$out"
+          exit $fail
 
   # ── [git-autofetch] ────────────────────────────────────────────────────────
   git-autofetch:
